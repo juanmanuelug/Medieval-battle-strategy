@@ -1,0 +1,21 @@
+{
+  "pxPorMetro": 40,
+  "tipos": {
+    "infanteriaPesada": {
+      "hoja": "infanteriaPesada.png",
+      "mascara": "infanteriaPesada_mascara.png",
+      "celda": [96, 128],
+      "ancla": [0.5, 0.92],
+      "direcciones": ["S", "SW", "W", "NW", "N"],
+      "animaciones": { "quieto": [0], "paso": [1, 2, 3, 4], "golpe": [5, 6], "cadaver": [7] }
+    },
+    "caballeriaPesada": {
+      "hoja": "caballeriaPesada.png",
+      "mascara": "caballeriaPesada_mascara.png",
+      "celda": [128, 128],
+      "ancla": [0.5, 0.92],
+      "direcciones": ["S", "SW", "W", "NW", "N", "NE", "E", "SE"],
+      "animaciones": { "quieto": [0], "paso": [1, 2, 3, 4, 5, 6], "golpe": [7, 8], "cadaver": [9] }
+    }
+  }
+}

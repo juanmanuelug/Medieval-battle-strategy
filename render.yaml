@@ -1,0 +1,15 @@
+# Despliegue en Render (plan gratuito): un único servicio web que sirve el juego y el servidor de partidas en red.
+# Render lo lee al crear un «Blueprint» desde el repositorio. Ver servidor/LEEME.md, «Publicar en Render».
+services:
+  - type: web
+    name: batallas-medievales
+    runtime: node
+    plan: free
+    region: frankfurt                     # la más cercana a España
+    buildCommand: npm ci --prefix servidor
+    startCommand: node servidor/servidor-lobby.js
+    healthCheckPath: /salud
+    autoDeploy: true                      # cada subida al repositorio vuelve a desplegar
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0

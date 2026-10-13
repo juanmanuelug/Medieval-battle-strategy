@@ -1,0 +1,265 @@
+body.juego{overflow:auto}
+body.juego.en-batalla{overflow:hidden}
+.oculto{display:none!important}
+#canvas{position:absolute;width:0;height:0;overflow:hidden}
+.pantalla{display:none}
+.pantalla.activa{display:block}
+#pantalla-batalla.activa{display:block;position:fixed;inset:0}
+.caja{max-width:640px;margin:40px auto;padding:24px 28px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.caja.ancha{max-width:980px}
+.caja h1{color:var(--gold2);margin:0 0 12px;font-size:1.8rem}
+.caja h2{color:var(--gold2);font-size:1.15rem;margin:18px 0 6px}
+.caja label{display:block;margin:10px 0 4px}
+.caja input[type=text],.caja input:not([type]),.caja select{width:100%;max-width:420px;background:#171310;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit}
+.caja select{width:auto}
+.caja fieldset{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:14px 0}
+.caja legend{color:var(--gold2);padding:0 6px}
+.caja .radio{display:flex;gap:8px;align-items:flex-start;margin:6px 0}
+.caja .radio input{margin-top:3px}
+.caja a{color:var(--gold2)}
+.nota{color:var(--muted);font-size:13px}
+.cta{display:inline-block;background:var(--gold);color:#1a1410;font-weight:700;padding:10px 18px;border-radius:8px;border:0;cursor:pointer;font:inherit;font-weight:700;margin:6px 10px 6px 0}
+.cta:disabled{opacity:.45;cursor:not-allowed}
+.btn{background:#2c231d;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:9px 14px;cursor:pointer;font:inherit}
+.btn.peligro,#hud button.peligro{border-color:#7a1a1f;color:#f0b0b0}
+.blason-previo{display:block;width:160px;margin-top:10px;border-radius:8px;background:#171310;padding:6px}
+.blason-mini{width:110px;background:#171310;border-radius:8px;padding:4px}
+.cabecera-reino{display:flex;gap:16px;align-items:center}
+.cabecera-reino h2{margin:0}
+.cabecera-reino p{margin:4px 0 0;color:var(--muted)}
+.oro{font-size:1.05rem;margin:10px 0}
+.ramas{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.tarjeta-rama{text-align:left;background:#2c231d;border:1px solid var(--line);border-radius:12px;padding:14px;color:var(--text);cursor:pointer;font:inherit}
+.tarjeta-rama:hover{border-color:var(--gold)}
+.tarjeta-rama .muestra{display:block;height:10px;border-radius:5px;background:linear-gradient(90deg,var(--c1) 50%,var(--c2) 50%);margin-bottom:8px}
+.tarjeta-rama strong{color:var(--gold2);font-size:1.05rem}
+.tarjeta-rama p{margin:6px 0;color:var(--muted);font-size:13px}
+.tarjeta-rama ul{margin:0;padding-left:18px;font-size:13px}
+.tropa{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border-top:1px solid var(--line);padding:10px 0}
+.tropa-nombre span{display:block;color:var(--muted);font-size:12px}
+.niveles{display:flex;gap:6px;flex-wrap:wrap}
+.btn-comprar{background:#2c231d;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit;font-size:12px;line-height:1.25;min-width:96px}
+.btn-comprar small{color:var(--gold2)}
+.btn-comprar:hover:not(:disabled){border-color:var(--gold)}
+.btn-comprar:disabled{opacity:.4;cursor:not-allowed}
+.fila-ejercito{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--line)}
+.fila-ejercito span:nth-child(2){color:var(--muted);font-size:13px}
+.btn-vender{background:none;border:1px solid var(--line);color:var(--text);border-radius:6px;width:28px;height:28px;cursor:pointer}
+.fila-final{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+#resultado table{border-collapse:collapse;margin:12px 0}
+#resultado td,#resultado th{border:1px solid var(--line);padding:6px 12px;text-align:left}
+#minimapa{position:fixed;right:12px;top:12px;width:220px;height:160px;border:1px solid var(--gold);border-radius:8px;background:#221b16e6;cursor:crosshair;box-shadow:0 8px 24px #0008}
+#panel-seleccion{position:fixed;right:12px;bottom:132px;width:min(420px,calc(100% - 24px));background:#221b16e6;border:1px solid var(--gold);border-radius:10px;padding:10px 12px;box-shadow:0 8px 24px #0008;font-size:13px}
+#panel-seleccion .unidad-sel{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px solid var(--line)}
+#panel-seleccion .unidad-sel span:last-child{color:var(--muted)}
+#panel-seleccion .fila{margin:6px 0 0}
+#panel-seleccion button{background:#2c231d;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 9px;cursor:pointer;font:inherit;font-size:12px}
+#panel-seleccion button.activa{border-color:var(--gold2);color:var(--gold2)}
+#panel-seleccion button:disabled{opacity:.35;cursor:not-allowed}
+#panel-seleccion .ayuda{color:var(--muted);font-size:12px}
+#panel-seleccion kbd,#hud kbd{display:inline-block;font:11px/1 ui-monospace,Consolas,monospace;color:var(--gold2);border:1px solid var(--line);border-radius:4px;padding:1px 4px;margin-left:4px;background:#171310}
+#resultado .unidades{width:100%;font-size:13px}
+#resultado .unidades td:nth-child(n+2){text-align:right}
+#resultado .mvp{color:var(--gold2);font-weight:700}
+@media (max-width:700px){.tropa{grid-template-columns:1fr}.caja{margin:12px;padding:16px}}
+
+/* barra de tarjetas de unidad (parte inferior) */
+#barra-unidades{position:fixed;left:50%;bottom:8px;transform:translateX(-50%);max-width:calc(100% - 24px);display:flex;gap:4px;padding:6px 8px;background:#221b16e6;border:1px solid var(--gold);border-radius:10px;box-shadow:0 8px 24px #0008;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+#barra-unidades:empty{display:none}
+.tarjeta-unidad{position:relative;flex:0 0 auto;width:62px;height:104px;padding:0;border:1px solid var(--line);border-radius:6px;background:linear-gradient(#3a2e24,#241c16);color:var(--text);cursor:pointer;font:inherit;overflow:hidden;transition:transform .08s,border-color .08s}
+.tarjeta-unidad:hover{border-color:var(--gold2)}
+.tarjeta-unidad:focus-visible{outline:2px solid var(--gold2);outline-offset:1px}
+.tarjeta-unidad.seleccionada{border-color:var(--gold2);box-shadow:0 0 0 1px var(--gold2),0 0 10px #e4bf4a88;transform:translateY(-4px)}
+.tarjeta-unidad.luchando{background:linear-gradient(#4a2a22,#241c16)}
+.tarjeta-unidad.huyendo{animation:tarjeta-huida .6s steps(2,start) infinite}
+.tarjeta-unidad.aniquilada{opacity:.35;filter:grayscale(1);cursor:default}
+.tarjeta-unidad.general{border-color:var(--gold)}
+@keyframes tarjeta-huida{to{border-color:#fff;box-shadow:0 0 0 1px #fff}}
+.tarjeta-unidad .tipo-icono{position:absolute;left:3px;top:3px;width:18px;height:18px;display:grid;place-items:center;color:var(--gold2);background:#171310cc;border-radius:4px}
+.tarjeta-unidad .galones{position:absolute;right:3px;top:3px;display:flex;gap:1px;color:var(--gold2);font-size:11px;line-height:1}
+.tarjeta-unidad .galon{width:7px;height:7px;background:var(--gold2);clip-path:polygon(0 100%,50% 35%,100% 100%,50% 75%)}
+.tarjeta-unidad .retrato{position:absolute;left:0;right:0;top:12px;height:66px;display:flex;align-items:flex-end;justify-content:center;pointer-events:none}
+.tarjeta-unidad .retrato-lienzo{max-height:64px;max-width:58px;image-rendering:auto}
+.tarjeta-unidad .cuenta{position:absolute;right:3px;top:62px;font-size:12px;font-weight:600;color:#fff;text-shadow:0 1px 2px #000,0 0 3px #000}
+.tarjeta-unidad .nombre-tipo{position:absolute;left:0;right:0;top:78px;font-size:9.5px;line-height:1;text-align:center;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 2px}
+.tarjeta-unidad .barra{position:absolute;left:4px;right:4px;height:5px;background:#000a;border-radius:3px;overflow:hidden}
+.tarjeta-unidad .barra.vida{bottom:10px}
+.tarjeta-unidad .barra.moral{bottom:3px}
+.tarjeta-unidad .barra > span{display:block;height:100%;width:100%;border-radius:3px;transition:width .3s}
+.tarjeta-unidad .barra.vida > span{background:linear-gradient(#6fdc5a,#2f9a24)}
+.tarjeta-unidad .barra.moral > span{background:linear-gradient(#f0d060,#c9a227)}
+.tarjeta-unidad.huyendo .barra.moral > span{background:#fff}
+@media (max-width:720px){.tarjeta-unidad{width:52px;height:92px}.tarjeta-unidad .retrato{height:58px}.tarjeta-unidad .retrato-lienzo{max-height:54px}.tarjeta-unidad .nombre-tipo{top:68px}.tarjeta-unidad .cuenta{top:54px}}
+.tarjeta-unidad .municion{position:absolute;left:3px;top:62px;font-size:10px;font-weight:600;color:var(--gold2);text-shadow:0 1px 2px #000,0 0 3px #000}
+.tarjeta-unidad.sin-municion .municion{color:#f0b0b0}
+.tarjeta-unidad.sin-municion .tipo-icono{color:#f0b0b0}
+
+/* ---- revisión de interfaz (2026-10-09) ---- */
+.caja h2 .nota{font-weight:400;font-size:12px;margin-left:8px}
+.fila-final.pegada{position:sticky;bottom:0;background:var(--panel);padding:12px 0;margin-top:12px;border-top:1px solid var(--line);z-index:2}
+#tienda-oro{position:sticky;top:0;background:var(--panel);padding:8px 0;z-index:2;border-bottom:1px solid var(--line)}
+.tropa{grid-template-columns:auto 1fr auto}
+.retrato-tropa{display:inline-flex;align-items:flex-end;justify-content:center;width:52px;height:60px}
+.retrato-tropa-lienzo{max-width:52px;max-height:60px}
+.retratos-rama{display:flex;gap:6px;align-items:flex-end;height:54px;margin:4px 0 2px}
+.retratos-rama .retrato-tropa{width:44px;height:54px}
+.retratos-rama .retrato-tropa-lienzo{max-width:44px;max-height:54px}
+.galones-nivel{display:inline-flex;gap:1px;margin-right:4px;vertical-align:middle}
+.galones-nivel .galon{width:7px;height:7px;background:var(--gold2);clip-path:polygon(0 100%,50% 35%,100% 100%,50% 75%)}
+.btn-comprar .galones-nivel{display:flex;justify-content:center;margin:0 0 2px}
+#panel-seleccion .unidad-sel{display:grid;grid-template-columns:minmax(120px,38%) 1fr;align-items:start}
+#panel-seleccion .unidad-sel:first-child{display:flex}
+#hud .reloj{display:inline-block;min-width:38px;font-variant-numeric:tabular-nums;color:var(--gold2);font-weight:600;margin-right:4px}
+#ayuda-completa{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(900px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;background:#221b16f2;border:1px solid var(--gold);border-radius:12px;padding:16px 20px;box-shadow:0 12px 40px #000a;z-index:20;font-size:13px}
+#ayuda-completa h3{margin:0 0 10px;color:var(--gold2);display:flex;justify-content:space-between;align-items:center}
+#ayuda-completa h3 button{background:none;border:1px solid var(--line);color:var(--text);border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:16px}
+#ayuda-completa h4{margin:6px 0 4px;color:var(--gold2);font-size:13px}
+#ayuda-completa .columnas{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+#ayuda-completa ul{margin:0;padding-left:16px}
+#ayuda-completa li{margin:3px 0;color:var(--muted)}
+#ayuda-completa b{color:var(--text)}
+#aviso-pausa{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);padding:10px 28px;border:2px solid var(--gold);border-radius:10px;background:#221b16cc;color:var(--gold2);font-size:28px;font-weight:700;letter-spacing:.2em;z-index:15;pointer-events:none}
+
+/* ---- inicio y menú (2026-10-09) ---- */
+.caja.inicio{text-align:center;margin-top:12vh}
+.titulo-juego{font-size:2.6rem;letter-spacing:.04em;margin-bottom:4px}
+.caja.inicio .fila-final{justify-content:center}
+.menu-opciones{display:grid;gap:12px;margin:10px 0 4px}
+.opcion-menu{text-align:left;background:#2c231d;border:1px solid var(--line);border-radius:12px;padding:14px 16px;color:var(--text);cursor:pointer;font:inherit}
+.opcion-menu:hover{border-color:var(--gold)}
+.opcion-menu strong{display:block;color:var(--gold2);font-size:1.1rem;margin-bottom:4px}
+.opcion-menu span{color:var(--muted);font-size:13px}
+.tarjeta-rama.actual{border-color:var(--gold2);box-shadow:0 0 0 1px var(--gold2)}
+.etiqueta-actual{display:block;color:var(--gold2);font-size:11px;margin:2px 0 4px}
+
+/* ---- fase de despliegue ---- */
+#hud-despliegue{margin-top:6px;padding:8px 10px;border:1px solid var(--gold);border-radius:8px;background:#2c231d;font-size:13px;line-height:1.5}
+#hud-despliegue .cta{margin:6px 0 0;padding:8px 14px}
+
+/* ---- general: discurso y rasgos ---- */
+#discurso{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,calc(100% - 32px));background:#221b16f4;border:1px solid var(--gold);border-radius:12px;padding:18px 22px;box-shadow:0 12px 40px #000a;z-index:25}
+.discurso-cabecera{display:flex;gap:14px;align-items:center;margin-bottom:8px}
+.discurso-cabecera .retrato-tropa{width:64px;height:76px}
+.discurso-cabecera .retrato-tropa-lienzo{max-width:64px;max-height:76px}
+.discurso-cabecera strong{display:block;color:var(--gold2);font-size:1.1rem}
+#discurso-texto p{margin:6px 0;font-style:italic;line-height:1.5}
+#discurso .fila-final{margin-top:12px}
+.rasgo{display:inline-block;padding:2px 8px;border:1px solid var(--gold);border-radius:12px;color:var(--gold2);font-size:12px;margin:2px 2px 2px 0}
+.rasgo.negativo{border-color:#7a1a1f;color:#f0b0b0}
+.rasgo.nuevo{background:#3a2e14;font-weight:600}
+.rasgos-general{margin:6px 0}
+
+#mapa-batalla{display:block;max-width:100%;border:1px solid var(--gold);border-radius:8px;background:#2c3a1c;margin:8px 0 4px}
+
+/* ---- cohesión, retirada y clima ---- */
+.tarjeta-unidad{height:110px}
+.tarjeta-unidad .nombre-tipo{top:74px}
+.tarjeta-unidad .cuenta{top:58px}
+.tarjeta-unidad .municion{top:58px}
+.tarjeta-unidad .barra.cohesion{bottom:17px;height:3px}
+.tarjeta-unidad .barra.cohesion > span{background:linear-gradient(#9ec8ff,#4a8ad8)}
+.tarjeta-unidad.retirada{animation:tarjeta-retirada .8s steps(2,start) infinite}
+@keyframes tarjeta-retirada{to{border-color:#ffb347;box-shadow:0 0 0 1px #ffb347}}
+.tarjeta-unidad.retirada .barra.moral > span{background:#ffb347}
+#hud .clima{color:#9ec8ff}
+
+.aviso-actitud{color:#ffb347;font-weight:600}
+
+/* grupos y reordenación de tarjetas (2026-10-11) */
+.tarjeta-unidad .grupo-insignia{position:absolute;right:3px;top:18px;min-width:15px;height:15px;padding:0 3px;border-radius:8px;background:var(--gold2);color:#1c150f;font-size:11px;font-weight:700;line-height:15px;text-align:center;display:none;z-index:2}
+.tarjeta-unidad.en-grupo .grupo-insignia{display:block}
+#barra-unidades.reordenando .tarjeta-unidad{cursor:grabbing}
+.tarjeta-unidad.arrastrando{opacity:.75;transform:translateY(-8px) scale(1.04);box-shadow:0 8px 16px #000a;z-index:3;border-color:var(--gold2)}
+
+/* ---------- HUD de batalla (2026-10-11): marcador centrado arriba y ayuda en la esquina ---------- */
+#hud{left:50%;top:10px;transform:translateX(-50%);max-width:calc(100% - 2 * 248px);width:max-content;padding:0;background:none;border:0;box-shadow:none;display:flex;flex-direction:column;align-items:center;gap:4px;pointer-events:none}
+#hud > *{pointer-events:auto}
+#hud-esquina{position:fixed;left:12px;top:12px;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+#hud-esquina button{background:#221b16e6;color:var(--text);border:1px solid var(--gold);border-radius:8px;padding:7px 12px;cursor:pointer;font:inherit;font-size:14px;box-shadow:0 6px 18px #0007}
+#hud-esquina button:hover{border-color:var(--gold2)}
+#hud-esquina button.peligro{border-color:#7a1a1f;color:#f0b0b0;font-size:12px;padding:5px 10px}
+#hud-esquina kbd{display:inline-block;font:11px/1 ui-monospace,Consolas,monospace;color:var(--gold2);border:1px solid var(--line);border-radius:4px;padding:1px 4px;margin-left:4px;background:#171310}
+#hud-marcador{display:flex;align-items:stretch;gap:0;filter:drop-shadow(0 6px 16px #0009)}
+.marcador{position:relative;width:200px;height:44px;display:flex;flex-direction:column;justify-content:center;padding:0 12px;background:#221b16ee;border:1px solid var(--gold);overflow:hidden}
+.marcador.jugador{border-radius:10px 0 0 10px;border-right:0;align-items:flex-end;text-align:right}
+.marcador.enemigo{border-radius:0 10px 10px 0;border-left:0;align-items:flex-start;text-align:left}
+.marcador .relleno{position:absolute;top:0;bottom:0;transition:width .4s ease;opacity:.55}
+.marcador.jugador .relleno{right:0;background:linear-gradient(270deg,#2f6fd0,#1d4f9e)}
+.marcador.enemigo .relleno{left:0;background:linear-gradient(90deg,#c0392b,#8e1f16)}
+.marcador .nombre,.marcador .cifra{position:relative;line-height:1.15;text-shadow:0 1px 2px #000}
+.marcador .nombre{font-size:12px;color:#e8e0cf;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.marcador .cifra{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;color:#fff}
+#control-tiempo{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 10px;background:#2c231d;border:1px solid var(--gold);border-radius:0 0 10px 10px;border-top-width:0;min-width:120px;margin-top:-1px;padding-top:6px}
+.botones-tiempo{display:flex;gap:4px}
+#hud .botones-tiempo button{display:grid;place-items:center;width:34px;height:28px;padding:0;background:#221b16;color:var(--text);border:1px solid var(--line);border-radius:6px;cursor:pointer}
+#hud .botones-tiempo button:hover{border-color:var(--gold)}
+#hud .botones-tiempo button.activo{background:var(--gold);color:#1c150f;border-color:var(--gold2)}
+#hud .botones-tiempo button:focus-visible{outline:2px solid var(--gold2);outline-offset:1px}
+#control-tiempo .reloj{font-size:13px;font-weight:600;color:var(--gold2);font-variant-numeric:tabular-nums}
+#hud-batalla-titulo{font-size:12px;color:var(--muted);background:#221b16cc;border-radius:8px;padding:2px 10px;text-align:center;max-width:620px}
+#hud-batalla-titulo strong{color:var(--text)}
+#hud-batalla-titulo .clima{color:#9ec8ff}
+#hud #hud-despliegue{max-width:560px;margin-top:4px;background:#2c231df2;box-shadow:0 8px 24px #0008}
+@media (max-width:900px){.marcador{width:130px}.marcador .nombre{display:none}#hud{max-width:calc(100% - 24px);top:56px}}
+
+/* formaciones que la selección no puede usar: no se muestran (2026-10-12) */
+#panel-formaciones button[hidden]{display:none}
+
+/* botón de escaramuza (2026-10-13): oculto sin arqueros a caballo, dorado si está activada */
+#panel-ordenes #btn-escaramuza[hidden]{display:none}
+#panel-ordenes #btn-escaramuza.activa{border-color:var(--gold2);color:var(--gold2)}
+
+/* ---------- multijugador (2026-10-13) ---------- */
+.estado-conexion{display:inline-block;margin:0 0 6px;padding:3px 10px;border-radius:12px;background:#3a2020;color:#f0b0b0;font-size:13px}
+.estado-conexion.conectado{background:#1f3a24;color:#a8e6b0}
+.aviso-mj{min-height:1.2em;margin:4px 0;font-size:13px;color:var(--muted)}
+.aviso-mj.error{color:#f0a0a0}
+.multijugador code{background:#171310;border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.mj-busqueda{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0}
+#btn-mj-buscar.buscando{background:#7a1a1f;color:#f4e0e0}
+#mj-buscando{color:var(--gold2)}
+#mj-lista-salas{display:grid;gap:6px}
+.sala-fila{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#211a15}
+.fila-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fila-form input:not([type=checkbox]){flex:1 1 200px}
+.fila-form .radio{margin:0}
+.entrada-codigo{text-transform:uppercase;letter-spacing:3px;max-width:140px}
+.codigo-sala{color:var(--gold2);letter-spacing:3px;font-size:1.1em}
+#mj-sala-jugadores{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.jugador-sala{border:1px solid var(--line);border-radius:10px;padding:10px;background:#211a15;display:flex;flex-direction:column;gap:4px}
+.jugador-sala.yo{border-color:var(--gold)}
+.jugador-sala.vacio{color:var(--muted)}
+.jugador-sala .lado{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted)}
+.estado-listo{font-size:12px;color:var(--muted)}
+.estado-listo.si{color:#a8e6b0;font-weight:700}
+#mj-chat-mensajes{height:160px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:#171310;padding:8px;margin-bottom:8px;font-size:14px}
+.chat-linea{margin:2px 0}
+.chat-linea.sistema{color:var(--gold2);font-style:italic}
+@media (max-width:600px){#mj-sala-jugadores{grid-template-columns:1fr}}
+
+/* multijugador paso 2: preparación */
+#mj-sala-opciones{margin:8px 0}
+#mj-sala-opciones label{margin:0;display:flex;gap:8px;align-items:center}
+#mj-preparacion{border-top:1px solid var(--line);margin-top:10px;padding-top:4px}
+.barra-oro{height:6px;background:#171310;border-radius:3px;overflow:hidden;margin:4px 0 10px}
+.barra-oro span{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));width:0}
+#mj-mi-ejercito{display:flex;flex-wrap:wrap;gap:6px}
+.unidad-reclutada{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--line);border-radius:14px;background:#211a15;font-size:13px}
+.btn-quitar{background:none;border:0;color:#f0a0a0;cursor:pointer;font-size:15px;line-height:1;padding:0 2px}
+.ficha-ejercitos{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ficha-ejercito{border:1px solid var(--line);border-radius:10px;padding:10px;background:#211a15}
+.ficha-ejercito.yo{border-color:var(--gold)}
+.ficha-ejercito ul{margin:6px 0 0;padding-left:18px;font-size:13px}
+@media (max-width:600px){.ficha-ejercitos{grid-template-columns:1fr}}
+
+/* batalla en red (multijugador, paso 3): sin pausa ni velocidad; aviso de que el rival ya ha desplegado */
+body.batalla-red #btn-b-rapido { display: none; }      /* en red se puede pedir pausa, pero no acelerar */
+#hud-despliegue .rival-listo { color: #9ee07a; margin-left: 6px; }
+#aviso-red{position:fixed;left:50%;top:30%;transform:translate(-50%,-50%);max-width:min(560px,90vw);padding:12px 22px;border:2px solid var(--gold);border-radius:10px;background:#221b16e6;color:var(--gold2);font-size:17px;font-weight:600;text-align:center;z-index:16;pointer-events:none}
+#aviso-pausa small{display:block;margin-top:4px;font-size:13px;font-weight:500;letter-spacing:0;color:#f4f0e6}
+#aviso-pausa small:empty{display:none}
+#panel-pausa-red{position:fixed;left:50%;top:30%;transform:translate(-50%,-50%);max-width:min(460px,90vw);padding:14px 20px;border:2px solid var(--gold);border-radius:10px;background:#221b16f0;color:#f4f0e6;text-align:center;z-index:17}
+#panel-pausa-red p{margin:0 0 10px;font-size:16px}
+#panel-pausa-red button{margin:0 4px}
+#hud-despliegue-reloj{margin-left:10px;font-weight:700;color:var(--gold2);font-variant-numeric:tabular-nums}
+#hud-despliegue-reloj.urgente{color:#ff8a6a}

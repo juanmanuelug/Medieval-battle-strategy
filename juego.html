@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Batallas medievales · tu reino</title>
+<link rel="stylesheet" href="estilo.css">
+<link rel="stylesheet" href="juego.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+</head>
+<body class="juego">
+<!-- lienzo oculto que necesita el motor del diseñador para medir textos -->
+<svg id="canvas" class="oculto" xmlns="http://www.w3.org/2000/svg"></svg>
+
+<section id="pantalla-inicio" class="pantalla">
+  <div class="caja inicio">
+    <h1 class="titulo-juego">Batallas medievales</h1>
+    <p class="nota">Funda tu reino, recluta un ejército y dirígelo en batallas masivas.</p>
+    <div class="fila-final">
+      <button id="btn-inicio-nuevo" class="cta">Inicio</button>
+      <button id="btn-inicio-continuar" class="cta oculto">Continuar</button>
+      <button id="btn-inicio-borrar" class="btn peligro oculto">Nuevo reino</button>
+    </div>
+    <p id="inicio-reino" class="nota"></p>
+  </div>
+</section>
+
+<section id="pantalla-menu" class="pantalla">
+  <div class="caja">
+    <div id="menu-cabecera" class="cabecera-reino"></div>
+    <h2>¿Qué quieres hacer?</h2>
+    <div class="menu-opciones">
+      <button id="btn-menu-batalla" class="opcion-menu"><strong>Batalla</strong><span>Elige tu rama, recluta tu ejército y lucha contra un ejército que la IA recluta según la dificultad.</span></button>
+      <button id="btn-menu-multijugador" class="opcion-menu"><strong>Multijugador</strong><span>Crea una sala para jugar con un amigo, únete a una con su código o busca un rival con el matchmaking.</span></button>
+      <button id="btn-menu-personalizada" class="opcion-menu"><strong>Batalla personalizada</strong><span>Elige tu rama y tu ejército, y después la rama y las tropas del enemigo, sin límite de oro.</span></button>
+    </div>
+    <div class="fila-final">
+      <button id="btn-menu-inicio" class="btn">Volver al inicio</button>
+    </div>
+  </div>
+</section>
+
+<section id="pantalla-multijugador" class="pantalla">
+  <div class="caja multijugador">
+    <h1>Multijugador</h1>
+    <p id="mj-estado" class="estado-conexion">Sin conexión</p>
+    <p id="mj-aviso" class="aviso-mj"></p>
+    <div id="mj-conexion">
+      <form id="form-mj-conectar">
+        <label>Servidor <input id="in-servidor" placeholder="ws://localhost:8787"></label>
+        <button class="cta" type="submit">Conectar</button>
+      </form>
+      <p class="nota">El servidor se arranca con <code>cd servidor</code> y <code>npm start</code> (ver <code>servidor/LEEME.md</code>). Para jugar con alguien de tu red, usa la IP de tu equipo, por ejemplo <code>ws://192.168.1.20:8787</code>.</p>
+    </div>
+    <div id="mj-lobby" class="oculto">
+      <div class="mj-busqueda">
+        <button id="btn-mj-buscar" class="cta" type="button">Buscar partida</button>
+        <span id="mj-buscando" class="oculto">Buscando rival… <span id="mj-buscando-tiempo">0 s</span></span>
+      </div>
+      <h2>Salas abiertas</h2>
+      <div id="mj-lista-salas"></div>
+      <h2>Crear una sala</h2>
+      <form id="form-mj-crear" class="fila-form">
+        <input id="in-mj-nombre-sala" maxlength="40" placeholder="Nombre de la sala">
+        <label class="radio"><input type="checkbox" id="in-mj-privada"> Privada (solo con código)</label>
+        <button class="btn" type="submit">Crear sala</button>
+      </form>
+      <h2>Unirse con un código</h2>
+      <form id="form-mj-codigo" class="fila-form">
+        <input id="in-mj-codigo" maxlength="6" placeholder="ABC123" class="entrada-codigo">
+        <button class="btn" type="submit">Unirse</button>
+      </form>
+      <div class="fila-final"><button id="btn-mj-desconectar" class="btn" type="button">Desconectar</button></div>
+    </div>
+    <div id="mj-sala" class="oculto">
+      <h2 id="mj-sala-titulo"></h2>
+      <p id="mj-sala-codigo" class="nota"></p>
+      <div id="mj-sala-opciones" class="fila-form">
+        <label>Presupuesto por jugador <select id="sel-mj-presupuesto"></select></label>
+        <span id="mj-sala-clima" class="nota"></span>
+      </div>
+      <div id="mj-sala-jugadores"></div>
+      <div id="mj-preparacion" class="oculto">
+        <h2>Tu ejército <span id="mj-oro" class="nota"></span></h2>
+        <div class="barra-oro"><span id="mj-barra-oro"></span></div>
+        <label>Rama <select id="sel-mj-rama"></select></label>
+        <p id="mj-rama-nota" class="nota"></p>
+        <div id="mj-tropas"></div>
+        <h2>Reclutado</h2>
+        <div id="mj-mi-ejercito"></div>
+        <div class="fila-final">
+          <button id="btn-mj-confirmar" class="cta" type="button">Confirmar ejército</button>
+          <button id="btn-mj-cambiar" class="btn oculto" type="button">Cambiar mi ejército</button>
+          <span id="mj-estado-preparacion" class="nota"></span>
+        </div>
+      </div>
+      <div id="mj-ficha" class="oculto"></div>
+      <div id="mj-chat">
+        <div id="mj-chat-mensajes"></div>
+        <form id="form-mj-chat" class="fila-form"><input id="in-mj-chat" maxlength="200" placeholder="Escribe un mensaje…"><button class="btn" type="submit">Enviar</button></form>
+      </div>
+      <div class="fila-final">
+        <button id="btn-mj-listo" class="cta" type="button" disabled>Listo</button>
+        <button id="btn-mj-salir" class="btn" type="button">Salir de la sala</button>
+      </div>
+    </div>
+    <div class="fila-final"><button id="btn-mj-menu" class="btn" type="button">Volver al menú</button></div>
+  </div>
+</section>
+
+<section id="pantalla-reino" class="pantalla">
+  <div class="caja">
+    <h1>Funda tu reino</h1>
+    <form id="form-reino">
+      <label>Nombre del reino <input id="in-nombre-reino" required maxlength="40" placeholder="Reino de Castilla" autofocus></label>
+      <label>Nombre del rey o la reina <input id="in-nombre-rey" required maxlength="40" placeholder="Alfonso VIII"></label>
+      <fieldset><legend>Blasón</legend>
+        <label class="radio"><input type="radio" name="blason" id="radio-blason-defecto" checked> Usar el blasón de la rama que elija después</label>
+        <label class="radio"><input type="radio" name="blason" id="radio-blason-importado"> Importar mi blasón del <a href="https://estandartesmedievales.netlify.app/" target="_blank" rel="noopener">diseñador de estandartes</a> (archivo .json de «Guardar .json»)</label>
+        <input type="file" id="in-blason-json" accept="application/json,.json">
+        <p id="nota-blason" class="nota">El blasón ondea en los estandartes de tus unidades y da los colores a tus soldados.</p>
+        <img id="img-blason-previo" class="blason-previo oculto" alt="Blasón importado">
+      </fieldset>
+      <button class="cta" type="submit">Crear el reino</button>
+    </form>
+  </div>
+</section>
+
+<section id="pantalla-rama" class="pantalla">
+  <div class="caja ancha">
+    <h1>Elige tu rama</h1>
+    <p>Cada rama tiene sus ventajas en tropas. Si repites tu rama actual conservas el ejército; si cambias, se devuelve y vuelves a reclutar.</p>
+    <div id="lista-ramas" class="ramas"></div>
+    <div class="fila-final"><button id="btn-rama-menu" class="btn">Volver al menú</button></div>
+  </div>
+</section>
+
+<section id="pantalla-tienda" class="pantalla">
+  <div class="caja ancha">
+    <div id="tienda-cabecera" class="cabecera-reino"></div>
+    <p id="tienda-oro" class="oro"></p>
+    <h2>Reclutar <span class="nota">cada botón añade una unidad completa; los galones son el nivel</span></h2>
+    <div id="tienda-tropas"></div>
+    <h2>Tu ejército</h2>
+    <div id="tienda-ejercito"></div>
+    <div class="fila-final pegada">
+      <label id="etiqueta-dificultad">Dificultad <select id="sel-dificultad"><option value="facil">Fácil</option><option value="normal" selected>Normal</option><option value="dificil">Difícil</option><option value="brutal">Brutal</option></select></label>
+      <label id="etiqueta-actitud">Actitud del enemigo <select id="sel-actitud"><option value="ofensiva" selected>Ofensiva</option><option value="defensiva">Defensiva</option></select></label>
+      <button id="btn-batalla" class="cta" disabled>¡A la batalla!</button>
+      <button id="btn-cambiar-rama" class="btn">Cambiar de rama</button>
+      <button id="btn-tienda-menu" class="btn">Volver al menú</button>
+    </div>
+    <p id="tienda-nota-modo" class="nota"></p>
+  </div>
+</section>
+
+<section id="pantalla-personalizada" class="pantalla">
+  <div class="caja ancha">
+    <h1>Batalla personalizada</h1>
+    <p class="nota">Elige contra qué rama luchas y qué tropas tiene su ejército, sin límite de oro. Tu ejército es el que acabas de reclutar. La dificultad elegida sigue marcando cómo maniobra la IA.</p>
+    <label>Rama enemiga <select id="sel-rama-ia"></select></label>
+    <label>Clima <select id="sel-clima"></select></label>
+    <p id="personalizada-rama-nota" class="nota"></p>
+    <h2>Tropas enemigas</h2>
+    <div id="personalizada-tropas"></div>
+    <h2>Ejército enemigo</h2>
+    <p id="personalizada-resumen" class="oro"></p>
+    <div id="personalizada-ejercito"></div>
+    <div class="fila-final pegada">
+      <button id="btn-personalizada-batalla" class="cta" disabled>¡A la batalla!</button>
+      <button id="btn-personalizada-vaciar" class="btn">Vaciar</button>
+      <button id="btn-personalizada-volver" class="btn">Volver a mi ejército</button>
+    </div>
+  </div>
+</section>
+
+<section id="pantalla-batalla" class="pantalla">
+  <div id="escenario"></div>
+  <!-- HUD de batalla: ayuda y retirada arriba a la izquierda; marcador arriba en el centro -->
+  <div id="hud-esquina">
+    <button id="btn-b-ayuda" type="button" title="Controles (F1)">? <kbd>F1</kbd></button>
+    <button id="btn-b-rendirse" type="button" class="peligro" title="Retirarse del campo (cuenta como derrota)">Retirarse</button>
+  </div>
+  <div id="hud">
+    <div id="hud-marcador">
+      <div class="marcador jugador" id="marcador-jugador" title="Tus soldados en el campo / con los que empezaste"><span class="relleno"></span><span class="nombre" id="marcador-jugador-nombre"></span><span class="cifra" id="marcador-jugador-cifra"></span></div>
+      <div id="control-tiempo">
+        <div class="botones-tiempo">
+          <button id="btn-b-pausa" type="button" title="Pausa (P)" aria-label="Pausa"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor"/></svg></button>
+          <button id="btn-b-reanudar" type="button" title="Reanudar a velocidad normal (P)" aria-label="Reanudar"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M7 5 L19 12 L7 19 Z" fill="currentColor"/></svg></button>
+          <button id="btn-b-rapido" type="button" title="Acelerar ×2" aria-label="Acelerar ×2"><svg viewBox="0 0 24 24" width="20" height="18" aria-hidden="true"><path d="M3 5 L12 12 L3 19 Z M12 5 L21 12 L12 19 Z" fill="currentColor"/></svg></button>
+        </div>
+        <span class="reloj" id="hud-reloj" title="Tiempo de batalla">0:00</span>
+      </div>
+      <div class="marcador enemigo" id="marcador-enemigo" title="Soldados enemigos en el campo / con los que empezaron"><span class="relleno"></span><span class="nombre" id="marcador-enemigo-nombre"></span><span class="cifra" id="marcador-enemigo-cifra"></span></div>
+    </div>
+    <div id="hud-batalla-titulo"></div>
+    <div class="despliegue oculto" id="hud-despliegue"><strong>Fase de despliegue.</strong> Coloca tus unidades dentro de la zona marcada: clic derecho las sitúa, arrastrar derecho les da el rumbo, F cambia la formación. <button id="btn-b-comenzar" class="cta">¡Comenzar la batalla! <kbd>Intro</kbd></button><span id="hud-despliegue-reloj"></span></div>
+  </div>
+  <div id="ayuda-completa" class="oculto">
+    <h3>Controles <button id="btn-cerrar-ayuda" title="Cerrar">×</button></h3>
+    <div class="columnas">
+      <div><h4>Seleccionar</h4><ul><li><b>Clic izquierdo</b> sobre una unidad o su estandarte</li><li><b>Arrastrar izquierdo</b>: recuadro</li><li><b>Mayús</b> añade o quita</li><li><b>Doble clic</b>: todas las del mismo tipo</li><li><b>Ctrl+A</b>: todas · <b>Esc</b>: ninguna</li><li><b>G</b> agrupa la selección con el primer número libre (<b>Ctrl+1-9</b> con uno concreto, <b>Mayús+G</b> deshace); <b>1-9</b> llama al grupo y dos pulsaciones centran la cámara</li><li><b>Tarjetas</b> de abajo: clic selecciona, doble clic centra, <b>arrastrar</b> cambia su orden (se recuerda)</li><li><b>Alcance de tiro</b>: se dibuja el de tus tiradores seleccionados (azul) y el del tirador enemigo bajo el ratón (rojo). Solo disparan dentro de su cono, 120° hacia donde miran (los arqueros a caballo, en redondo)</li><li><b>Alt</b> sin nada seleccionado: ver a dónde va cada unidad (verde al paso, amarillo a la carrera, rojo atacando, ámbar disparando)</li></ul></div>
+      <div><h4>Ordenar</h4><ul><li><b>Clic derecho</b> en el suelo: mover al paso (varias unidades forman una fila; <b>Alt</b> conserva sus posiciones)</li><li><b>Clic derecho</b> sobre un enemigo o su estandarte: atacar</li><li><b>Doble clic derecho</b> o <b>Mayús</b>: a la carrera</li><li><b>Arrastrar derecho</b>: mover con rumbo (se previsualiza la fila); <b>Ctrl</b>: solo encarar</li><li><b>Clic derecho en el minimapa</b>: mover allí</li><li><b>E</b>: modo escaramuza de los arqueros a caballo (activado por defecto: se alejan de quien se les acerca y siguen disparando)</li><li><b>A</b> atacar · <b>C</b> cargar · <b>D</b> disparar · <b>H</b> alto · <b>F</b> cambia la formación (Mayús+A / Mayús+D: corriendo)</li></ul></div>
+      <div><h4>Cámara y juego</h4><ul><li><b>Botón central</b>, <b>espacio+arrastrar</b> o <b>flechas</b>: desplazar</li><li><b>Rueda</b>: zoom · <b>clic en el minimapa</b>: ir allí</li><li><b>P</b>: pausa · botones de arriba: pausa, reanudar y ×2</li><li><b>Ctrl+A</b> y luego <b>A</b> o <b>H</b>: todo el ejército avanza o se detiene</li><li><b>F1</b> o <b>?</b>: esta ayuda</li></ul></div>
+    </div>
+  </div>
+  <div id="aviso-pausa" class="oculto">PAUSA<small id="aviso-pausa-detalle"></small></div>
+  <div id="panel-pausa-red" class="oculto"><p id="panel-pausa-red-texto"></p><button id="btn-pausa-aceptar" class="cta" type="button">Aceptar la pausa</button><button id="btn-pausa-rechazar" class="btn" type="button">Seguir luchando</button></div>
+  <div id="aviso-red" class="oculto"></div>
+  <div id="discurso" class="oculto">
+    <div class="discurso-cabecera"><span id="discurso-retrato" class="retrato-tropa"></span><div><strong id="discurso-nombre"></strong><span id="discurso-rasgos" class="nota"></span></div></div>
+    <div id="discurso-texto"></div>
+    <div class="fila-final"><button id="btn-discurso-cerrar" class="cta">Al despliegue</button></div>
+  </div>
+  <canvas id="minimapa" width="220" height="160" title="Minimapa: clic para ir allí"></canvas>
+  <div id="barra-unidades" title="Tus unidades"></div>
+  <div id="panel-seleccion" class="oculto">
+    <div id="hud-seleccion"></div>
+    <div class="fila botones" id="panel-ordenes">
+      <button data-orden="avanzar" title="Atacar al enemigo más cercano al paso (A); doble clic o Mayús: a la carrera">Atacar <kbd>A</kbd></button>
+      <button data-orden="cargar" title="Carga de caballería, solo jinetes (C)">Cargar <kbd>C</kbd></button>
+      <button data-orden="disparar" title="Disparar al enemigo más cercano, solo tiradores (D)">Disparar <kbd>D</kbd></button>
+      <button data-orden="formar" title="Alto: mantener la posición (H)">Alto <kbd>H</kbd></button>
+      <button id="btn-agrupar" type="button" title="Crear un grupo con las unidades seleccionadas (G): recibe el primer número libre y ese número las vuelve a seleccionar; dos pulsaciones centran la cámara">Agrupar <kbd>G</kbd></button>
+      <button id="btn-desagrupar" type="button" title="Sacar las unidades seleccionadas de su grupo (Mayús+G)">Desagrupar</button>
+      <button id="btn-escaramuza" type="button" hidden title="Modo escaramuza de los arqueros a caballo (E): si un enemigo de cuerpo a cuerpo se acerca, se alejan galopando y siguen disparando">Escaramuza <kbd>E</kbd></button>
+    </div>
+    <div class="fila botones" id="panel-formaciones">
+      <button data-formacion="linea">Línea</button>
+      <button data-formacion="cuadro">Cuadro</button>
+      <button data-formacion="columna">Columna</button>
+      <button data-formacion="muro">Muro de escudos</button>
+      <button data-formacion="abierta">Orden abierta</button>
+      <button data-formacion="cuna">Cuña</button>
+    </div>
+    <div class="fila ayuda" id="panel-formacion-nota"></div>
+  </div>
+</section>
+
+<section id="pantalla-resultado" class="pantalla">
+  <div class="caja"><div id="resultado"></div><div class="fila-final"><button id="btn-r-revancha" class="cta" title="Otra batalla contra el mismo ejército enemigo">Revancha</button><button id="btn-r-tienda" class="btn">Cambiar mi ejército</button><button id="btn-r-sala" class="cta oculto">Volver a la sala</button><button id="btn-r-menu" class="btn">Volver al menú</button></div></div>
+</section>
+
+<!-- motor del diseñador de estandartes (copiado por tools/copiar-disenador.js) -->
+<script src="disenador/js/00-utilidades-base.js"></script>
+<script src="disenador/js/01-catalogo-de-formas.js"></script>
+<script src="disenador/js/02-catalogo-de-patrones-particiones-y-pieza.js"></script>
+<script src="disenador/js/03c-indice-figuras.js"></script>
+<script src="disenador/js/03-catalogo-de-simbolos-y-figuras.js"></script>
+<script src="disenador/js/03b-ordenes-militares.js"></script>
+<script src="disenador/puente.js"></script>
+<script src="disenador/js/05-render-svg.js"></script>
+<!-- juego -->
+<script src="js/00-aleatorio-y-utilidades.js"></script>
+<script src="js/01-datos-unidades.js"></script>
+<script src="js/02-rejilla-espacial.js"></script>
+<script src="js/02b-terreno.js"></script>
+<script src="js/03-simulacion.js"></script>
+<script src="js/04-ordenes.js"></script>
+<script src="js/04b-estado.js"></script>
+<script src="js/05-sangre.js"></script>
+<script src="js/sprites-munecos.js"></script>
+<script src="js/sprites-archivo.js"></script>
+<script src="js/render-iso.js"></script>
+<script src="js/juego/07-ramas-y-niveles.js"></script>
+<script src="js/juego/08-reino.js"></script>
+<script src="js/juego/08b-general.js"></script>
+<script src="js/juego/09-ejercito.js"></script>
+<script src="js/juego/09b-ia-batalla.js"></script>
+<script src="js/juego/10-batalla.js"></script>
+<script src="js/juego/13-tarjetas.js"></script>
+<script src="js/juego/14-retratos.js"></script>
+<script src="js/juego/11-pantallas.js"></script>
+<script src="js/juego/15-multijugador.js"></script>
+</body>
+</html>

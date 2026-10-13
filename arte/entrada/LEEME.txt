@@ -1,0 +1,1 @@
+Deja aqui las imagenes sueltas con el nombre tipo[.rama][.nivel]_direccion_animacion[_n].png (ver ../LEEME.md).

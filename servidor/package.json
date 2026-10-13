@@ -1,0 +1,15 @@
+{
+  "name": "batallas-medievales-servidor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Servidor de lobby y matchmaking de Batallas medievales (multijugador)",
+  "main": "servidor-lobby.js",
+  "scripts": {
+    "start": "node servidor-lobby.js",
+    "prueba": "node prueba-lobby.js",
+    "prueba-batalla": "node prueba-batalla-red.js"
+  },
+  "dependencies": {
+    "ws": "8.18.0"
+  }
+}
