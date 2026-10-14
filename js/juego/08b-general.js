@@ -62,7 +62,7 @@ function discursoGeneral(reino, ramaIA, ejercitoIA, ejercitoPropio) {
   const cuenta = tipo => (ejercitoPropio || []).filter(e => e.tipo === tipo).length;
   const total = (ejercitoPropio || []).length || 1;
   if ((cuenta('arqueros') + cuenta('ballesteros') + cuenta('arquerosACaballo')) / total >= 0.4) frases.push('Que nuestras flechas oscurezcan el cielo antes de que lleguen.');
-  else if ((cuenta('caballeriaPesada') + cuenta('caballeriaLigera')) / total >= 0.4) frases.push('Cuando suene el cuerno, que la tierra tiemble bajo nuestros caballos.');
+  else if ((cuenta('caballeriaPesada') + cuenta('caballeriaLigera') + cuenta('caballeros')) / total >= 0.4) frases.push('Cuando suene el cuerno, que la tierra tiemble bajo nuestros caballos.');
   else if (cuenta('lanceros') / total >= 0.4) frases.push('Lanzas en alto y pies bien plantados: nada pasará por nuestra línea.');
   else frases.push('Hombro con hombro, escudo con escudo. Así se gana.');
   const rasgos = rasgosActivos(reino);

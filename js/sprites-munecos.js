@@ -29,6 +29,7 @@ const VISTA_DE_DIRECCION = [['W', true], ['SW', true], ['S', false], ['SW', fals
 
 function dibujarMuneco2D(o) {
   const { datos, fotograma, S } = o;
+  if (datos.artilleria) return dibujarMangonel(o);
   const eq = EQUIPOS[o.equipo] || EQUIPOS[0];
   const rama = o.rama || 'cristiano', nivel = o.nivel === undefined ? 1 : o.nivel, general = !!o.general, portador = !!o.portador;
   const direccion = ((o.direccion % 8) + 8) % 8;
@@ -36,13 +37,18 @@ function dibujarMuneco2D(o) {
   const V = VISTAS_MUNECO[nombreVista];
   const P = PALETA_MUNECO;
   const montado = !!datos.montado, ligero = datos.clave === 'caballeriaLigera' || datos.clave === 'arquerosACaballo';
-  const tirador = !!datos.alcanceTiro, ballesta = datos.clave === 'ballesteros', pesado = datos.clave === 'infanteriaPesada' || (montado && !ligero);
+  const tirador = !!datos.alcanceTiro, ballesta = datos.clave === 'ballesteros';
+  // exclusivas de rama (2026-10-13): caballeros (placas, yelmo cerrado, lanza de justa), guardia varega (hacha a dos manos,
+  // sin escudo), templarios (sobrevesta blanca con cruz roja), berserkers (sin armadura ni yelmo, hacha, sin escudo)
+  const caballero = datos.clave === 'caballeros', varego = datos.clave === 'guardiaVarega', templario = datos.clave === 'templarios', berserker = datos.clave === 'berserkers';
+  const hachaGrande = varego || berserker, sinEscudo = hachaGrande;
+  const pesado = datos.clave === 'infanteriaPesada' || varego || templario || (montado && !ligero);
   const esTribu = rama === 'tribus', esMusulman = rama === 'musulman', esOrtodoxo = rama === 'ortodoxo', esCruzado = rama === 'cruzado';
   const color = hexMuneco(eq.color), colorSecundario = hexMuneco(eq.colorSecundario);
   const blason = eq.blason || null;
-  const armadura = nivel === 0 ? 'gambeson' : nivel === 1 ? (pesado ? 'cota' : 'gambeson') : nivel === 2 ? 'cota' : (pesado ? 'placas' : 'cota');
-  const colorArmadura = armadura === 'gambeson' ? (esTribu ? P.pielAnimal : P.gambeson) : armadura === 'placas' ? P.placas : P.acero;
-  const conYelmo = nivel >= 1 || (pesado && !esTribu);
+  const armadura = caballero ? (nivel >= 2 ? 'placas' : 'cota') : nivel === 0 ? 'gambeson' : nivel === 1 ? (pesado ? 'cota' : 'gambeson') : nivel === 2 ? 'cota' : (pesado ? 'placas' : 'cota');
+  const colorArmadura = berserker ? P.piel : armadura === 'gambeson' ? (esTribu ? P.pielAnimal : P.gambeson) : armadura === 'placas' ? P.placas : P.acero;
+  const conYelmo = !berserker && (nivel >= 1 || (pesado && !esTribu));
   const cimera = nivel >= 3 || general;
   // fotograma
   const indicePaso = /^paso[1-4]$/.test(fotograma) ? +fotograma.slice(4) : 0;
@@ -97,7 +103,7 @@ function dibujarMuneco2D(o) {
       const cx0 = nx1 + fxv * 0.12 * S, cy0 = ny1 - 0.05 * S, anchoCabeza = 0.56 * S + 0.16 * S * Math.abs(fx);
       const formaCabeza = () => redondo(cx0 - anchoCabeza / 2 + fxv * anchoCabeza * 0.18, cy0 - 0.22 * S, anchoCabeza, 0.46 * S, 0.16 * S);
       forma(pelo, 0.07, formaCabeza); sombra(formaCabeza, 0.2);
-      if (nivel >= 3 && pesado && !esTribu) forma(P.placas, 0.05, () => redondo(cx0 - 0.2 * S, cy0 - 0.2 * S, 0.4 * S, 0.2 * S, 0.08 * S));
+      if ((nivel >= 3 || caballero) && pesado && !esTribu) forma(P.placas, 0.05, () => redondo(cx0 - 0.2 * S, cy0 - 0.2 * S, 0.4 * S, 0.2 * S, 0.08 * S));
       // orejas
       for (const lado of [-1, 1]) forma(pelo, 0.05, () => { const ox = cx0 + lado * 0.13 * S; g.moveTo(ox - 0.07 * S, cy0 - 0.2 * S); g.lineTo(ox, cy0 - 0.42 * S); g.lineTo(ox + 0.07 * S, cy0 - 0.2 * S); g.closePath(); });
       // ojo y hocico (no se ven de espaldas)
@@ -148,7 +154,7 @@ function dibujarMuneco2D(o) {
 
   // ---- escudo ----
   const dibujarEscudo = () => {
-    if (tirador) return;
+    if (tirador || sinEscudo) return;
     const ex = V.escudoX * S + (faseGolpe === 1 ? -0.04 * S : 0), ey = torsoY - 0.55 * S, k = V.escudoAncho;
     const redondoEscudo = esMusulman || esTribu || datos.clave === 'infanteriaLigera';
     const heater = esCruzado || nivel >= 3;
@@ -181,13 +187,22 @@ function dibujarMuneco2D(o) {
     const reposoArma = ARMA_POR_VISTA[nombreVista].reposo;
     const alzado = reposoArma + (faseGolpe === 1 ? -0.6 : faseGolpe === 2 ? 1.3 : faseGolpe === 3 ? 0.5 : 0);    // giro del arma de mano: armar, tajo, recoger
     const asta = (x0, y0, x1, y1, colorAsta) => { g.lineWidth = 0.1 * S; g.strokeStyle = P.contorno; g.lineCap = 'round'; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); g.lineWidth = 0.055 * S; g.strokeStyle = colorAsta; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
-    if (datos.clave === 'lanceros' || (datos.clave === 'caballeriaPesada' && !esTribu)) {
+    if (hachaGrande) {
+      // hacha a dos manos (varegos) o de guerra (berserkers): mango largo y hoja grande
+      g.save(); g.translate(mx, my); g.rotate(alzado);
+      const largoMango = varego ? 1.7 * S : 1.3 * S;
+      asta(0, 0.45 * S, 0, -largoMango, P.madera);
+      forma(P.acero, 0.05, () => { g.moveTo(0, -largoMango + 0.1 * S); g.quadraticCurveTo(-0.6 * S, -largoMango - 0.05 * S, -0.55 * S, -largoMango + 0.55 * S); g.quadraticCurveTo(-0.25 * S, -largoMango + 0.35 * S, 0, -largoMango + 0.4 * S); g.closePath(); });
+      if (berserker) forma(P.acero, 0.05, () => { g.moveTo(0, -largoMango + 0.1 * S); g.quadraticCurveTo(0.5 * S, -largoMango, 0.45 * S, -largoMango + 0.45 * S); g.quadraticCurveTo(0.2 * S, -largoMango + 0.3 * S, 0, -largoMango + 0.35 * S); g.closePath(); });
+      g.restore();
+    } else if (datos.clave === 'lanceros' || caballero || (datos.clave === 'caballeriaPesada' && !esTribu)) {
       // lanza: en reposo vertical; al golpear se tiende hacia el frente (hacia el lado del escudo en esta vista)
       const estocada = ARMA_POR_VISTA[nombreVista].estocada;
       const angulo = faseGolpe === 1 ? -0.2 * Math.sign(estocada) : faseGolpe === 2 ? estocada : faseGolpe === 3 ? estocada * 0.55 : 0;
       g.save(); g.translate(mx, my); g.rotate(angulo);
-      const largo = datos.clave === 'lanceros' ? 2.2 * S : 2.6 * S;
-      asta(0, 0.6 * S, 0, -largo, P.madera);
+      const largo = datos.clave === 'lanceros' ? 2.2 * S : caballero ? 2.9 * S : 2.6 * S;
+      asta(0, 0.6 * S, 0, -largo, caballero ? colorSecundario : P.madera);
+      if (caballero) forma(P.acero, 0.05, () => { g.moveTo(-0.22 * S, 0.1 * S); g.lineTo(0.22 * S, 0.1 * S); g.lineTo(0, -0.35 * S); g.closePath(); });   // arandela de la lanza de justa
       forma(P.acero, 0.05, () => { g.moveTo(-0.1 * S, -largo + 0.05 * S); g.lineTo(0, -largo - 0.45 * S); g.lineTo(0.1 * S, -largo + 0.05 * S); g.closePath(); });
       if (!esTribu) forma(colorSecundario, 0.03, () => { g.moveTo(0, -largo + 0.1 * S); g.lineTo(-0.38 * S, -largo + 0.25 * S); g.lineTo(0, -largo + 0.4 * S); g.closePath(); });
       g.restore();
@@ -240,7 +255,15 @@ function dibujarMuneco2D(o) {
   if (armadura === 'gambeson') { g.strokeStyle = 'rgba(60,45,20,0.45)'; g.lineWidth = 0.025 * S; for (let yy = 0; yy < 5; yy++) { const ly = torsoY - 0.72 * S + yy * 0.15 * S; g.beginPath(); g.moveTo(-0.36 * S * AC + inclina, ly); g.lineTo(0.36 * S * AC + inclina, ly); g.stroke(); } }
   if (esOrtodoxo && armadura !== 'gambeson' && pesado) { g.fillStyle = 'rgba(60,60,80,0.5)'; for (let yy = 0; yy < 6; yy++) g.fillRect(-0.36 * S * AC + inclina, torsoY - 0.8 * S + yy * 0.14 * S, 0.72 * S * AC, 0.06 * S); }
   // sobrevesta (campo del blasón) o faja
-  if (nivel >= 1 && V.cara !== 'nuca') {
+  if (berserker) {
+    // sin armadura: pecho desnudo con pintura de guerra del color del bando y piel sobre los hombros
+    g.fillStyle = color; g.fillRect(-0.22 * S * AC + inclina, torsoY - 0.62 * S, 0.44 * S * AC, 0.08 * S); g.fillRect(-0.04 * S + inclina, torsoY - 0.75 * S, 0.08 * S, 0.35 * S);
+  } else if (templario && V.cara !== 'nuca') {
+    // sobrevesta templaria: blanca con la cruz roja (la seña de la orden, por encima de los colores del bando)
+    const altoSobre = 0.72 * S, tope = torsoY - 0.82 * S, sx = -0.3 * S * AC + inclina, sw = 0.6 * S * AC;
+    forma('#f0ece0', 0.05, () => redondo(sx, tope, sw, altoSobre, 0.12 * S));
+    g.fillStyle = '#b3202c'; g.fillRect(sx + sw / 2 - 0.07 * S, tope + 0.08 * S, 0.14 * S, altoSobre - 0.16 * S); g.fillRect(sx + sw / 2 - 0.2 * S, tope + 0.2 * S, 0.4 * S, 0.12 * S);
+  } else if (nivel >= 1 && V.cara !== 'nuca') {
     const altoSobre = armadura === 'placas' ? 0.5 * S : 0.72 * S, tope = torsoY - (armadura === 'placas' ? 0.58 : 0.82) * S, sx = -0.3 * S * AC + inclina, sw = 0.6 * S * AC;
     if (esCruzado || esTribu) {
       forma(color, 0.05, () => redondo(sx, tope, sw, altoSobre, 0.12 * S));
@@ -262,7 +285,7 @@ function dibujarMuneco2D(o) {
   if (nivel >= 3 && V.cara !== 'nuca') { g.fillStyle = P.oro; g.fillRect(-0.06 * S + inclina, torsoY - 0.2 * S, 0.12 * S, 0.14 * S); }
   if (esTribu) forma(P.pielAnimal, 0.05, () => redondo(-0.5 * S * AC + inclina, torsoY - 0.95 * S, 1.0 * S * AC, 0.3 * S, 0.14 * S));
   // brazos
-  const colorBrazo = esTribu && nivel < 2 ? P.piel : colorArmadura;
+  const colorBrazo = berserker || (esTribu && nivel < 2) ? P.piel : colorArmadura;
   const balanceo = montado ? 0 : paso * 0.08 * S;
   forma(colorBrazo, 0.06, () => g.arc(V.brazoIzq * S + inclina, torsoY - 0.55 * S + balanceo, 0.15 * S, 0, Math.PI * 2));
   forma(colorBrazo, 0.06, () => g.arc(V.brazoDer * S + inclina, torsoY - 0.55 * S - balanceo, 0.15 * S, 0, Math.PI * 2));
@@ -298,7 +321,7 @@ function dibujarMuneco2D(o) {
   } else if (esTribu) {
     yelmo(colorYelmo, () => redondo(cx - r, cy - r - 0.04 * S, 2 * r, 0.6 * S, 0.3 * S)); g.fillStyle = P.pielAnimal; g.fillRect(cx - r - 0.03 * S, cy - 0.3 * S, 2 * r + 0.06 * S, 0.14 * S);
     if (cimera) for (const s of [-1, 1]) forma(P.lino, 0.04, () => { g.moveTo(cx + s * 0.3 * S, cy - 0.65 * S); g.lineTo(cx + s * 0.55 * S, cy - 0.75 * S); g.lineTo(cx + s * 0.62 * S, cy - 1.2 * S); g.lineTo(cx + s * 0.4 * S, cy - 0.85 * S); g.closePath(); });
-  } else if (esCruzado || (pesado && nivel >= 2 && montado) || (pesado && nivel >= 3)) {
+  } else if (esCruzado || caballero || (pesado && nivel >= 2 && montado) || (pesado && nivel >= 3)) {
     yelmo(colorYelmo, () => redondo(cx - r - 0.04 * S, cy - r - 0.08 * S, 2 * r + 0.08 * S, 2 * r + 0.1 * S, 0.3 * S));
     if (V.cara !== 'nuca') { g.fillStyle = P.contorno; g.fillRect(cx - 0.3 * S, cy - 0.02 * S, 0.6 * S, 0.08 * S); g.fillStyle = esCruzado ? colorSecundario : P.oro; g.fillRect(cx - 0.04 * S, cy - 0.4 * S, 0.08 * S, 0.5 * S); g.fillRect(cx - 0.18 * S, cy - 0.06 * S, 0.36 * S, 0.07 * S); }
     if (cimera) penacho((general ? 0.6 : 0.5) * S);
@@ -408,4 +431,107 @@ function dibujarCadaverMuneco(g, o) {
   if (portador) { g.save(); g.translate(-1.1 * S, cy - 0.72 * S); g.rotate(Math.PI / 2 + 0.1); dibujarEstandarteDeMano(g, { S, P, x: 0, y: 0, largo: 2.3 * S, blason, color, colorSecundario, espejo, haciaFuera: -1 }); g.restore(); return; }
   g.lineWidth = 0.1 * S; g.strokeStyle = P.contorno; g.lineCap = 'round'; g.beginPath(); g.moveTo(-0.3 * S, cy + 0.75 * S); g.lineTo(0.7 * S, cy + 0.85 * S); g.stroke();
   g.lineWidth = 0.05 * S; g.strokeStyle = P.hoja; g.beginPath(); g.moveTo(-0.3 * S, cy + 0.75 * S); g.lineTo(0.7 * S, cy + 0.85 * S); g.stroke();
+}
+
+/* Mangonel (redibujado el 2026-10-14): una máquina con volumen. Se modela en coordenadas propias (u hacia delante, v a su
+   derecha, h hacia arriba, en metros) y se proyecta a la vista isométrica del juego según la dirección, como los soldados:
+   x = u·cos a − v·sen a, y = (u·sen a + v·cos a)/2 − h. Cada pieza se dibuja de atrás adelante por su profundidad en pantalla.
+   Piezas: bastidor de dos vigas largas con travesaños sobre cuatro ruedas, dos montantes en A unidos por el eje, el haz de
+   torsión (cuerda enrollada) en el eje, el travesaño acolchado contra el que golpea el brazo, el brazo con la cazoleta y la
+   piedra, y dos sirvientes con la sobrevesta del bando (uno tensa la cuerda, otro carga la piedra).
+   Fotogramas: quieto (brazo atrás, armado) · golpe1-3 (el brazo bate hacia delante y rebota) · cadaver (máquina destrozada).
+   Mismas medidas de lienzo y ancla que los muñecos. */
+function dibujarMangonel(o) {
+  const S = o.S, P = PALETA_MUNECO, eq = EQUIPOS[o.equipo] || EQUIPOS[0];
+  const color = hexMuneco(eq.color), colorSecundario = hexMuneco(eq.colorSecundario);
+  const direccion = ((o.direccion % 8) + 8) % 8, a = direccion * Math.PI / 4, cosA = Math.cos(a), senA = Math.sin(a);
+  const ancho = Math.ceil(4.6 * S), alto = Math.ceil(5.8 * S), anclaX = ancho / 2, anclaY = 5.3 * S;
+  const canvas = document.createElement('canvas'); canvas.width = ancho; canvas.height = alto;
+  const g = canvas.getContext('2d'); g.translate(anclaX, anclaY);
+  const cadaver = o.fotograma === 'cadaver', fase = /^golpe[1-3]$/.test(o.fotograma) ? +o.fotograma.slice(5) : 0;
+  // proyección y profundidad (mayor = más cerca del espectador = se dibuja después)
+  const M = S * 1.18;                                          // la máquina, algo más grande que la escala de los muñecos
+  const px = (u, v, h) => (u * cosA - v * senA) * M, py = (u, v, h) => ((u * senA + v * cosA) * 0.5 - h) * M;
+  const prof = (u, v) => u * senA + v * cosA;
+  const piezas = [];
+  const pieza = (profundidad, dibujo) => piezas.push({ profundidad, dibujo });
+  const contorno = 0.07 * S;
+  const polilinea = (puntos, relleno, trazo) => { g.beginPath(); puntos.forEach(([u, v, h], k) => k ? g.lineTo(px(u, v, h), py(u, v, h)) : g.moveTo(px(u, v, h), py(u, v, h))); g.closePath(); g.fillStyle = relleno; g.fill(); g.lineWidth = trazo === undefined ? contorno : trazo; g.strokeStyle = P.contorno; g.lineJoin = 'round'; g.stroke(); };
+  // viga: segmento grueso con contorno y una franja de sombra en su mitad inferior
+  const viga = (p0, p1, grosor, relleno) => {
+    const x0 = px(...p0), y0 = py(...p0), x1 = px(...p1), y1 = py(...p1);
+    g.lineCap = 'round'; g.lineWidth = grosor * S + contorno; g.strokeStyle = P.contorno; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    g.lineWidth = grosor * S; g.strokeStyle = relleno || P.madera; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    g.lineWidth = grosor * S * 0.35; g.strokeStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.moveTo(x0, y0 + grosor * S * 0.3); g.lineTo(x1, y1 + grosor * S * 0.3); g.stroke();
+  };
+  // rueda: círculo en el plano (u, h) en v = v0, con radios y cubo
+  const rueda = (u0, v0, r) => {
+    const puntos = []; for (let k = 0; k < 20; k++) { const t = k / 20 * Math.PI * 2; puntos.push([u0 + Math.cos(t) * r, v0, r + Math.sin(t) * r]); }
+    polilinea(puntos, P.cueroOscuro);
+    g.strokeStyle = P.madera; g.lineWidth = 0.06 * S; g.beginPath();
+    for (let k = 0; k < 4; k++) { const t = k / 4 * Math.PI; g.moveTo(px(u0 + Math.cos(t) * r * 0.85, v0, r + Math.sin(t) * r * 0.85), py(u0 + Math.cos(t) * r * 0.85, v0, r + Math.sin(t) * r * 0.85)); g.lineTo(px(u0 - Math.cos(t) * r * 0.85, v0, r - Math.sin(t) * r * 0.85), py(u0 - Math.cos(t) * r * 0.85, v0, r - Math.sin(t) * r * 0.85)); }
+    g.stroke();
+    g.fillStyle = P.aceroOscuro; g.beginPath(); g.arc(px(u0, v0, r), py(u0, v0, r), 0.07 * S, 0, Math.PI * 2); g.fill();
+  };
+  const piedra = (u, v, h, r) => { const x = px(u, v, h), y = py(u, v, h); g.beginPath(); g.arc(x, y, r * S, 0, Math.PI * 2); g.fillStyle = '#8a857b'; g.fill(); g.lineWidth = contorno * 0.8; g.strokeStyle = P.contorno; g.stroke(); g.fillStyle = '#b0aa9e'; g.beginPath(); g.arc(x - r * S * 0.3, y - r * S * 0.3, r * S * 0.35, 0, Math.PI * 2); g.fill(); };
+  // sirviente de la máquina: muñeco sencillo con sobrevesta del bando y capacete; (u, v) de los pies; `brazos` = 'cuerda' | 'piedra'
+  const sirviente = (u, v, encarando, brazos) => {
+    const x = px(u, v, 0), y = py(u, v, 0), lado = Math.sin(encarando - a) < 0 ? -1 : 1, S = o.S * 0.88;   // hacia dónde mira en pantalla; algo más pequeños que la tropa
+    g.fillStyle = 'rgba(0,0,0,0.3)'; g.beginPath(); g.ellipse(x, y, 0.42 * S, 0.14 * S, 0, 0, Math.PI * 2); g.fill();
+    const forma = (relleno, dibujo) => { g.beginPath(); dibujo(); g.fillStyle = relleno; g.fill(); g.lineWidth = 0.055 * S; g.strokeStyle = P.contorno; g.lineJoin = 'round'; g.stroke(); };
+    for (const s of [-1, 1]) forma(P.cueroOscuro, () => g.roundRect(x + s * 0.17 * S - 0.12 * S, y - 0.5 * S, 0.24 * S, 0.5 * S, 0.08 * S));
+    forma(P.gambeson, () => g.roundRect(x - 0.4 * S, y - 1.35 * S, 0.8 * S, 0.9 * S, 0.26 * S));
+    forma(color, () => g.roundRect(x - 0.28 * S, y - 1.3 * S, 0.56 * S, 0.7 * S, 0.1 * S)); g.fillStyle = colorSecundario; g.fillRect(x - 0.28 * S, y - 0.95 * S, 0.56 * S, 0.1 * S);
+    if (brazos === 'piedra') { piedra(u, v, 1.05, 0.2); }
+    else { g.lineWidth = 0.05 * S; g.strokeStyle = P.lino; g.beginPath(); g.moveTo(x + lado * 0.35 * S, y - 0.95 * S); g.lineTo(x + lado * 0.9 * S, y - 1.15 * S); g.stroke(); }
+    forma(P.piel, () => g.arc(x, y - 1.6 * S, 0.3 * S, 0, Math.PI * 2));
+    forma(P.acero, () => { g.moveTo(x - 0.4 * S, y - 1.68 * S); g.quadraticCurveTo(x, y - 2.15 * S, x + 0.4 * S, y - 1.68 * S); g.closePath(); });
+  };
+  // ---- sombra de la máquina ----
+  g.fillStyle = 'rgba(0,0,0,0.32)'; g.beginPath();
+  [[-1.5, -0.95], [1.5, -0.95], [1.5, 0.95], [-1.5, 0.95]].forEach(([u, v], k) => k ? g.lineTo(px(u, v, 0), py(u, v, 0)) : g.moveTo(px(u, v, 0), py(u, v, 0))); g.closePath(); g.fill();
+  if (cadaver) {
+    // destrozada: bastidor hundido y torcido, un montante en pie y el otro caído, el brazo partido en el suelo, una rueda suelta
+    pieza(prof(-1.2, 0.7), () => rueda(-1.0, 0.75, 0.3)); pieza(prof(1.0, -0.75), () => rueda(1.0, -0.75, 0.3));
+    pieza(prof(0, -0.6), () => viga([-1.3, -0.6, 0.25], [1.3, -0.6, 0.1], 0.2)); pieza(prof(0, 0.6), () => viga([-1.3, 0.6, 0.05], [1.3, 0.7, 0.3], 0.2));
+    pieza(prof(-0.2, -0.5), () => viga([-0.2, -0.55, 0.25], [-0.1, -0.35, 1.3], 0.16)); pieza(prof(0.1, 0.5), () => viga([-0.2, 0.55, 0.2], [0.9, 1.1, 0.0], 0.16));
+    pieza(prof(0.6, 0), () => viga([-0.3, 0.1, 0.3], [0.9, 0.3, 0.0], 0.14)); pieza(prof(1.4, 0.2), () => viga([1.0, 0.3, 0.05], [1.9, 0.6, 0.0], 0.12));
+    pieza(prof(1.6, -0.6), () => { const puntos = []; for (let k = 0; k < 16; k++) { const t = k / 16 * Math.PI * 2; puntos.push([1.6 + Math.cos(t) * 0.3, -0.7 + Math.sin(t) * 0.3, 0.02]); } polilinea(puntos, P.cueroOscuro); });
+    pieza(prof(-1.6, 0.3), () => piedra(-1.6, 0.3, 0.2, 0.2)); pieza(prof(1.1, 1.0), () => piedra(1.1, 1.0, 0.16, 0.16));
+  } else {
+    const H = 0.35;                                             // alto del bastidor sobre el suelo (por las ruedas)
+    // ruedas
+    for (const [u, v] of [[-1.0, -0.78], [1.0, -0.78], [-1.0, 0.78], [1.0, 0.78]]) pieza(prof(u, v), () => rueda(u, v, 0.32));
+    // bastidor: vigas largas, travesaños y eje de las ruedas
+    for (const v of [-0.6, 0.6]) pieza(prof(0, v), () => viga([-1.35, v, H], [1.35, v, H], 0.2));
+    for (const u of [-1.1, 1.1]) pieza(prof(u, 0), () => viga([u, -0.65, H], [u, 0.65, H], 0.16));
+    // montantes en A (dos por lado) y eje del brazo entre ellos, con el haz de torsión
+    const EJE_U = -0.15, EJE_H = 1.0;
+    for (const v of [-0.55, 0.55]) {
+      pieza(prof(EJE_U - 0.45, v), () => viga([EJE_U - 0.5, v, H], [EJE_U, v * 0.75, EJE_H + 0.35], 0.15));
+      pieza(prof(EJE_U + 0.45, v), () => viga([EJE_U + 0.5, v, H], [EJE_U, v * 0.75, EJE_H + 0.35], 0.15));
+    }
+    pieza(prof(EJE_U, 0) + 0.01, () => viga([EJE_U, -0.45, EJE_H], [EJE_U, 0.45, EJE_H], 0.22, '#c9b27a'));          // haz de torsión (cuerda)
+    pieza(prof(EJE_U, 0) + 0.02, () => { g.lineWidth = 0.035 * S; g.strokeStyle = P.cueroOscuro; for (let k = -4; k <= 4; k++) { const v = k * 0.1; g.beginPath(); g.moveTo(px(EJE_U - 0.12, v, EJE_H + 0.08), py(EJE_U - 0.12, v, EJE_H + 0.08)); g.lineTo(px(EJE_U + 0.12, v + 0.05, EJE_H - 0.08), py(EJE_U + 0.12, v + 0.05, EJE_H - 0.08)); g.stroke(); } });
+    // travesaño acolchado delante (el tope del brazo), con el cuero del bando
+    pieza(prof(0.55, 0), () => viga([0.55, -0.5, EJE_H + 0.9], [0.55, 0.5, EJE_H + 0.9], 0.24, '#7a1a1f'));
+    for (const v of [-0.55, 0.55]) pieza(prof(0.55, v), () => viga([0.6, v, H], [0.55, v * 0.9, EJE_H + 0.9], 0.13));
+    // brazo: ángulo desde el eje (0 = horizontal hacia atrás, π/2 = vertical, >π/2 = hacia delante contra el tope)
+    const angulo = [0.22, 0.95, 1.75, 1.45][fase], LARGO = 1.9;
+    const puntaU = EJE_U - Math.cos(angulo) * LARGO, puntaH = EJE_H + Math.sin(angulo) * LARGO;
+    pieza(prof((EJE_U + puntaU) / 2, 0) + 0.03, () => {
+      viga([EJE_U, 0, EJE_H], [puntaU, 0, puntaH], 0.17);
+      // cazoleta en el extremo (y la piedra mientras no ha salido)
+      const cu = puntaU - Math.cos(angulo) * 0.12, ch = puntaH + Math.sin(angulo) * 0.12;
+      polilinea([[cu - 0.22, -0.22, ch - 0.05], [cu + 0.22, -0.22, ch - 0.05], [cu + 0.22, 0.22, ch - 0.05], [cu - 0.22, 0.22, ch - 0.05]], P.cueroOscuro, contorno * 0.8);
+      if (fase < 2) piedra(cu, 0, ch + 0.12, 0.24);
+      g.fillStyle = P.aceroOscuro; g.beginPath(); g.arc(px(EJE_U, 0, EJE_H), py(EJE_U, 0, EJE_H), 0.09 * S, 0, Math.PI * 2); g.fill();
+    });
+    // sirvientes: uno tensando la cuerda a un lado (en reposo), otro con una piedra detrás
+    pieza(prof(-0.2, 1.45), () => sirviente(-0.2, 1.45, a + Math.PI / 2, fase ? 'nada' : 'cuerda'));
+    pieza(prof(-2.05, -0.55), () => sirviente(-2.05, -0.55, a, 'piedra'));
+  }
+  piezas.sort((p, q) => p.profundidad - q.profundidad);
+  for (const p of piezas) p.dibujo();
+  return { canvas, anclaX, anclaY };
 }

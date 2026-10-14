@@ -54,7 +54,14 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   suelo.tint = clima.lluvia && clima.barro ? 0x9c9a88 : clima.barro ? 0xb4a888 : clima.lluvia ? 0xb8c2cc : 0xffffff;
   const capaLluvia = new PIXI.Graphics(); app.stage.addChild(capaLluvia);
   const gotasLluvia = clima.lluvia ? Array.from({ length: 260 }, () => ({ x: Math.random(), y: Math.random(), largo: 10 + Math.random() * 14, velocidad: 0.9 + Math.random() * 0.6 })) : [];
+  const coposNieve = clima.nieve ? Array.from({ length: 220 }, () => ({ x: Math.random(), y: Math.random(), radio: 1 + Math.random() * 1.8, velocidad: 0.08 + Math.random() * 0.1, fase: Math.random() * 6 })) : [];
   function animarLluvia(dt) {
+    if (coposNieve.length) {
+      // nieve: copos que caen despacio y se mecen (puramente visual, Math.random está bien aquí)
+      const w = app.renderer.width, h = app.renderer.height; capaLluvia.clear();
+      for (const p of coposNieve) { p.y += p.velocidad * dt; p.fase += dt * 1.5; if (p.y > 1.03) { p.y = -0.03; p.x = Math.random(); } capaLluvia.beginFill(0xffffff, 0.85).drawCircle((p.x + Math.sin(p.fase) * 0.006) * w, p.y * h, p.radio).endFill(); }
+      return;
+    }
     if (!gotasLluvia.length) return;
     const w = app.renderer.width, h = app.renderer.height;
     capaLluvia.clear().lineStyle(1, 0xdde6f0, 0.45);
@@ -135,7 +142,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   /* ----- gore: partículas de sangre en el aire, charcos bajo los cadáveres, heridas en los soldados, rastros y restos -----
      Todo cosmético: usa un azar propio y nunca sim.azar (las batallas en red necesitan la simulación idéntica en todos). */
   const azarGore = crearAleatorio(7);
-  const particulas = [];                                   // { x, y, z, vx, vy, vz, tam, vida }
+  const particulas = [];                                   // { x, y, z, vx, vy, vz, tam, vida, color?, polvo? }
   const capaParticulas = new PIXI.Graphics(); capaParticulas.zIndex = 1e9; capaEscena.addChild(capaParticulas);
   const sangria = new Float32Array(n), ultimoRastro = new Float32Array(n);
   const texturaHerida = (() => { const g = new PIXI.Graphics(); g.beginFill(0x7a0f14, 0.9); g.drawEllipse(0, 0, 7, 5); g.drawCircle(-6, 3, 3); g.drawCircle(5, -4, 2.5); g.endFill(); g.beginFill(0x4a070a, 0.8); g.drawEllipse(1, 1, 3.5, 2.5); g.endFill(); return app.renderer.generateTexture(g); })();
@@ -145,10 +152,19 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
       particulas.push({ x, y, z: z + azarGore.entre(-0.1, 0.2), vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, vz: azarGore.entre(1.2, 3.8) * (fuerza / 3), tam: azarGore.entre(0.05, 0.13), vida: 1.5 });
     }
   }
+  // impacto de una piedra de mangonel (2026-10-14): nube de polvo y terrones que saltan en todas direcciones, y un cráter en el suelo
+  function reventar(x, y) {
+    for (let k = 0; k < 42; k++) {
+      const ang = azarGore.entre(-Math.PI, Math.PI), v = azarGore.entre(1.5, 6.5), tierra = azarGore.numero() < 0.35;
+      particulas.push({ x, y, z: 0.1, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v * 0.7, vz: azarGore.entre(2.5, 7), tam: tierra ? azarGore.entre(0.12, 0.22) : azarGore.entre(0.25, 0.5), vida: tierra ? 1.3 : 0.9, color: tierra ? 0x4a3520 : 0x9a8c72, polvo: !tierra });
+    }
+    sangre.crater(x, y, azarGore);
+  }
   // llamado por la batalla con cada evento de sangre de la simulación
   function sangrar(evento) {
     const tipo = evento.tipo || 'golpe', rumbo = evento.rumbo || 0;
-    if (tipo === 'golpe') salpicar(evento.x, evento.y, evento.montado ? 1.4 : 1.0, rumbo, 5, 2.5, 0.7);
+    if (tipo === 'impacto') reventar(evento.x, evento.y);
+    else if (tipo === 'golpe') salpicar(evento.x, evento.y, evento.montado ? 1.4 : 1.0, rumbo, 5, 2.5, 0.7);
     else if (tipo === 'flecha') salpicar(evento.x, evento.y, 1.1, rumbo, 4, 1.8, 0.9);
     else if (tipo === 'atropello') salpicar(evento.x, evento.y, 0.9, rumbo, 16, 4.5, 1.1);
     else if (tipo === 'muerte') {
@@ -169,9 +185,9 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     for (let k = particulas.length - 1; k >= 0; k--) {
       const p = particulas[k];
       p.vz -= 9.8 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vida -= dt;
-      if (p.z <= 0 || p.vida <= 0) { sangre.gota(limitar(p.x, 0.5, CAMPO.ancho - 0.5), limitar(p.y, 0.5, CAMPO.alto - 0.5), p.tam * 1.6, azarGore.numero() < 0.4); particulas[k] = particulas[particulas.length - 1]; particulas.pop(); continue; }
+      if (p.z <= 0 || p.vida <= 0) { if (!p.color) sangre.gota(limitar(p.x, 0.5, CAMPO.ancho - 0.5), limitar(p.y, 0.5, CAMPO.alto - 0.5), p.tam * 1.6, azarGore.numero() < 0.4); particulas[k] = particulas[particulas.length - 1]; particulas.pop(); continue; }
       const radio = Math.max(0.8, p.tam * ESCALA * escalaMundo) / escalaMundo;
-      capaParticulas.beginFill(0x9a1218, 0.95).drawCircle(aPantallaX(p.x, p.y), aPantallaY(p.x, p.y, p.z), radio).endFill();
+      capaParticulas.beginFill(p.color || 0x9a1218, p.polvo ? 0.55 * Math.min(1, p.vida) : 0.95).drawCircle(aPantallaX(p.x, p.y), aPantallaY(p.x, p.y, p.z), p.polvo ? radio * (1.6 - p.vida * 0.6) : radio).endFill();
     }
   }
   const faseAndar = new Float32Array(n), golpeHasta = new Float32Array(n), ultimoEnfriamiento = new Float32Array(n);
@@ -180,9 +196,40 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     const sh = new PIXI.Sprite(texturaSombra); sh.anchor.set(0.5); sombras[i] = sh; capaSombras.addChild(sh);
     ultimoEnfriamiento[i] = sim.enfriamiento[i];
   }
+  // piedra de mangonel (2026-10-13): un canto gris en lugar de la flecha
+  const texturaPiedra = (() => { const g = new PIXI.Graphics(); g.lineStyle(1, 0x2a201a).beginFill(0x8a857b).drawCircle(0, 0, 0.32 * ESCALA).endFill(); g.lineStyle(0).beginFill(0xb0aa9e).drawCircle(-0.1 * ESCALA, -0.1 * ESCALA, 0.12 * ESCALA).endFill(); return app.renderer.generateTexture(g); })();
   const flechas = new Array(sim.maxFlechas);
   for (let f = 0; f < sim.maxFlechas; f++) { const s = new PIXI.Sprite(texturaFlecha); s.anchor.set(0, 0.5); s.visible = false; flechas[f] = s; capaEscena.addChild(s); }
   const banderas = sim.unidades.map(u => { const s = new PIXI.Sprite(texturaBandera[u.equipo]); s.anchor.set(0, 1); capaEscena.addChild(s); return s; });
+  /* Insignia del tipo de tropa junto al estandarte (2026-10-13, tras la prueba con amigos: costaba saber qué era cada unidad):
+     círculo oscuro con el borde del color del bando y el mismo glifo que las tarjetas (ICONOS_TIPO, js/juego/13-tarjetas.js),
+     a la izquierda del asta, cerca de lo alto. El glifo es un SVG que se rasteriza al cargarse (la textura se actualiza sola). */
+  const texturasInsignia = {};
+  // nivel: galones de veteranía debajo del círculo (2026-10-14, pedido por el usuario para leer la veteranía del enemigo);
+  // -1 = general (estrella). El lienzo es más alto que ancho: los galones en la franja de arriba (cielo libre junto al asta;
+  // debajo del círculo los tapaban las cabezas de la primera fila) y el círculo debajo
+  const ALTO_INSIGNIA = 124;
+  function texturaInsignia(clave, equipo, nivel) {
+    const nombre = clave + ':' + equipo + ':' + nivel; if (texturasInsignia[nombre]) return texturasInsignia[nombre];
+    const lado = 96, lienzo = document.createElement('canvas'); lienzo.width = lado; lienzo.height = ALTO_INSIGNIA;
+    const c = lienzo.getContext('2d'), color = '#' + ((EQUIPOS[equipo] && EQUIPOS[equipo].color) || 0x888888).toString(16).padStart(6, '0');
+    const cy = ALTO_INSIGNIA - lado / 2;
+    c.beginPath(); c.arc(lado / 2, cy, lado / 2 - 5, 0, Math.PI * 2); c.fillStyle = 'rgba(26,20,16,0.9)'; c.fill(); c.lineWidth = 7; c.strokeStyle = color; c.stroke();
+    // galones (uno por nivel, de leva a veteranos) o estrella del general, con borde oscuro para que se lean sobre la hierba
+    c.lineJoin = 'round'; c.lineWidth = 5; c.strokeStyle = '#1a1410'; c.fillStyle = '#e4bf4a';
+    const yG = 14;
+    if (nivel < 0) { c.beginPath(); for (let k = 0; k < 10; k++) { const r = k % 2 ? 5 : 12, a = -Math.PI / 2 + k * Math.PI / 5; c.lineTo(lado / 2 + Math.cos(a) * r, yG + Math.sin(a) * r); } c.closePath(); c.stroke(); c.fill(); }
+    else { const n = nivel + 1, paso = 16, x0 = lado / 2 - (n - 1) * paso / 2; for (let k = 0; k < n; k++) { const x = x0 + k * paso; c.beginPath(); c.moveTo(x - 7, yG + 6); c.lineTo(x, yG - 6); c.lineTo(x + 7, yG + 6); c.lineTo(x, yG); c.closePath(); c.stroke(); c.fill(); } }
+    const textura = PIXI.Texture.from(lienzo);
+    const glifo = typeof ICONOS_TIPO !== 'undefined' && ICONOS_TIPO[clave];
+    if (glifo) {
+      const imagen = new Image();
+      imagen.onload = () => { c.drawImage(imagen, lado * 0.2, cy - lado * 0.3, lado * 0.6, lado * 0.6); textura.baseTexture.update(); };
+      imagen.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${lado}" height="${lado}" color="#f4f0e6">${glifo}</svg>`);
+    }
+    return texturasInsignia[nombre] = textura;
+  }
+  const insignias = sim.unidades.map(u => { const s = new PIXI.Sprite(texturaInsignia(u.esGeneral ? 'general' : TIPOS[u.tipo].clave, u.equipo, u.esGeneral ? -1 : (u.nivel || 0))); s.anchor.set(1, (ALTO_INSIGNIA - 48) / ALTO_INSIGNIA); capaEscena.addChild(s); return s; });
 
   /* ----- cámara y entrada ----- */
   const control = { arrastrando: false, ultimoX: 0, ultimoY: 0 };
@@ -299,7 +346,12 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   vista.addEventListener('wheel', e => { e.preventDefault(); const factor = e.deltaY > 0 ? 0.9 : 1.1; const nueva = limitar(mundo.scale.x * factor, 0.08, 5); const rect = vista.getBoundingClientRect(); const mx = e.clientX - rect.left, my = e.clientY - rect.top; mundo.x = mx - (mx - mundo.x) * (nueva / mundo.scale.x); mundo.y = my - (my - mundo.y) * (nueva / mundo.scale.x); mundo.scale.set(nueva); }, { passive: false });
   window.addEventListener('resize', encuadrar);
   // desplazamiento con las flechas (A, C y D son órdenes, así que no hay WASD)
-  function desplazarTeclado() { const v = 14; if (teclas.arrowup) mundo.y += v; if (teclas.arrowdown) mundo.y -= v; if (teclas.arrowleft) mundo.x += v; if (teclas.arrowright) mundo.x -= v; }
+  // cámara con WASD (como en Total War) o con las flechas; con Ctrl pulsado no se mueve (Ctrl+A selecciona todo)
+  function desplazarTeclado() {
+    const v = 14, wasd = !teclas.control;
+    if (teclas.arrowup || (wasd && teclas.w)) mundo.y += v; if (teclas.arrowdown || (wasd && teclas.s)) mundo.y -= v;
+    if (teclas.arrowleft || (wasd && teclas.a)) mundo.x += v; if (teclas.arrowright || (wasd && teclas.d)) mundo.x -= v;
+  }
   window.controlCamaraIso = { mundo, encuadrar, aPantallaX, aPantallaY };   // gancho para las pruebas sin cabeza (mover la cámara)
 
   /* ----- destinos de las unidades propias: con Alt pulsado y nada seleccionado ----- */
@@ -521,6 +573,8 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
       const s = flechas[f], estado = sim.flechaEstado[f];
       if (estado === 0) { if (s.visible) s.visible = false; continue; }
       s.visible = true;
+      const piedra = sim.flechaArea[f] > 0, texturaProyectil = piedra ? texturaPiedra : texturaFlecha;
+      if (s.texture !== texturaProyectil) { s.texture = texturaProyectil; s.anchor.set(piedra ? 0.5 : 0, 0.5); }
       const giro = girada ? -1 : 1, dx = (sim.flechaX1[f] - sim.flechaX0[f]) * giro, dy = (sim.flechaY1[f] - sim.flechaY0[f]) * giro;
       const anguloPantalla = Math.atan2((dx + dy) * SIN30, (dx - dy) * COS30);
       if (estado === 1) {
@@ -545,6 +599,10 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
       const bote = seleccion.includes(u) ? Math.abs(Math.sin(tiempoRender * 7)) * 0.6 * ESCALA : 0;
       s.scale.set(u.esGeneral ? 1.5 : 1);          // el estandarte del general es mayor
       s.position.set(aPantallaX(u.origenX, u.origenY), aPantallaY(u.origenX, u.origenY) - bote); s.zIndex = profundidad(u.origenX, u.origenY) + 0.3;
+      // insignia del tipo, a la izquierda del asta (con el estandarte del general, que es mayor, también crece)
+      const insignia = insignias[idx], escalaBandera = u.esGeneral ? 1.5 : 1;
+      insignia.visible = s.visible; insignia.width = Math.max(1.8 * ESCALA * escalaBandera, 22 / mundo.scale.x); insignia.height = insignia.width * ALTO_INSIGNIA / 96;   // al alejar la cámara, nunca menos de 22 px
+      insignia.position.set(s.x - 0.2 * ESCALA, s.y - 3.5 * ESCALA * escalaBandera); insignia.zIndex = s.zIndex + 0.01;
     });
     // cursor según lo que hay bajo el ratón (lo decide el juego)
     if (opciones.cursor && control.ratonX !== undefined) { const [mx, my] = pantallaAMundo(control.ratonX, control.ratonY); const c = opciones.cursor(mx, my, control.ratonX, control.ratonY); if (c !== vista.style.cursor) vista.style.cursor = c; }

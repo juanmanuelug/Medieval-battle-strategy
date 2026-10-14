@@ -1,6 +1,6 @@
 # Servidor multijugador de Batallas medievales
 
-Paso 1 del multijugador: **lobby con salas y matchmaking**. Es un servidor WebSocket pequeño en Node.js, sin base de datos (todo vive en memoria mientras está encendido). Además sirve los archivos del juego, para que otro jugador de tu red no tenga que copiarlos (solo lo que el juego carga, con una lista blanca en `servidor-lobby.js` (`RUTAS_PUBLICAS`): `juego.html`, los CSS, `js/` sin `js/retirado/`, `disenador/`, `figuras/` y el arte de `arte/`. Nunca la carpeta `servidor/`, el README, `tools/`, las capturas ni nada fuera de la carpeta del juego. Si el juego empieza a cargar un archivo nuevo de otra carpeta, hay que añadirlo a la lista).
+Paso 1 del multijugador: **lobby con salas y matchmaking**. Es un servidor WebSocket pequeño en Node.js, sin base de datos (todo vive en memoria mientras está encendido). Además sirve los archivos del juego, para que otro jugador de tu red no tenga que copiarlos (solo lo que el juego carga, con una lista blanca en `servidor-lobby.js` (`RUTAS_PUBLICAS`): `juego.html`, los CSS, `js/`, `disenador/`, `figuras/` y el arte de `arte/`. Nunca la carpeta `servidor/`, el README, `tools/`, las capturas ni nada fuera de la carpeta del juego. Si el juego empieza a cargar un archivo nuevo de otra carpeta, hay que añadirlo a la lista).
 
 ## Arrancarlo
 

@@ -64,7 +64,7 @@ function iniciarPantallaMenu() {
 elementoListo(() => {
   elemento('#btn-inicio-nuevo').addEventListener('click', () => mostrar('reino'));
   elemento('#btn-inicio-continuar').addEventListener('click', () => { iniciarPantallaMenu(); mostrar('menu'); });
-  elemento('#btn-inicio-borrar').addEventListener('click', () => { if (confirm('¿Borrar el reino guardado y empezar de cero?')) { borrarReino(); reino = null; blasonImportado = null; location.reload(); } });
+  elemento('#btn-inicio-borrar').addEventListener('click', () => { if (confirm(tr('¿Borrar el reino guardado y empezar de cero?'))) { borrarReino(); reino = null; blasonImportado = null; location.reload(); } });
   const irARama = modo => { modoBatalla = modo; iniciarPantallaRama(); mostrar('rama'); };
   elemento('#btn-menu-batalla').addEventListener('click', () => irARama('normal'));
   elemento('#btn-menu-personalizada').addEventListener('click', () => irARama('personalizada'));
@@ -148,6 +148,9 @@ function iniciarPantallaPersonalizada() {
   const selectorClima = elemento('#sel-clima');
   selectorClima.replaceChildren(...[['azar', 'Al azar']].concat(Object.entries(CLIMAS).map(([k, c]) => [k, c.nombre])).map(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; }));
   selectorClima.value = config.clima || 'azar';
+  const selectorMapa = elemento('#sel-mapa');
+  selectorMapa.replaceChildren(...[['azar', 'Al azar']].concat(Object.entries(TIPOS_MAPA).map(([k, m]) => [k, m.nombre])).map(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; if (TIPOS_MAPA[v]) o.title = TIPOS_MAPA[v].descripcion; return o; }));
+  selectorMapa.value = config.mapa || 'azar';
   pintarTropasPersonalizadas();
 }
 function pintarTropasPersonalizadas() {
@@ -176,8 +179,9 @@ elementoListo(() => {
   elemento('#personalizada-ejercito').addEventListener('click', e => { const b = e.target.closest('.btn-quitar-ia'); if (!b) return; const ejercito = configuracionPersonalizada().ejercito; const i = ejercito.findIndex(x => x.tipo === b.dataset.tipo && x.nivel === +b.dataset.nivel); if (i >= 0) ejercito.splice(i, 1); guardarReino(reino); pintarResumenPersonalizado(); });
   elemento('#btn-personalizada-vaciar').addEventListener('click', () => { configuracionPersonalizada().ejercito = []; guardarReino(reino); pintarResumenPersonalizado(); });
   elemento('#btn-personalizada-volver').addEventListener('click', () => { iniciarPantallaTienda(); mostrar('tienda'); });
-  elemento('#btn-personalizada-batalla').addEventListener('click', () => { const config = configuracionPersonalizada(); if (config.ejercito.length) empezarBatalla({ ramaIA: config.rama, ejercitoIA: config.ejercito.slice(), clima: config.clima && config.clima !== 'azar' ? config.clima : undefined }); });
+  elemento('#btn-personalizada-batalla').addEventListener('click', () => { const config = configuracionPersonalizada(); if (config.ejercito.length) empezarBatalla({ ramaIA: config.rama, ejercitoIA: config.ejercito.slice(), clima: config.clima && config.clima !== 'azar' ? config.clima : undefined, mapa: config.mapa && config.mapa !== 'azar' ? config.mapa : undefined }); });
   elemento('#sel-clima').addEventListener('change', e => { configuracionPersonalizada().clima = e.target.value; guardarReino(reino); });
+  elemento('#sel-mapa').addEventListener('change', e => { configuracionPersonalizada().mapa = e.target.value; guardarReino(reino); });
 });
 
 /* ----- pantalla 4: batalla ----- */
@@ -233,7 +237,7 @@ async function empezarBatalla(personalizada) {
   const efectos = efectosGeneral(reino);
   marcadorInicial = null;
   batalla = iniciarBatalla({
-    reino, ramaIA, ejercitoIA, dificultad: reino.dificultad, actitud: reino.actitudIA || 'ofensiva', contenedor: elemento('#escenario'), texturasBandera: texturas, arte, efectosGeneral: efectos, clima: personalizada && personalizada.clima,
+    reino, ramaIA, ejercitoIA, dificultad: reino.dificultad, actitud: reino.actitudIA || 'ofensiva', contenedor: elemento('#escenario'), texturasBandera: texturas, arte, efectosGeneral: efectos, clima: personalizada && personalizada.clima, mapa: personalizada && personalizada.mapa,
     alActualizarHud: actualizarHudBatalla,
     alTerminar: resultado => {
       if (resultado.victoria) reino.victorias++; else reino.derrotas++;
@@ -256,7 +260,7 @@ async function empezarBatalla(personalizada) {
       if (resultado.mapa) dibujarMapaBatalla(elemento('#mapa-batalla'), resultado.mapa, c0, c1);
     },
   });
-  elemento('#hud-batalla-titulo').insertAdjacentHTML('beforeend', ` · <span class="clima" title="${textoEsc(batalla.clima.descripcion || '')}">${textoEsc(batalla.clima.nombre || batalla.clima.tipo)}</span><span id="hud-aviso-actitud"></span>`);
+  elemento('#hud-batalla-titulo').insertAdjacentHTML('beforeend', ` · <span class="clima" title="${textoEsc(batalla.clima.descripcion || '')}">${textoEsc(batalla.clima.nombre || batalla.clima.tipo)}</span>${batalla.mapa ? ` · <span class="clima" title="${textoEsc(batalla.mapa.descripcion)}">${textoEsc(batalla.mapa.nombre)}</span>` : ''}<span id="hud-aviso-actitud"></span>`);
   elemento('#marcador-jugador-nombre').textContent = reino.nombre; elemento('#marcador-enemigo-nombre').textContent = RAMAS[ramaIA].nombre;
   // el orden de las tarjetas se guarda en el reino (por índice en el ejército; la guardia es «g») para las próximas batallas
   montarBarraUnidades(ordenarTarjetas(batalla.unidadesJugador), unidades => { reino.ordenTarjetas = unidades.map(claveTarjeta); guardarReino(reino); });
@@ -333,7 +337,6 @@ function dibujarMapaBatalla(lienzo, mapa, colorPropio, colorEnemigo, equipoPropi
   // el jugador de la derecha lo ve girado 180°, como el campo (se giran las coordenadas, no los textos)
   const girada = propio === 1;
   const X = x => (girada ? CAMPO.ancho - x : x) * escala, Y = y => (girada ? CAMPO.alto - y : y) * escala;
-  const hex = n => '#' + (n >>> 0).toString(16).padStart(6, '0');
   c.clearRect(0, 0, lienzo.width, lienzo.height);
   if (mapa.suelo) { c.save(); if (girada) { c.translate(CAMPO.ancho * escala, CAMPO.alto * escala); c.scale(-1, -1); } c.drawImage(mapa.suelo, 0, 0, CAMPO.ancho * escala, CAMPO.alto * escala); c.restore(); }
   // muertos: puntos por bando
@@ -391,12 +394,21 @@ function pintarPanelSeleccion(seleccion) {
   const nombreOrden = { formar: 'alto', mover: 'moviéndose', avanzar: 'atacando', atacar: 'atacando', cargar: 'cargando', disparar: 'disparando', huir: 'huyendo' };
   const textoOrden = u => (u.retirada ? 'en retirada ordenada' : u.trabada ? 'en cuerpo a cuerpo' : (nombreOrden[u.orden] || u.orden)) + ((!u.trabada && (u.orden === 'mover' || u.orden === 'avanzar' || u.orden === 'atacar' || u.orden === 'disparar')) ? (u.marcha === 'correr' ? ' a la carrera' : ' al paso') : '');
   const textoMunicion = u => TIPOS[u.tipo].alcanceTiro ? (u.sinMunicion ? ' · sin flechas (cuerpo a cuerpo)' : ' · ' + u.municion + ' andanadas') : '';
-  html('#hud-seleccion', `<div class="unidad-sel"><strong>${seleccion.length === 1 ? textoEsc(seleccion[0].nombre) : seleccion.length + ' unidades'}</strong><span>${seleccion.reduce((s, u) => s + u.vivos, 0)} soldados</span></div>` +
-    (seleccion.length <= 6 ? seleccion.map(u => `<div class="unidad-sel"><span>${textoEsc(TIPOS[u.tipo].nombre)} ${u.esGeneral ? '★' : galones(u.nivel || 0)}</span><span>${u.vivos}/${u.total} · ${textoMoral(u)} · fatiga ${Math.round(u.fatiga * 100)} % · cohesión ${Math.round(u.cohesion)} %${textoMunicion(u)} · ${textoOrden(u)} · ${FORMACIONES[u.formacion.clave].nombre.toLowerCase()}${batalla && batalla.sim.terreno ? ' · ' + NOMBRE_TERRENO[batalla.sim.terreno.tipoEn(u.centroX, u.centroY)] : ''}</span></div>`).join('') : ''));
+  // resumen de una línea; el detalle de cada unidad (moral con sus factores, fatiga, cohesión, orden, formación, terreno) va
+  // en el título, al pasar el ratón (2026-10-13: el panel lateral con todo el texto tapaba la batalla)
+  const detalleUnidad = u => `${u.nombre}${u.esGeneral ? ' ★' : ''}: ${u.vivos}/${u.total} · moral ${Math.round(u.moral)}${(u.factoresMoral || []).length ? ' (' + u.factoresMoral.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 3).map(f => f[0] + ' ' + (f[1] > 0 ? '+' : '−') + Math.abs(f[1])).join(', ') + ')' : ''} · fatiga ${Math.round(u.fatiga * 100)} % · cohesión ${Math.round(u.cohesion)} %${textoMunicion(u)} · ${textoOrden(u)} · ${FORMACIONES[u.formacion.clave].nombre.toLowerCase()}${batalla && batalla.sim.terreno ? ' · ' + NOMBRE_TERRENO[batalla.sim.terreno.tipoEn(u.centroX, u.centroY)] : ''}`;
+  const resumen = seleccion.length === 1
+    ? `<strong>${textoEsc(TIPOS[seleccion[0].tipo].nombre)}</strong> ${seleccion[0].vivos}/${seleccion[0].total} · ${textoMoral(seleccion[0]).replace(/ title="[^"]*"/, '')} · ${textoOrden(seleccion[0])}`
+    : `<strong>${seleccion.length} unidades</strong> · ${seleccion.reduce((s, u) => s + u.vivos, 0)} soldados`;
+  html('#hud-seleccion', resumen);
+  elemento('#hud-seleccion').title = seleccion.map(detalleUnidad).join('\n');
+  // la franja va justo encima de la barra de tarjetas, sea cual sea su alto
+  const barra = elemento('#barra-unidades'); if (barra) document.documentElement.style.setProperty('--alto-barra', (barra.offsetHeight + 16) + 'px');
   const hayJinetes = seleccion.some(u => u.stats.montado), hayArqueros = seleccion.some(u => u.stats.alcanceTiro);
-  for (const b of document.querySelectorAll('#panel-ordenes button[data-orden]')) b.disabled = (b.dataset.orden === 'cargar' && !hayJinetes) || (b.dataset.orden === 'disparar' && !hayArqueros);
+  // las órdenes que no sirven para la selección no salen (franja compacta): cargar sin jinetes, disparar sin tiradores
+  for (const b of document.querySelectorAll('#panel-ordenes button[data-orden]')) { b.disabled = (b.dataset.orden === 'cargar' && !hayJinetes) || (b.dataset.orden === 'disparar' && !hayArqueros); b.hidden = b.disabled; }
   const gruposSeleccion = batalla && batalla.grupoDe ? [...new Set(seleccion.map(u => batalla.grupoDe(u)).filter(Boolean))] : [];
-  const botonDesagrupar = elemento('#btn-desagrupar'); if (botonDesagrupar) botonDesagrupar.disabled = !gruposSeleccion.length;
+  const botonDesagrupar = elemento('#btn-desagrupar'); if (botonDesagrupar) { botonDesagrupar.disabled = !gruposSeleccion.length; botonDesagrupar.hidden = !gruposSeleccion.length; }
   // escaramuza: el botón solo aparece con arqueros a caballo; encendido (dorado) si todos la tienen activada
   const escaramuceadores = seleccion.filter(u => u.stats.disparaEnMovimiento), botonEscaramuza = elemento('#btn-escaramuza');
   if (botonEscaramuza) { botonEscaramuza.hidden = !escaramuceadores.length; const activa = escaramuceadores.length && escaramuceadores.every(u => u.escaramuza); botonEscaramuza.classList.toggle('activa', !!activa); botonEscaramuza.innerHTML = 'Escaramuza: ' + (activa ? 'sí' : 'no') + ' <kbd>E</kbd>'; }
@@ -433,8 +445,8 @@ elementoListo(() => {
   window.addEventListener('keydown', e => { if (!batalla) return; if (e.key === 'F1' || (e.key === '?' && e.target.tagName !== 'INPUT')) { e.preventDefault(); alternarAyuda(); } else if (e.key === 'Escape' && !elemento('#ayuda-completa').classList.contains('oculto')) alternarAyuda(); });
   elemento('#btn-r-revancha').addEventListener('click', () => { if (ultimaBatalla) empezarBatalla({ ramaIA: ultimaBatalla.ramaIA, ejercitoIA: ultimaBatalla.ejercitoIA.map(e => Object.assign({}, e)) }); else { iniciarPantallaTienda(); mostrar('tienda'); } });
   elemento('#btn-b-rendirse').addEventListener('click', () => {
-    if (batalla && batalla.enRed) { if (confirm('¿Rendirte? Tu rival gana la batalla.')) batalla.rendirse(); return; }
-    if (batalla && confirm('¿Retirarse del campo? Cuenta como derrota.')) { batalla.detener(); batalla = null; reino.derrotas++; guardarReino(reino); iniciarPantallaMenu(); mostrar('menu'); } });
+    if (batalla && batalla.enRed) { if (confirm(tr('¿Rendirte? Tu rival gana la batalla.'))) batalla.rendirse(); return; }
+    if (batalla && confirm(tr('¿Retirarse del campo? Cuenta como derrota.'))) { batalla.detener(); batalla = null; reino.derrotas++; guardarReino(reino); iniciarPantallaMenu(); mostrar('menu'); } });
   elemento('#btn-r-tienda').addEventListener('click', () => { iniciarPantallaTienda(); mostrar('tienda'); });
   elemento('#btn-r-sala').addEventListener('click', () => { iniciarPantallaMultijugador(); mostrar('multijugador'); });
 });

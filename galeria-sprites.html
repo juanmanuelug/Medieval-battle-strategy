@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galería de sprites · Batallas medievales</title>
+<link rel="stylesheet" href="estilo.css">
+<style>
+  body { background: #2a3320; color: #e8e4d8; margin: 0; padding: 16px; font-family: system-ui, sans-serif; }
+  h1 { font-size: 1.3rem; margin: 0 0 8px; }
+  .controles { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .controles label { display: flex; gap: 6px; align-items: center; }
+  canvas { display: block; max-width: 100%; border: 1px solid #5a6a3e; border-radius: 6px; }
+  .nota { color: #b8b4a4; font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<h1>Galería de sprites por rama y nivel</h1>
+<p class="nota">Filas: leva, milicia, hombres de armas, veteranos y general (en la infantería cuerpo a cuerpo, la última fila es el portador del estandarte). Columnas: cada tipo de tropa en las direcciones elegidas. Colores y blasón por defecto de la rama (en la batalla se usa el blasón del reino).</p>
+<svg id="canvas" class="oculto" style="display:none" xmlns="http://www.w3.org/2000/svg"></svg>
+<div class="controles">
+  <label>Rama <select id="sel-rama"></select></label>
+  <label>Direcciones <select id="sel-direcciones"><option value="2,3">S y SW</option><option value="2">S (de frente)</option><option value="4">W (perfil)</option><option value="6">N (de espaldas)</option><option value="0,1,2,3,4,5,6,7">las ocho</option></select></label>
+  <label>Fotograma <select id="sel-fotograma"><option value="quieto">quieto</option><option value="paso1">paso 1</option><option value="paso2">paso 2</option><option value="paso3">paso 3</option><option value="paso4">paso 4</option><option value="golpe1">golpe 1 (armar)</option><option value="golpe2">golpe 2 (golpear)</option><option value="golpe3">golpe 3 (recoger)</option><option value="cadaver">cadáver</option><option value="ciclo">ciclo animado</option></select></label>
+  <label>Zoom <select id="sel-zoom"><option value="1">1×</option><option value="1.5">1,5×</option><option value="2" selected>2×</option><option value="3">3×</option></select></label>
+</div>
+<div id="lienzo"></div>
+<script src="disenador/js/00-utilidades-base.js"></script>
+<script src="disenador/js/01-catalogo-de-formas.js"></script>
+<script src="disenador/js/02-catalogo-de-patrones-particiones-y-pieza.js"></script>
+<script src="disenador/js/03c-indice-figuras.js"></script>
+<script src="disenador/js/03-catalogo-de-simbolos-y-figuras.js"></script>
+<script src="disenador/js/03b-ordenes-militares.js"></script>
+<script src="disenador/puente.js"></script>
+<script src="disenador/js/05-render-svg.js"></script>
+<script src="js/00-aleatorio-y-utilidades.js"></script>
+<script src="js/01-datos-unidades.js"></script>
+<script src="js/sprites-munecos.js"></script>
+<script src="js/juego/07-ramas-y-niveles.js"></script>
+<script>
+(() => {
+  const selectorRama = document.getElementById('sel-rama');
+  for (const [clave, rama] of Object.entries(RAMAS)) { const opcion = document.createElement('option'); opcion.value = clave; opcion.textContent = rama.nombre; selectorRama.appendChild(opcion); }
+  const lienzo = document.createElement('canvas'); document.getElementById('lienzo').replaceChildren(lienzo);
+  let blasonActual = null, ramaBlason = null;
+  async function pintar(fotogramaForzado) {
+    const rama = selectorRama.value;
+    const direcciones = document.getElementById('sel-direcciones').value.split(',').map(Number);
+    const fotograma = fotogramaForzado || document.getElementById('sel-fotograma').value;
+    const zoom = Number(document.getElementById('sel-zoom').value);
+    const colores = RAMAS[rama].colores.map(h => parseInt(h.slice(1), 16));
+    if (ramaBlason !== rama) { ramaBlason = rama; try { blasonActual = await blasonParaSprites(PuenteDisenador.blasonPorDefecto(RAMAS[rama].colores[0], RAMAS[rama].colores[1], RAMAS[rama].simbolo)); } catch (e) { blasonActual = null; } }
+    EQUIPOS[0].color = colores[0]; EQUIPOS[0].colorSecundario = colores[1]; EQUIPOS[0].blason = blasonActual;
+    const S = 20 * zoom, pasoFila = 4.2 * S, anchoAPie = 2 * S, anchoMontado = 2.8 * S;
+    const anchoTotal = TIPOS.reduce((suma, datos) => suma + direcciones.length * (datos.montado ? anchoMontado : anchoAPie), 0) + S;
+    const niveles = [0, 1, 2, 3, 'general'];
+    lienzo.width = anchoTotal; lienzo.height = niveles.length * pasoFila + S;
+    const c = lienzo.getContext('2d'); c.fillStyle = '#4a6a2e'; c.fillRect(0, 0, lienzo.width, lienzo.height);
+    let x = S;
+    for (const datos of TIPOS) {
+      for (const direccion of direcciones) {
+        niveles.forEach((nivel, fila) => {
+          // el general en la fila 5; en la infantería cuerpo a cuerpo esa fila muestra al portador del estandarte
+          const portador = nivel === 'general' && !datos.montado && !datos.alcanceTiro;
+          const dibujo = dibujarMuneco2D({ equipo: 0, datos, direccion, fotograma, S, rama, nivel: nivel === 'general' ? (portador ? 2 : 3) : nivel, general: nivel === 'general' && !portador, portador });
+          c.drawImage(dibujo.canvas, x - dibujo.anclaX, (fila + 1) * pasoFila - 0.5 * S - dibujo.anclaY);
+        });
+        x += datos.montado ? anchoMontado : anchoAPie;
+      }
+    }
+  }
+  const CICLO = ['paso1', 'paso2', 'paso3', 'paso4', 'paso1', 'paso2', 'paso3', 'paso4', 'quieto', 'golpe1', 'golpe2', 'golpe3', 'quieto'];
+  let indiceCiclo = 0, temporizador = null;
+  function pintarSegunModo() {
+    clearInterval(temporizador); temporizador = null;
+    if (document.getElementById('sel-fotograma').value === 'ciclo') { temporizador = setInterval(() => { indiceCiclo = (indiceCiclo + 1) % CICLO.length; pintar(CICLO[indiceCiclo]); }, 140); pintar(CICLO[indiceCiclo]); }
+    else pintar();
+  }
+  for (const id of ['sel-rama', 'sel-direcciones', 'sel-fotograma', 'sel-zoom']) document.getElementById(id).addEventListener('change', pintarSegunModo);
+  pintarSegunModo();
+})();
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@
    `simbolo` es la clave de figura del diseñador para el blasón por defecto de la rama. */
 const RAMAS = {
   cristiano: { nombre: 'Reino cristiano', descripcion: 'Caballería pesada de caballeros: más dura y más dañina, y algo más barata. Infantería pesada sólida.', colores: ['#b3202c', '#d9a92c'], simbolo: 'crossPattee', moral: 1.0,
-    bonificaciones: { caballeriaPesada: { vida: 1.15, dano: 1.15, precio: 0.9 }, infanteriaPesada: { vida: 1.05 } },
+    bonificaciones: { caballeriaPesada: { vida: 1.15, dano: 1.15, precio: 0.9 }, caballeros: { vida: 1.15, dano: 1.15 }, infanteriaPesada: { vida: 1.05 } },
     ventajas: ['Caballería +15 % vida y daño, −10 % precio', 'Infantería pesada +5 % vida'] },
   ortodoxo: { nombre: 'Reino ortodoxo', descripcion: 'Herederos de Bizancio: arqueros disciplinados y baratos, infantería pesada resistente.', colores: ['#6b2d6e', '#d9a92c'], simbolo: 'crossGreek', moral: 1.0,
     bonificaciones: { arqueros: { dano: 1.2, precio: 0.85 }, infanteriaPesada: { vida: 1.1 } },
@@ -32,21 +32,29 @@ const TROPA = {
   lanceros: { precio: 10, tamano: 40, rama: 'infanteria' },
   arqueros: { precio: 12, tamano: 30, rama: 'arqueros' },
   caballeriaPesada: { precio: 36, tamano: 20, rama: 'caballeria' },
-  // exclusivas: solo las ramas que las listan en RAMAS[rama].exclusivas
-  caballeriaLigera: { precio: 22, tamano: 24, rama: 'caballeria', exclusiva: true },
+  // comunes a todas las ramas desde el 2026-10-13 (antes, exclusivas de algunas)
+  caballeriaLigera: { precio: 22, tamano: 24, rama: 'caballeria' },
+  ballesteros: { precio: 15, tamano: 30, rama: 'arqueros' },
+  // exclusivas: una por rama, ligada a su ventaja (2026-10-13, tras la prueba con amigos); solo las ramas que las listan en
+  // RAMAS[rama].exclusivas
+  // artillería común: el precio es por máquina (3 por unidad); el +20 % de guerreros de las tribus no cuenta para las máquinas
+  mangoneles: { precio: 190, tamano: 3, rama: 'artilleria' },
   arquerosACaballo: { precio: 30, tamano: 20, rama: 'arqueros', exclusiva: true },
-  ballesteros: { precio: 15, tamano: 30, rama: 'arqueros', exclusiva: true },
+  caballeros: { precio: 46, tamano: 20, rama: 'caballeria', exclusiva: true },   // tropa de lujo: ver medir_exclusivas.js
+  guardiaVarega: { precio: 20, tamano: 30, rama: 'infanteria', exclusiva: true },
+  templarios: { precio: 22, tamano: 30, rama: 'infanteria', exclusiva: true },
+  berserkers: { precio: 11, tamano: 36, rama: 'infanteria', exclusiva: true },
 };
-RAMAS.cristiano.exclusivas = ['ballesteros'];
-RAMAS.ortodoxo.exclusivas = ['ballesteros'];
-RAMAS.cruzado.exclusivas = ['ballesteros'];
-RAMAS.musulman.exclusivas = ['caballeriaLigera', 'arquerosACaballo'];
-RAMAS.tribus.exclusivas = ['caballeriaLigera', 'arquerosACaballo'];
-RAMAS.cristiano.ventajas.push('Exclusiva: ballesteros');
-RAMAS.ortodoxo.ventajas.push('Exclusiva: ballesteros');
-RAMAS.cruzado.ventajas.push('Exclusiva: ballesteros');
-RAMAS.musulman.ventajas.push('Exclusivas: caballería ligera y arqueros a caballo');
-RAMAS.tribus.ventajas.push('Exclusivas: caballería ligera y arqueros a caballo');
+RAMAS.cristiano.exclusivas = ['caballeros'];
+RAMAS.ortodoxo.exclusivas = ['guardiaVarega'];
+RAMAS.cruzado.exclusivas = ['templarios'];
+RAMAS.musulman.exclusivas = ['arquerosACaballo'];
+RAMAS.tribus.exclusivas = ['berserkers'];
+RAMAS.cristiano.ventajas.push('Exclusiva: caballeros, la carga de caballería más fuerte');
+RAMAS.ortodoxo.ventajas.push('Exclusiva: guardia varega, infantería pesada de hacha a dos manos');
+RAMAS.cruzado.ventajas.push('Exclusiva: templarios, infantería de élite que casi nunca huye');
+RAMAS.musulman.ventajas.push('Exclusiva: arqueros a caballo, que disparan sin dejar de moverse');
+RAMAS.tribus.ventajas.push('Exclusiva: berserkers, guerreros feroces, rápidos y baratos');
 const tiposDisponibles = ramaClave => Object.keys(TROPA).filter(t => !TROPA[t].exclusiva || (RAMAS[ramaClave].exclusivas || []).includes(t));
 // El general: guardia montada que acompaña a cada ejército, gratis y automática
 const GENERAL = { tipo: 'caballeriaPesada', soldados: 12, modificadores: { vida: 1.4, dano: 1.3, velocidad: 1, moral: 1.5 } };

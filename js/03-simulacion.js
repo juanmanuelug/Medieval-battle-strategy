@@ -1,6 +1,8 @@
 'use strict';
 // fatiga de los jinetes respecto a la infantería: los caballos de guerra están entrenados para cargar varias veces (2026-10-10)
 const FATIGA_MONTADOS = { luchando: 0.5, corriendo: 0.35, recuperacion: 1.5 };
+const CABALLERIA_ATASCADA = 0.65;     // daño de un jinete parado en la melé contra infantería que no huye (2026-10-13)
+const CONTRAGOLPE_ATROPELLO = 0.8;   // fracción del daño del arrollado que recibe el jinete al arrollarlo (2026-10-13)
 const CARRERILLA_CARGA = 5;    // metros seguidos al galope que necesita un jinete para atropellar (bajado de 10 el 2026-10-09)
 const EMPUJE_MAXIMO_PASO = 0.12;   // m: tope del empuje de separación por paso (sin saltos ni temblor en los montones)
 const HOLGURA_ALIADOS = 1.15;      // los aliados guardan un 15 % más que la suma de radios: menos solapes entre propios
@@ -48,7 +50,10 @@ const FACTORES_MORAL = {
 // sin perder su orden ni su objetivo, y sigue disparando mientras se aleja
 // al escaramucear galopan a tope: ×VELOCIDAD_ESQUIVA su velocidad (arqueros a caballo 7 → 11,2 m/s: más que la carga de la
 // caballería pesada, 10,5, y algo menos que la de la ligera, 11)
-const DISTANCIA_ESCARAMUZA = { infanteria: 28, caballeria: 60 }, DISTANCIA_HUIDA_ESCARAMUZA = 35, VELOCIDAD_ESQUIVA = 1.6;
+const DISTANCIA_ESCARAMUZA = { infanteria: 28, caballeria: 60 }, DISTANCIA_HUIDA_ESCARAMUZA = 35, VELOCIDAD_ESQUIVA = 1.55;
+// escaramucear cansa (2026-10-14): fatiga por segundo mientras esquivan; con la fatiga pierden velocidad y la caballería ligera
+// (carga a 11 m/s, más que los 10,85 de la esquiva) acaba alcanzándolos
+const FATIGA_ESCARAMUZA = 0.015;
 // arco de tiro: los tiradores solo disparan a enemigos a ±ARCO_TIRO de hacia donde mira su formación (120° en total); los que
 // disparan en movimiento (arqueros a caballo) tiran en redondo
 const ARCO_TIRO = Math.PI / 3;
@@ -115,6 +120,7 @@ class Simulacion {
     this.flechaDano = new Float32Array(f); this.flechaPerforante = new Uint8Array(f); this.flechaUnidad = new Int16Array(f).fill(-1);
     this.flechaSoldado = new Int32Array(f).fill(-1);
     this.flechaOffX = new Float32Array(f); this.flechaOffY = new Float32Array(f);
+    this.flechaArea = new Float32Array(f);            // radio del impacto de las piedras de los mangoneles (0 = flecha)
     this.flechaSiguiente = 0;
     this.unidades = [];
     this.sangre = [];
@@ -202,9 +208,10 @@ class Simulacion {
     const n = vivos.length; if (!n) return;
     const montado = unidad.stats.montado;
     // la separación nunca baja del diámetro del soldado: si no, el empuje y la vuelta a la casilla se pelean y tiemblan
-    const sep = Math.max((montado ? SEPARACION_FORMACION.montado : SEPARACION_FORMACION.aPie) * (F.separacion || 1), unidad.stats.radio * 2 + 0.1);
+    const sep = Math.max((montado ? SEPARACION_FORMACION.montado : SEPARACION_FORMACION.aPie) * (F.separacion || 1), unidad.stats.radio * 2 + 0.1, unidad.stats.separacionMinima || 0);
     let columnas;
-    if (F.filas) columnas = Math.ceil(n / F.filas);
+    if (unidad.stats.artilleria) columnas = n;                     // las máquinas, siempre en una sola fila (con 3 en «línea» salía una columna)
+    else if (F.filas) columnas = Math.ceil(n / F.filas);
     else if (F.columnas) columnas = montado ? Math.max(2, Math.round(F.columnas / 2)) : F.columnas;
     else columnas = Math.max(2, Math.round(Math.sqrt(n * (F.proporcion || 1))));
     const casillas = [];
@@ -526,8 +533,8 @@ class Simulacion {
   }
 
   actualizarUnidad(u, dt) {
-    let sx = 0, sy = 0, vivos = 0, luchando = 0;
-    for (const i of u.indices) if (this.vivo(i)) { sx += this.posX[i]; sy += this.posY[i]; vivos++; if (this.estado[i] === ESTADO.LUCHANDO) luchando++; }
+    let sx = 0, sy = 0, vivos = 0, luchando = 0, luchandoBlanco = 0;   // luchandoBlanco: los que pelean con su objetivo fijo
+    for (const i of u.indices) if (this.vivo(i)) { sx += this.posX[i]; sy += this.posY[i]; vivos++; if (this.estado[i] === ESTADO.LUCHANDO) { luchando++; if (this.objetivo[i] >= 0 && this.unidadDe[this.objetivo[i]] === u.objetivoFijo) luchandoBlanco++; } }
     u.vivos = vivos; u.luchando = luchando;
     if (!vivos) return;
     // velocidad de la unidad (suavizada; los saltos del centro al morir soldados se amortiguan): la usan los tiradores
@@ -546,7 +553,16 @@ class Simulacion {
     // órdenes (antes pasaba a «avanzar» y se lanzaba contra el enemigo más cercano, que no era el que se le había mandado)
     if (u.objetivoFijo >= 0) {
       const fijo = this.unidades[u.objetivoFijo];
-      const persigue = fijo.vivos > 0 && fijo.huyendo && !fijo.retirada && datos.montado && distancia(u.centroX, u.centroY, fijo.centroX, fijo.centroY) < DISTANCIA_PERSECUCION;
+      // persiguiendo a jinetes que escaramucean, la caballería ligera mantiene el galope de carga (2026-10-14)
+      // (solo la caballería más rápida que ellos, es decir, la ligera; la pesada, más lenta, no aguanta el galope de carga
+      // persiguiendo a quien no alcanza: pierde el impulso en unos segundos y vuelve al trote)
+      if (datos.montado && !datos.alcanceTiro && fijo.esquiva && u.luchando === 0 && this.paso % 30 === 0) {
+        if (datos.velocidad > fijo.stats.velocidad) { if (u.energiaCarga <= 0) u.energiaCarga = (datos.energiaCarga || 0) * 0.5 * this.clima.carga; }
+        else u.energiaCarga = Math.max(0, u.energiaCarga - 2);
+      }
+      // desde el 2026-10-13 persigue cualquier tropa, no solo la caballería: mandar a la infantería contra una unidad que huye
+      // la dejaba parada al instante («a veces no atacan», prueba con amigos)
+      const persigue = fijo.vivos > 0 && fijo.huyendo && !fijo.retirada && distancia(u.centroX, u.centroY, fijo.centroX, fijo.centroY) < DISTANCIA_PERSECUCION;
       if (fijo.vivos === 0 || (fijo.huyendo && !persigue && !fijo.retirada)) { u.objetivoFijo = -1; if (u.orden === 'atacar') { u.orden = 'formar'; u.objetivoX = u.origenX; u.objetivoY = u.origenY; } }
       else u.objetivoUnidad = fijo.id;
     }
@@ -568,7 +584,10 @@ class Simulacion {
       // fatiga: sube luchando y corriendo, baja parada; afecta a velocidad y daño (el barro cansa más)
       const fatigaMontado = datos.montado ? FATIGA_MONTADOS : null;
       if (luchando > vivos * 0.2) u.fatiga += 0.03 * this.clima.fatiga * (fatigaMontado ? fatigaMontado.luchando : 1);
-      else if (u.corriendo) u.fatiga += 0.015 * this.clima.fatiga * (fatigaMontado ? fatigaMontado.corriendo : 1);
+      // correr cansa la mitad que antes (2026-10-13): atacar a la carrera (el doble clic que usa todo el mundo) llegaba a la melé
+      // tan cansado que, en un duelo entre tropas iguales, el que atacaba perdía siempre
+      else if (u.esquiva) u.fatiga += FATIGA_ESCARAMUZA * this.clima.fatiga;
+      else if (u.corriendo) u.fatiga += 0.0075 * this.clima.fatiga * (fatigaMontado ? fatigaMontado.corriendo * 2 : 1);
       else u.fatiga -= 0.04 * (fatigaMontado ? fatigaMontado.recuperacion : 1);
       u.fatiga = limitar(u.fatiga, 0, 1);
       // cohesión: cuántos soldados están lejos de su puesto, si la formación se mueve trabada o corre; sube parada y sin luchar
@@ -606,10 +625,12 @@ class Simulacion {
       // retirada controlada: hacia el borde propio, formados y al paso, sin salir del campo
       destinoX = u.equipo === 0 ? 8 : CAMPO.ancho - 8; destinoY = limitar(u.origenY, 8, CAMPO.alto - 8); velocidad = datos.velocidad * 0.85; detener = 1.5;
     } else if (u.orden === 'huir') {
-      // alejarse del enemigo más cercano (o del centro del campo) hacia el borde
-      const ex = objetivo ? objetivo.centroX : CAMPO.ancho / 2, ey = objetivo ? objetivo.centroY : CAMPO.alto / 2;
-      const dx = u.centroX - ex, dy = u.centroY - ey, d = Math.hypot(dx, dy) || 1;
-      destinoX = u.origenX + dx / d * 50; destinoY = u.origenY + dy / d * 50; velocidad = datos.velocidad * 1.1; detener = 0;
+      // huir hacia el borde propio (más allá de él, para que los soldados lleguen a salir), esquivando de lado al enemigo más
+      // cercano si lo tiene a menos de 30 m. Antes se alejaba del enemigo más cercano: con un enemigo entre la unidad y su
+      // borde (caballería que había rebasado la línea) la huida se invertía y la unidad se quedaba yendo y viniendo (2026-10-14)
+      destinoX = u.equipo === 0 ? -30 : CAMPO.ancho + 30; destinoY = u.origenY;
+      if (objetivo && distancia(u.centroX, u.centroY, objetivo.centroX, objetivo.centroY) < 30) destinoY = limitar(u.origenY + (u.origenY >= objetivo.centroY ? 25 : -25), 6, CAMPO.alto - 6);
+      velocidad = datos.velocidad * 1.1; detener = 0;
     } else if (u.orden === 'mover') {
       // al paso: 0,9 de la velocidad base (jinetes al trote); a la carrera: velocidad plena (jinetes al galope)
       destinoX = u.objetivoX; destinoY = u.objetivoY; velocidad = (u.marcha === 'correr' ? datos.velocidad * (datos.montado ? 1 : 1.4) : (datos.montado ? 3.5 : datos.velocidad * 0.9)) * (F.velocidad || 1); detener = 1.0;
@@ -626,14 +647,17 @@ class Simulacion {
       // con un objetivo fijo, si otra unidad enemiga se interpone en el camino, se va antes a un punto a su costado (el lado
       // más cercano a la línea recta) para rodearla en vez de atravesarla y quedarse peleando con ella
       let rodeando = false;
-      if (u.objetivoFijo >= 0 && luchando === 0) {
+      if (u.objetivoFijo >= 0 && (datos.montado ? luchandoBlanco : luchando) === 0) {
         const rodeo = this.puntoDeRodeo(u, objetivo);
         if (rodeo) { destinoX = rodeo[0]; destinoY = rodeo[1]; rodeando = true; }
       }
       // ya trabada (un tercio luchando): la formación se detiene en el contacto en vez de seguir metiéndose en la masa enemiga
       // la cuña con impulso de carga penetra: no se detiene hasta tener trabada la mitad de sus jinetes
       const penetra = F.penetracion && datos.montado && u.energiaCarga > 0;
-      if (luchando >= Math.max(1, vivos * (penetra ? 0.5 : CONTACTO_FORMACION)) && u.orden !== 'cargar') { destinoX = u.origenX; destinoY = u.origenY; }
+      // la caballería con objetivo fijo solo cuenta el contacto con ESE objetivo: trabada con otra unidad, sigue abriéndose paso
+      // hacia él (es rápida y versátil). La infantería interceptada se queda y contesta el ataque (pedido el 2026-10-14)
+      const enContacto = u.objetivoFijo >= 0 && datos.montado ? luchandoBlanco : luchando;
+      if (enContacto >= Math.max(1, vivos * (penetra ? 0.5 : CONTACTO_FORMACION)) && u.orden !== 'cargar') { destinoX = u.origenX; destinoY = u.origenY; }
       const cargando = u.orden === 'cargar' || (u.orden === 'atacar' && datos.montado && u.energiaCarga > 0);
       // una carga que ya está trabada (un tercio luchando) ha perdido el impulso: pasa a avanzar y pelea
       if (u.orden === 'cargar' && luchando >= vivos * (F.penetracion ? 0.5 : 0.33)) { u.orden = 'avanzar'; u.energiaCarga = 0; }
@@ -659,7 +683,7 @@ class Simulacion {
       if (!reculando && Math.hypot(dx, dy) > Math.max(detener, 0.5)) this.girarHacia(u, rumboDeseado, dt);
       const rumboMovimiento = reculando ? rumboDeseado : u.rumbo;
       // fatiga y terreno frenan a la formación; el bosque, mucho
-      velocidad *= (1 - 0.3 * u.fatiga) * (this.terreno && this.terreno.tipoEn(u.origenX, u.origenY) === 1 ? 0.7 : 1) * (datos.montado ? this.clima.velocidadMontado : this.clima.velocidad);
+      velocidad *= (1 - 0.3 * u.fatiga) * (this.terreno ? FRENO_TERRENO[this.terreno.tipoEn(u.origenX, u.origenY)] : 1) * (datos.montado ? this.clima.velocidadMontado : this.clima.velocidad);
       // solo fatiga correr, cargar o huir; la marcha al paso no cansa
       u.corriendo = d > detener && (u.marcha === 'correr' || u.orden === 'cargar' || u.orden === 'huir' || velocidad >= datos.velocidad * 0.95);
       // la formación no sale del campo, salvo que huya: entonces sigue hasta fuera y los soldados desaparecen por el borde
@@ -698,7 +722,7 @@ class Simulacion {
         } else blanco = this.blancoEnArco(u, alcance);
       }
       const d = blanco ? distancia(u.centroX, u.centroY, blanco.centroX, blanco.centroY) : Infinity;
-      if (blanco && u.temporizadorTiro <= 0 && d < alcance && d > 6) {
+      if (blanco && u.temporizadorTiro <= 0 && d < alcance && d > (datos.alcanceMinimo || 6)) {
         const objetivo = blanco;
         u.temporizadorTiro = datos.cadenciaTiro * this.clima.cadencia;
         for (const i of u.indices) if (this.vivo(i) && this.estado[i] !== ESTADO.LUCHANDO) this.dispararFlecha(i, objetivo, datos);
@@ -730,14 +754,26 @@ class Simulacion {
     let objetivoLibre = -1, objetivoPuntuacion = Infinity;   // el enemigo a perseguir: cercano y con pocos atacantes (busca huecos)
     const miRadio = datos.radio, miMasa = datos.masa;
     const enMarcha = u.orden === 'mover' || u.orden === 'avanzar' || u.orden === 'atacar' || u.orden === 'cargar';
+    // con un objetivo fijo: hacia dónde está (para saber qué enemigos le cierran el paso)
+    const fijo = u.objetivoFijo >= 0 ? this.unidades[u.objetivoFijo] : null;
+    const haciaFijoX = fijo ? fijo.centroX - x : 0, haciaFijoY = fijo ? fijo.centroY - y : 0, haciaFijoD = fijo ? Math.hypot(haciaFijoX, haciaFijoY) : 0;
+    // lo que no depende del vecino se calcula una vez (revisión de rendimiento, 2026-10-14: este bucle es el 60 % del paso)
+    const miUnidad = this.unidadDe[i], miEquipo = this.equipo[i], luchoYo = this.estado[i] === ESTADO.LUCHANDO;
+    const enMuro = u.formacion && u.formacion.clave === 'muro' && !luchoYo;
+    const puedeAtravesar = enMarcha && !luchoYo;
+    const paradoYo = (u.orden === 'formar' || u.orden === 'disparar') && !luchoYo;   // parado: me atraviesan sin empujarme
     for (let k = 0; k < cuantos; k++) {
       const j = this.bufferVecinos[k]; if (j === i) continue;
       const dx = this.posX[j] - x, dy = this.posY[j] - y; const d = Math.hypot(dx, dy);
-      const otrosDatos = this.unidades[this.unidadDe[j]].stats;
-      const aliado = this.equipo[j] === this.equipo[i];
+      const otraUnidad = this.unidades[this.unidadDe[j]], otrosDatos = otraUnidad.stats;
+      const aliado = this.equipo[j] === miEquipo;
       // con objetivo fijo, los enemigos de otras unidades no se eligen como blanco salvo que estén pegados (para defenderse);
       // el choque físico con ellos sigue más abajo
-      const ignorado = !aliado && u.objetivoFijo >= 0 && this.unidadDe[j] !== u.objetivoFijo && d > miRadio + otrosDatos.radio + 0.35;
+      // y desde el 2026-10-13, aunque esté pegado, solo si además le cierra el paso (está por delante, hacia su objetivo): a los
+      // que tiene a los lados o detrás los deja atrás para cumplir la orden
+      // (solo la caballería, 2026-10-14: la infantería interceptada contesta a quien la ataque y sigue después hacia su blanco)
+      // la infantería se defiende de todo el que tenga a alcance de golpe (si no, la golpeaban desde 1,45 m y ella solo «veía» a 1,08 m)
+      const ignorado = !aliado && fijo && this.unidadDe[j] !== u.objetivoFijo && (datos.montado ? (d > miRadio + otrosDatos.radio + 0.35 || !(haciaFijoD < 4 || (dx * haciaFijoX + dy * haciaFijoY) > 0.4 * d * haciaFijoD)) : d > datos.alcance + otrosDatos.radio + 0.3);
       if (!aliado && !ignorado && this.estado[j] !== ESTADO.VOLANDO) {
         if (d < enemigoD) { enemigoD = d; enemigo = j; }
         const puntuacion = d + 0.6 * this.atacantesPrevio[j] + (this.atacantesPrevio[j] >= ATACANTES_MAXIMOS ? 3 : 0);
@@ -746,13 +782,17 @@ class Simulacion {
       // en el muro de escudos los compañeros van hombro con hombro: entre ellos no se aplica la holgura entre aliados (el muro es
       // más apretado que esa holgura y nunca llegaban a su casilla, empujándose sin parar). Solo en el muro y fuera de la melé:
       // aplicarlo a todas las formaciones apelotonaba a los que esperan detrás de los que luchan
-      const hombroConHombro = aliado && this.unidadDe[j] === this.unidadDe[i] && u.formacion && u.formacion.clave === 'muro' && this.estado[i] !== ESTADO.LUCHANDO && this.estado[j] !== ESTADO.LUCHANDO;
+      const hombroConHombro = enMuro && aliado && this.unidadDe[j] === miUnidad && this.estado[j] !== ESTADO.LUCHANDO;
       const minimo = (miRadio + otrosDatos.radio) * (aliado && !hombroConHombro ? HOLGURA_ALIADOS : 1);
       // una unidad en marcha atraviesa a las unidades aliadas PARADAS (formadas o disparando) que no pelean: si no, los arqueros
       // desplegados detrás de su infantería no podían pasar entre ella. Dos unidades en marcha sí chocan entre sí, y también con
       // los que luchan, para no amontonarse en la melé
-      const ordenOtra = this.unidades[this.unidadDe[j]].orden;
-      const atraviesa = aliado && enMarcha && (ordenOtra === 'formar' || ordenOtra === 'disparar') && this.unidadDe[j] !== this.unidadDe[i] && this.estado[j] !== ESTADO.LUCHANDO && this.estado[i] !== ESTADO.LUCHANDO;
+      // los que luchan, para no amontonarse en la melé. Y en los dos sentidos (2026-10-14): el parado tampoco se deja empujar por
+      // el que pasa; antes la infantería en marcha arrastraba a los arqueros parados que atravesaba
+      const ordenOtra = otraUnidad.orden;
+      const atraviesa = aliado && this.unidadDe[j] !== miUnidad && this.estado[j] !== ESTADO.LUCHANDO && (
+        (puedeAtravesar && (ordenOtra === 'formar' || ordenOtra === 'disparar')) ||
+        (paradoYo && (ordenOtra === 'mover' || ordenOtra === 'avanzar' || ordenOtra === 'atacar' || ordenOtra === 'cargar')));
       if (!atraviesa && d < minimo && d > 1e-4 && this.estado[j] !== ESTADO.VOLANDO) {
         const solape = (minimo - d) * (otrosDatos.masa / (miMasa + otrosDatos.masa));
         this.empujeX[i] -= dx / d * solape; this.empujeY[i] -= dy / d * solape;
@@ -770,13 +810,14 @@ class Simulacion {
       return;
     }
     // carga de caballería
-    if (datos.montado && terrenoAqui === 1) u.energiaCarga = 0;                 // en el bosque no hay carga posible
+    if (datos.montado && (terrenoAqui === TERRENO.BOSQUE || terrenoAqui === TERRENO.AGUA || terrenoAqui === TERRENO.VADO)) u.energiaCarga = 0;   // ni en el bosque ni en el agua hay carga posible
     // hace falta carrerilla (CARRERILLA_CARGA m al galope seguidos): repetir la orden de ataque en pleno cuerpo a cuerpo no atropella
     if (datos.montado && (u.orden === 'cargar' || u.orden === 'atacar') && u.energiaCarga > 0 && enemigo >= 0 && this.velocidadActual[i] > datos.umbralCarga && this.galope[i] >= CARRERILLA_CARGA) {
       const uEnemigo = this.unidades[this.unidadDe[enemigo]], otrosDatos = uEnemigo.stats;
       // el atropello se resuelve en cuanto el enemigo entra en alcance (antes se exigía casi contacto, y como el alcance de
       // golpe es mayor, el jinete se paraba a pelear y nunca llegaba a atropellar a tropas espaciadas como los arqueros)
-      if (enemigoD < Math.max(miRadio + otrosDatos.radio + 0.45, datos.alcance + otrosDatos.radio) && !otrosDatos.montado) {
+      // las máquinas de guerra (artillería) no se arrollan: hay que destrozarlas a golpes
+      if (enemigoD < Math.max(miRadio + otrosDatos.radio + 0.45, datos.alcance + otrosDatos.radio) && !otrosDatos.montado && !otrosDatos.artilleria) {
         const quieto = uEnemigo.orden === 'formar' || uEnemigo.orden === 'disparar' || uEnemigo.orden === 'mover';
         if (!uEnemigo.huyendo && quieto && otrosDatos.antiCaballeria) {       // lanceros parados: la carga se estrella
           this.vida[i] -= 45; u.energiaCarga = 0; this.sangre.push({ x, y, tamano: 1.2, tipo: 'golpe', rumbo: this.rumbo[i] + Math.PI, montado: true });
@@ -793,9 +834,12 @@ class Simulacion {
           uEnemigo.cohesion = Math.max(0, uEnemigo.cohesion - 6 * (FV.defensaCarga || 1));   // el atropello deshace la formación
           this.sangre.push({ x: this.posX[enemigo], y: this.posY[enemigo], tamano: 0.8, tipo: 'atropello', rumbo: this.rumbo[i] });
           uEnemigo.choqueCarga = Math.min(40, uEnemigo.choqueCarga + 2.5);    // factor «carga recibida»
-          // el muro de escudos frena la carga: más impulso gastado por atropello y golpe al jinete que se estrella
-          u.energiaCarga -= FV.frenoCarga || 1;
-          if (FV.reboteCarga) { this.vida[i] -= FV.reboteCarga; if (this.vida[i] <= 0) this.matar(i, 1.2); }
+          // el muro de escudos frena la carga: más impulso gastado por atropello y golpe al jinete que se estrella.
+          // Desde el 2026-10-13 (la caballería pesada arrasaba sin bajas): arrollar a un soldado pesado gasta más impulso
+          // (según su masa) y el arrollado devuelve un golpe al jinete (según su daño)
+          u.energiaCarga -= (FV.frenoCarga || 1) * Math.max(1, otrosDatos.masa || 1);
+          this.vida[i] -= (otrosDatos.dano || 0) * CONTRAGOLPE_ATROPELLO + (FV.reboteCarga || 0);
+          if (this.vida[i] <= 0) this.matar(i, 1.2);
         }
         return;
       }
@@ -811,6 +855,8 @@ class Simulacion {
         const uEnemigo = this.unidades[this.unidadDe[enemigo]];
         dano *= 1 + 0.3 * (1 - uEnemigo.cohesion / 100);                                  // y se aguanta peor
         if (datos.antiCaballeria && uEnemigo.stats.montado) dano *= 2.2;
+        // caballería atascada: un jinete parado en la melé contra infantería que aguanta pierde su ventaja (2026-10-13)
+        if (datos.montado && !uEnemigo.stats.montado && !uEnemigo.huyendo && this.velocidadActual[i] < 1.5) dano *= CABALLERIA_ATASCADA;
         const formacionVictima = uEnemigo.formacion || {};
         dano *= (formacionVictima.defensaMelee || 1) * (datos.montado ? (formacionVictima.defensaCaballeria || 1) : 1);   // orden abierta, cuadro
         if (uEnemigo.huyendo && !uEnemigo.retirada) dano *= 1.5;         // por la espalda (la retirada ordenada se defiende)
@@ -833,6 +879,7 @@ class Simulacion {
         // cuesta abajo se golpea con ventaja; cuesta arriba, con desventaja
         const terrenoEnemigo = this.terreno ? this.terreno.tipoEn(this.posX[enemigo], this.posY[enemigo]) : 0;
         if (terrenoAqui === 2 && terrenoEnemigo !== 2) dano *= 1.15; else if (terrenoEnemigo === 2 && terrenoAqui !== 2) dano *= 0.9;
+        if (terrenoAqui === TERRENO.AGUA) dano *= 0.75;                         // con el agua por la cintura se pelea mal
         this.causante[enemigo] = u.id;
         this.vida[enemigo] -= dano;
         if (this.vida[enemigo] <= 0) this.matar(enemigo, 0.7);
@@ -843,17 +890,17 @@ class Simulacion {
     // velocidad en la melé: un jinete sin impulso de carga no galopa entre los que luchan, se mueve al paso
     const enCarga = datos.montado && u.energiaCarga > 0 && this.galope[i] >= CARRERILLA_CARGA;
     const velocidadMele = enCarga && datos.velocidadCarga ? datos.velocidadCarga : datos.montado && !enCarga && !(u.objetivoUnidad >= 0 && this.unidades[u.objetivoUnidad].huyendo) ? Math.min(datos.velocidad, 2.5) : datos.velocidad;
-    // ¿puede salir de su puesto a por este enemigo? solo si está al alcance de su casilla (línea contra línea)
     const ofensiva = u.orden === 'avanzar' || u.orden === 'cargar' || u.orden === 'atacar';
     const impetuoso = (i % IMPETUOSOS_CADA) === 3;
     const buscandoContacto = (u.sinContacto || 0) > SIN_CONTACTO_MAXIMO;
     const objetivoHuye = datos.montado && u.objetivoUnidad >= 0 && this.unidades[u.objetivoUnidad].huyendo;   // persecución: los jinetes van libres
     const filasRotas = u.cohesion < COHESION_ROTA;                                           // sin cohesión, cada cual pelea por su cuenta
     const margen = enCarga || u.orden === 'cargar' || objetivoHuye ? Infinity : impetuoso || buscandoContacto || filasRotas ? MARGEN_IMPETUOSO : (datos.montado ? MARGEN_FORMACION.montado : MARGEN_FORMACION.aPie);
-    const alAlcanceDelPuesto = j => j >= 0 && distancia(this.casillaX[i], this.casillaY[i], this.posX[j], this.posY[j]) <= margen + datos.alcance + 0.4;
     let perseguido = -1;
     if (enemigo >= 0) {
-      if (ofensiva) perseguido = alAlcanceDelPuesto(objetivoLibre) ? objetivoLibre : alAlcanceDelPuesto(enemigo) ? enemigo : -1;
+      // ¿puede salir de su puesto a por este enemigo? solo si está al alcance de su casilla (línea contra línea)
+      const alcanceDelPuesto = margen + datos.alcance + 0.4, casX = this.casillaX[i], casY = this.casillaY[i];
+      if (ofensiva) perseguido = objetivoLibre >= 0 && distancia(casX, casY, this.posX[objetivoLibre], this.posY[objetivoLibre]) <= alcanceDelPuesto ? objetivoLibre : distancia(casX, casY, this.posX[enemigo], this.posY[enemigo]) <= alcanceDelPuesto ? enemigo : -1;
       else if (enemigoD < (u.trabada ? 3.5 : 1.8)) perseguido = enemigo;
     }
     if (perseguido >= 0) {
@@ -878,7 +925,11 @@ class Simulacion {
         this.estado[i] = ESTADO.AVANZANDO;
         // en carga (o escaramuceando) siguen a la formación al galope tendido
         const velocidadBase = u.esquiva ? datos.velocidad * VELOCIDAD_ESQUIVA : datos.montado && u.energiaCarga > 0 && datos.velocidadCarga ? datos.velocidadCarga : datos.velocidad;
-        velocidad = Math.min(velocidadBase * (u.marcha === 'correr' && !datos.montado ? 1.5 : 1.15), Math.max(velocidadBase, d * 2));   // a la carrera siguen a la formación
+        // a la carrera siguen a la formación. Desde el 2026-10-13 la persecución del puesto es d×4 (antes d×2): con d×2, en marcha
+        // cada soldado iba siempre media velocidad de la formación por detrás de su puesto (1,4 m la infantería ligera a la
+        // carrera, 1,6 m las tropas rápidas), por encima del umbral de «fuera de puesto» de la cohesión: la formación se
+        // «rompía» sola antes del choque
+        velocidad = Math.min(velocidadBase * (u.marcha === 'correr' && !datos.montado ? 1.5 : 1.15), Math.max(velocidadBase, d * 4));
       }
     }
     if (persiguiendo) {
@@ -902,7 +953,7 @@ class Simulacion {
         }
       }
     }
-    velocidad *= ((u.formacion && u.formacion.velocidad) || 1) * vigor * (terrenoAqui === 1 ? 0.7 : 1) * (datos.montado ? this.clima.velocidadMontado : this.clima.velocidad);
+    velocidad *= ((u.formacion && u.formacion.velocidad) || 1) * vigor * (this.terreno ? FRENO_TERRENO[terrenoAqui] : 1) * (datos.montado ? this.clima.velocidadMontado : this.clima.velocidad);
     const dx = destinoX - x, dy = destinoY - y, d = Math.hypot(dx, dy) || 1;
     const pasoMax = Math.min(d, velocidad * dt);
     this.posX[i] = x + dx / d * pasoMax; this.posY[i] = y + dy / d * pasoMax;
@@ -962,13 +1013,15 @@ class Simulacion {
     const duracion = distancia(x0, y0, x1, y1) / datos.velocidadFlecha;
     this.flechaEstado[k] = 1; this.flechaX0[k] = x0; this.flechaY0[k] = y0; this.flechaX1[k] = x1; this.flechaY1[k] = y1;
     this.flechaInicio[k] = this.tiempo; this.flechaDuracion[k] = duracion; this.flechaApice[k] = GRAVEDAD * duracion * duracion / 8;
-    this.flechaEquipo[k] = this.equipo[i]; this.flechaSoldado[k] = -1; this.flechaDano[k] = datos.danoFlecha * this.clima.danoFlecha; this.flechaPerforante[k] = datos.perforante ? 1 : 0; this.flechaUnidad[k] = this.unidadDe[i];
+    this.flechaEquipo[k] = this.equipo[i]; this.flechaSoldado[k] = -1; this.flechaDano[k] = datos.danoFlecha * (datos.artilleria ? 1 : this.clima.danoFlecha); this.flechaPerforante[k] = datos.perforante ? 1 : 0; this.flechaUnidad[k] = this.unidadDe[i];
+    this.flechaArea[k] = datos.radioImpacto || 0;
   }
   actualizarFlechas() {
     for (let k = 0; k < this.maxFlechas; k++) {
       if (this.flechaEstado[k] !== 1) continue;
       if (this.tiempo - this.flechaInicio[k] < this.flechaDuracion[k]) continue;
       const x = this.flechaX1[k], y = this.flechaY1[k];
+      if (this.flechaArea[k] > 0) { this.impactoPiedra(k, x, y); continue; }
       const cuantos = this.rejilla.vecinos(x, y, 0.6, this.bufferVecinos);
       let alcanzado = -1, mejorD = 0.6;
       for (let q = 0; q < cuantos; q++) { const j = this.bufferVecinos[q]; if (this.estado[j] === ESTADO.VOLANDO) continue; const d = distancia(x, y, this.posX[j], this.posY[j]); if (d < mejorD) { mejorD = d; alcanzado = j; } }
@@ -978,13 +1031,35 @@ class Simulacion {
         const uAlcanzado = this.unidades[this.unidadDe[alcanzado]];
         // la armadura pesada para flechas pero no virotes (perforante); el bosque protege de ambos
         const enBosque = this.terreno && this.terreno.tipoEn(this.posX[alcanzado], this.posY[alcanzado]) === 1;
-        const dano = this.flechaDano[k] * (uAlcanzado.stats.montado ? 0.7 : 1) * (uAlcanzado.tipo === TIPO.infanteriaPesada && !this.flechaPerforante[k] ? 0.75 : 1) * ((uAlcanzado.formacion && uAlcanzado.formacion.defensaFlecha) || 1) * (enBosque ? 0.6 : 1);
+        const dano = this.flechaDano[k] * (uAlcanzado.stats.montado ? 0.7 : 1) * (this.flechaPerforante[k] ? 1 : 1 - (uAlcanzado.stats.proteccionFlechas || 0)) * ((uAlcanzado.formacion && uAlcanzado.formacion.defensaFlecha) || 1) * (enBosque ? 0.6 : 1);
         this.causante[alcanzado] = this.flechaUnidad[k];
         uAlcanzado.impactosFlecha++;                                       // factor «bajo las flechas»
         this.vida[alcanzado] -= dano;
         if (this.vida[alcanzado] <= 0) this.matar(alcanzado, 0.6); else this.sangre.push({ x: this.posX[alcanzado], y: this.posY[alcanzado], tamano: 0.3, tipo: 'flecha', rumbo: this.rumbo[alcanzado] + Math.PI });
       } else this.flechaEstado[k] = 2;
     }
+  }
+  /* Piedra de mangonel (2026-10-13): daño a todos los que estén en el radio del impacto, amigos o enemigos, menor cuanto más
+     lejos del centro; la orden abierta lo reduce a la mitad (hay huecos) y el bosque también. Cada alcanzado desordena a su
+     unidad y asusta el doble que una flecha. La piedra queda en el suelo (estado 2). */
+  impactoPiedra(k, x, y) {
+    const radio = this.flechaArea[k];
+    const cuantos = this.rejilla.vecinos(x, y, radio, this.bufferVecinos);
+    for (let q = 0; q < cuantos; q++) {
+      const j = this.bufferVecinos[q];
+      if (this.estado[j] === ESTADO.VOLANDO || !this.vivo(j)) continue;
+      const d = distancia(x, y, this.posX[j], this.posY[j]); if (d > radio) continue;
+      const uAlcanzado = this.unidades[this.unidadDe[j]], F = uAlcanzado.formacion || {};
+      const enBosque = this.terreno && this.terreno.tipoEn(this.posX[j], this.posY[j]) === 1;
+      const dano = this.flechaDano[k] * (1 - 0.6 * d / radio) * (F.clave === 'abierta' ? 0.5 : 1) * (enBosque ? 0.6 : 1) * (uAlcanzado.stats.artilleria ? 0.5 : 1);
+      this.causante[j] = this.flechaUnidad[k];
+      uAlcanzado.impactosFlecha += 2;
+      uAlcanzado.cohesion = Math.max(0, uAlcanzado.cohesion - 4);
+      this.vida[j] -= dano;
+      if (this.vida[j] <= 0) this.matar(j, 1.0); else this.sangre.push({ x: this.posX[j], y: this.posY[j], tamano: 0.4, tipo: 'golpe', rumbo: Math.atan2(this.posY[j] - y, this.posX[j] - x) });
+    }
+    this.sangre.push({ x, y, tamano: 1.1, tipo: 'impacto', rumbo: 0 });
+    this.flechaEstado[k] = 2;
   }
   flechaPosicion(k, tiempoRender, salida) {
     const u = limitar((tiempoRender - this.flechaInicio[k]) / this.flechaDuracion[k], 0, 1);

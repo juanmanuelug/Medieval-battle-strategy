@@ -20,6 +20,7 @@
       <button id="btn-inicio-nuevo" class="cta">Inicio</button>
       <button id="btn-inicio-continuar" class="cta oculto">Continuar</button>
       <button id="btn-inicio-borrar" class="btn peligro oculto">Nuevo reino</button>
+      <button id="btn-inicio-tutorial" class="btn">Cómo se juega</button>
     </div>
     <p id="inicio-reino" class="nota"></p>
   </div>
@@ -36,6 +37,7 @@
     </div>
     <div class="fila-final">
       <button id="btn-menu-inicio" class="btn">Volver al inicio</button>
+      <button id="btn-menu-tutorial" class="btn">Cómo se juega</button>
     </div>
   </div>
 </section>
@@ -115,7 +117,7 @@
       <label>Nombre del reino <input id="in-nombre-reino" required maxlength="40" placeholder="Reino de Castilla" autofocus></label>
       <label>Nombre del rey o la reina <input id="in-nombre-rey" required maxlength="40" placeholder="Alfonso VIII"></label>
       <fieldset><legend>Blasón</legend>
-        <label class="radio"><input type="radio" name="blason" id="radio-blason-defecto" checked> Usar el blasón de la rama que elija después</label>
+        <label class="radio"><input type="radio" name="blason" checked> Usar el blasón de la rama que elija después</label>
         <label class="radio"><input type="radio" name="blason" id="radio-blason-importado"> Importar mi blasón del <a href="https://estandartesmedievales.netlify.app/" target="_blank" rel="noopener">diseñador de estandartes</a> (archivo .json de «Guardar .json»)</label>
         <input type="file" id="in-blason-json" accept="application/json,.json">
         <p id="nota-blason" class="nota">El blasón ondea en los estandartes de tus unidades y da los colores a tus soldados.</p>
@@ -144,8 +146,8 @@
     <h2>Tu ejército</h2>
     <div id="tienda-ejercito"></div>
     <div class="fila-final pegada">
-      <label id="etiqueta-dificultad">Dificultad <select id="sel-dificultad"><option value="facil">Fácil</option><option value="normal" selected>Normal</option><option value="dificil">Difícil</option><option value="brutal">Brutal</option></select></label>
-      <label id="etiqueta-actitud">Actitud del enemigo <select id="sel-actitud"><option value="ofensiva" selected>Ofensiva</option><option value="defensiva">Defensiva</option></select></label>
+      <label>Dificultad <select id="sel-dificultad"><option value="facil">Fácil</option><option value="normal" selected>Normal</option><option value="dificil">Difícil</option><option value="brutal">Brutal</option></select></label>
+      <label>Actitud del enemigo <select id="sel-actitud"><option value="ofensiva" selected>Ofensiva</option><option value="defensiva">Defensiva</option></select></label>
       <button id="btn-batalla" class="cta" disabled>¡A la batalla!</button>
       <button id="btn-cambiar-rama" class="btn">Cambiar de rama</button>
       <button id="btn-tienda-menu" class="btn">Volver al menú</button>
@@ -160,6 +162,7 @@
     <p class="nota">Elige contra qué rama luchas y qué tropas tiene su ejército, sin límite de oro. Tu ejército es el que acabas de reclutar. La dificultad elegida sigue marcando cómo maniobra la IA.</p>
     <label>Rama enemiga <select id="sel-rama-ia"></select></label>
     <label>Clima <select id="sel-clima"></select></label>
+    <label>Mapa <select id="sel-mapa"></select></label>
     <p id="personalizada-rama-nota" class="nota"></p>
     <h2>Tropas enemigas</h2>
     <div id="personalizada-tropas"></div>
@@ -201,8 +204,8 @@
     <h3>Controles <button id="btn-cerrar-ayuda" title="Cerrar">×</button></h3>
     <div class="columnas">
       <div><h4>Seleccionar</h4><ul><li><b>Clic izquierdo</b> sobre una unidad o su estandarte</li><li><b>Arrastrar izquierdo</b>: recuadro</li><li><b>Mayús</b> añade o quita</li><li><b>Doble clic</b>: todas las del mismo tipo</li><li><b>Ctrl+A</b>: todas · <b>Esc</b>: ninguna</li><li><b>G</b> agrupa la selección con el primer número libre (<b>Ctrl+1-9</b> con uno concreto, <b>Mayús+G</b> deshace); <b>1-9</b> llama al grupo y dos pulsaciones centran la cámara</li><li><b>Tarjetas</b> de abajo: clic selecciona, doble clic centra, <b>arrastrar</b> cambia su orden (se recuerda)</li><li><b>Alcance de tiro</b>: se dibuja el de tus tiradores seleccionados (azul) y el del tirador enemigo bajo el ratón (rojo). Solo disparan dentro de su cono, 120° hacia donde miran (los arqueros a caballo, en redondo)</li><li><b>Alt</b> sin nada seleccionado: ver a dónde va cada unidad (verde al paso, amarillo a la carrera, rojo atacando, ámbar disparando)</li></ul></div>
-      <div><h4>Ordenar</h4><ul><li><b>Clic derecho</b> en el suelo: mover al paso (varias unidades forman una fila; <b>Alt</b> conserva sus posiciones)</li><li><b>Clic derecho</b> sobre un enemigo o su estandarte: atacar</li><li><b>Doble clic derecho</b> o <b>Mayús</b>: a la carrera</li><li><b>Arrastrar derecho</b>: mover con rumbo (se previsualiza la fila); <b>Ctrl</b>: solo encarar</li><li><b>Clic derecho en el minimapa</b>: mover allí</li><li><b>E</b>: modo escaramuza de los arqueros a caballo (activado por defecto: se alejan de quien se les acerca y siguen disparando)</li><li><b>A</b> atacar · <b>C</b> cargar · <b>D</b> disparar · <b>H</b> alto · <b>F</b> cambia la formación (Mayús+A / Mayús+D: corriendo)</li></ul></div>
-      <div><h4>Cámara y juego</h4><ul><li><b>Botón central</b>, <b>espacio+arrastrar</b> o <b>flechas</b>: desplazar</li><li><b>Rueda</b>: zoom · <b>clic en el minimapa</b>: ir allí</li><li><b>P</b>: pausa · botones de arriba: pausa, reanudar y ×2</li><li><b>Ctrl+A</b> y luego <b>A</b> o <b>H</b>: todo el ejército avanza o se detiene</li><li><b>F1</b> o <b>?</b>: esta ayuda</li></ul></div>
+      <div><h4>Ordenar</h4><ul><li><b>Clic derecho</b> en el suelo: mover al paso (varias unidades forman una fila; con <b>Alt</b> conservan su disposición y, arrastrando, el conjunto gira hacia el rumbo: así se mueve el ejército entero tal como está)</li><li><b>Clic derecho</b> sobre un enemigo o su estandarte: atacar</li><li><b>Doble clic derecho</b> o <b>Mayús</b>: a la carrera</li><li><b>Arrastrar derecho</b>: mover con rumbo (se previsualiza la fila); <b>Ctrl</b>: solo encarar</li><li><b>Clic derecho en el minimapa</b>: mover allí</li><li><b>E</b>: modo escaramuza de los arqueros a caballo (activado por defecto: se alejan de quien se les acerca y siguen disparando)</li><li><b>R</b> atacar · <b>C</b> cargar · <b>T</b> disparar · <b>H</b> alto · <b>F</b> cambia la formación (Mayús+R / Mayús+T: corriendo)</li></ul></div>
+      <div><h4>Cámara y juego</h4><ul><li><b>W A S D</b>, <b>flechas</b>, <b>botón central</b> o <b>espacio+arrastrar</b>: desplazar</li><li><b>Rueda</b>: zoom · <b>clic en el minimapa</b>: ir allí</li><li><b>P</b>: pausa · botones de arriba: pausa, reanudar y ×2</li><li><b>Ctrl+A</b> y luego <b>R</b> o <b>H</b>: todo el ejército avanza o se detiene</li><li><b>F1</b> o <b>?</b>: esta ayuda</li></ul></div>
     </div>
   </div>
   <div id="aviso-pausa" class="oculto">PAUSA<small id="aviso-pausa-detalle"></small></div>
@@ -218,20 +221,21 @@
   <div id="panel-seleccion" class="oculto">
     <div id="hud-seleccion"></div>
     <div class="fila botones" id="panel-ordenes">
-      <button data-orden="avanzar" title="Atacar al enemigo más cercano al paso (A); doble clic o Mayús: a la carrera">Atacar <kbd>A</kbd></button>
+      <button data-orden="avanzar" title="Atacar al enemigo más cercano al paso (R); doble clic o Mayús: a la carrera">Atacar <kbd>R</kbd></button>
       <button data-orden="cargar" title="Carga de caballería, solo jinetes (C)">Cargar <kbd>C</kbd></button>
-      <button data-orden="disparar" title="Disparar al enemigo más cercano, solo tiradores (D)">Disparar <kbd>D</kbd></button>
+      <button data-orden="disparar" title="Disparar al enemigo más cercano, solo tiradores (T)">Disparar <kbd>T</kbd></button>
       <button data-orden="formar" title="Alto: mantener la posición (H)">Alto <kbd>H</kbd></button>
       <button id="btn-agrupar" type="button" title="Crear un grupo con las unidades seleccionadas (G): recibe el primer número libre y ese número las vuelve a seleccionar; dos pulsaciones centran la cámara">Agrupar <kbd>G</kbd></button>
       <button id="btn-desagrupar" type="button" title="Sacar las unidades seleccionadas de su grupo (Mayús+G)">Desagrupar</button>
+      <span class="separador" aria-hidden="true"></span>
       <button id="btn-escaramuza" type="button" hidden title="Modo escaramuza de los arqueros a caballo (E): si un enemigo de cuerpo a cuerpo se acerca, se alejan galopando y siguen disparando">Escaramuza <kbd>E</kbd></button>
     </div>
     <div class="fila botones" id="panel-formaciones">
       <button data-formacion="linea">Línea</button>
       <button data-formacion="cuadro">Cuadro</button>
       <button data-formacion="columna">Columna</button>
-      <button data-formacion="muro">Muro de escudos</button>
-      <button data-formacion="abierta">Orden abierta</button>
+      <button data-formacion="muro">Muro</button>
+      <button data-formacion="abierta">Abierta</button>
       <button data-formacion="cuna">Cuña</button>
     </div>
     <div class="fila ayuda" id="panel-formacion-nota"></div>
@@ -252,7 +256,26 @@
 <script src="disenador/puente.js"></script>
 <script src="disenador/js/05-render-svg.js"></script>
 <!-- juego -->
+<!-- tutorial «Cómo se juega» (js/juego/16-tutorial.js) -->
+<div id="tutorial" class="oculto" role="dialog" aria-modal="true" aria-labelledby="tutorial-titulo">
+  <div class="tutorial-caja">
+    <button id="btn-tutorial-cerrar" class="tutorial-cerrar" type="button" title="Cerrar (Esc)">×</button>
+    <img id="tutorial-imagen" alt="">
+    <div class="tutorial-texto">
+      <span id="tutorial-cuenta" class="nota"></span>
+      <h2 id="tutorial-titulo"></h2>
+      <p id="tutorial-texto"></p>
+    </div>
+    <div class="tutorial-navegacion">
+      <button id="btn-tutorial-anterior" class="btn" type="button">← Anterior</button>
+      <div id="tutorial-puntos"></div>
+      <button id="btn-tutorial-siguiente" class="cta" type="button">Siguiente →</button>
+    </div>
+  </div>
+</div>
 <script src="js/00-aleatorio-y-utilidades.js"></script>
+<script src="js/00b-idioma.js"></script>
+<script src="js/idioma-en.js"></script>
 <script src="js/01-datos-unidades.js"></script>
 <script src="js/02-rejilla-espacial.js"></script>
 <script src="js/02b-terreno.js"></script>
@@ -273,5 +296,7 @@
 <script src="js/juego/14-retratos.js"></script>
 <script src="js/juego/11-pantallas.js"></script>
 <script src="js/juego/15-multijugador.js"></script>
+<script src="js/juego/16-tutorial.js"></script>
+<script src="js/juego/17-idioma-datos.js"></script>
 </body>
 </html>

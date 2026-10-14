@@ -66,15 +66,16 @@ const crypto = require('crypto');
 const RAIZ_JUEGO = path.resolve(__dirname, '..');
 const TIPOS_MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.md': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
 /* Lista blanca de lo que se sirve por HTTP (2026-10-13): solo lo que el juego carga. Nada de servidor/, ni el README, ni
-   tools/, ni capturas, ni código retirado, ni el material de partida del arte (arte/entrada, arte/demos). Rutas relativas a
+   tools/, ni capturas, ni el material de partida del arte (arte/entrada, arte/demos). Rutas relativas a
    la carpeta del juego, con «/». Si el juego empieza a cargar algo nuevo, hay que añadirlo aquí. */
 const RUTAS_PUBLICAS = [
   /^juego\.html$/,
   /^(juego|estilo)\.css$/,
-  /^js\/(?!retirado\/)[\w\/-]+\.js$/,          // el juego (js/ y js/juego/), sin js/retirado/
+  /^js\/[\w\/-]+\.js$/,                      // el juego (js/ y js/juego/)
   /^disenador\/[\w\/-]+\.js$/,                  // el diseñador de estandartes que dibuja los blasones
   /^figuras\/[\w-]+\.js$/,                       // figuras heráldicas, se cargan al usarlas
   /^arte\/[\w.-]+\.(png|json|js)$/,              // arte propio: manifest y hojas, solo en arte/ (sin subcarpetas)
+  /^tutorial\/(en\/)?[\w-]+\.jpg$/,                     // capturas del tutorial (tools/capturas-tutorial.js)
 ];
 const esRutaPublica = relativa => RUTAS_PUBLICAS.some(patron => patron.test(relativa));
 // Archivos del juego por HTTP: «/» es juego.html; solo los de la lista blanca
@@ -133,7 +134,7 @@ function crearServidorLobby(opciones) {
   const enviar = (jugador, mensaje) => { if (jugador.ws.readyState === 1) jugador.ws.send(JSON.stringify(mensaje)); };
   const codigoNuevo = () => { let c; do { c = Array.from({ length: 6 }, () => LETRAS_CODIGO[Math.floor(Math.random() * LETRAS_CODIGO.length)]).join(''); } while ([...salas.values()].some(s => s.codigo === c)); return c; };
   // el ejército del rival no se ve hasta que los dos confirman (solo si ya lo ha confirmado)
-  const resumenSala = s => ({ id: s.id, codigo: s.codigo, nombre: s.nombre, privada: s.privada, anfitrion: s.jugadores[0] ? s.jugadores[0].nombre : null, jugadores: s.jugadores.map(j => ({ id: j.id, nombre: j.nombre, listo: s.listos.has(j.id), ejercitoConfirmado: s.ejercitos.has(j.id) })), max: MAX_JUGADORES_SALA, desdeMatchmaking: !!s.desdeMatchmaking, fase: s.fase, presupuesto: s.presupuesto, presupuestos: PRESUPUESTOS, clima: s.fase !== 'espera' ? s.clima : null });
+  const resumenSala = s => ({ id: s.id, codigo: s.codigo, nombre: s.nombre, privada: s.privada, anfitrion: s.jugadores[0] ? s.jugadores[0].nombre : null, jugadores: s.jugadores.map(j => ({ id: j.id, nombre: j.nombre, listo: s.listos.has(j.id), ejercitoConfirmado: s.ejercitos.has(j.id) })), max: MAX_JUGADORES_SALA, desdeMatchmaking: !!s.desdeMatchmaking, fase: s.fase, presupuesto: s.presupuesto, presupuestos: PRESUPUESTOS, clima: s.fase !== 'espera' ? s.clima : null, mapa: s.fase !== 'espera' ? s.mapa : null });
   const listaPublica = () => [...salas.values()].filter(s => !s.privada && s.jugadores.length < MAX_JUGADORES_SALA).map(resumenSala);
   // la lista de salas se reenvía a todos los que están en el lobby (sin sala) cada vez que cambia algo
   const avisarLobby = () => { const lista = listaPublica(); for (const j of jugadores.values()) if (!j.sala) enviar(j, { tipo: 'salas', lista }); };
@@ -141,7 +142,7 @@ function crearServidorLobby(opciones) {
 
   function sacarDeCola(jugador) { const k = cola.indexOf(jugador); if (k >= 0) cola.splice(k, 1); jugador.buscando = false; }
   // al cambiar quién está, la sala vuelve a la espera: nadie listo y sin ejércitos
-  function reiniciarSala(sala) { sala.listos.clear(); sala.ejercitos.clear(); sala.fase = 'espera'; sala.semilla = null; sala.clima = null; }
+  function reiniciarSala(sala) { sala.listos.clear(); sala.ejercitos.clear(); sala.fase = 'espera'; sala.semilla = null; sala.clima = null; sala.mapa = null; }
   function meterEnSala(jugador, sala) {
     sacarDeCola(jugador);
     sala.jugadores.push(jugador); jugador.sala = sala;
@@ -322,7 +323,7 @@ function crearServidorLobby(opciones) {
       if (m.listo) sala.listos.add(j.id); else sala.listos.delete(j.id);
       if (sala.jugadores.length === MAX_JUGADORES_SALA && sala.listos.size === MAX_JUGADORES_SALA) {
         // los dos listos: semilla y clima comunes, lado de cada uno (el anfitrión a la izquierda, equipo 0) y a preparar ejércitos
-        sala.semilla = 1 + Math.floor(Math.random() * 1e9); sala.clima = motor.elegirClima(sala.semilla); sala.fase = 'preparacion';
+        sala.semilla = 1 + Math.floor(Math.random() * 1e9); sala.clima = motor.elegirClima(sala.semilla); sala.mapa = motor.elegirMapa(sala.semilla); sala.fase = 'preparacion';
         avisarSala(sala);
         sala.jugadores.forEach((jug, equipo) => enviar(jug, { tipo: 'salaLista', semilla: sala.semilla, equipo, clima: sala.clima, presupuesto: sala.presupuesto, sala: resumenSala(sala) }));
         log('sala en preparación', sala.codigo, 'semilla', sala.semilla, sala.clima);
@@ -349,7 +350,7 @@ function crearServidorLobby(opciones) {
       avisarSala(sala);
       if (sala.jugadores.length === MAX_JUGADORES_SALA && sala.jugadores.every(jug => sala.ejercitos.has(jug.id))) {
         sala.fase = 'lista';
-        const ficha = { tipo: 'batallaLista', semilla: sala.semilla, clima: sala.clima, presupuesto: sala.presupuesto, jugadores: sala.jugadores.map((jug, equipo) => Object.assign({ nombre: jug.nombre, equipo }, sala.ejercitos.get(jug.id))) };
+        const ficha = { tipo: 'batallaLista', semilla: sala.semilla, clima: sala.clima, mapa: sala.mapa, presupuesto: sala.presupuesto, jugadores: sala.jugadores.map((jug, equipo) => Object.assign({ nombre: jug.nombre, equipo }, sala.ejercitos.get(jug.id))) };
         ficha.tiempoDespliegue = TIEMPO_DESPLIEGUE;
         log('batalla lista', sala.codigo, ficha.jugadores.map(x => x.nombre + ' (' + x.rama + ', ' + x.ejercito.length + ' unidades)').join(' contra '));
         empezarBatallaSala(sala, ficha);

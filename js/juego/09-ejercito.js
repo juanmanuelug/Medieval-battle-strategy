@@ -1,7 +1,7 @@
 'use strict';
 /* ---------- Ejércitos: tienda del jugador y reclutamiento de la IA ----------
    Una entrada de ejército es { tipo, nivel } (nivel = índice en NIVELES); los soldados y el precio salen de los datos. */
-function soldadosDeUnidad(ramaClave, tipo) { const rama = RAMAS[ramaClave]; return Math.round(TROPA[tipo].tamano * (rama.extraSoldados || 1)); }
+function soldadosDeUnidad(ramaClave, tipo) { const rama = RAMAS[ramaClave]; return TROPA[tipo].rama === 'artilleria' ? TROPA[tipo].tamano : Math.round(TROPA[tipo].tamano * (rama.extraSoldados || 1)); }
 function precioUnidad(ramaClave, tipo, nivel) {
   const rama = RAMAS[ramaClave], b = (rama.bonificaciones || {})[tipo] || {};
   return Math.round(soldadosDeUnidad(ramaClave, tipo) * TROPA[tipo].precio * NIVELES[nivel].multPrecio * (b.precio || 1));
@@ -9,7 +9,8 @@ function precioUnidad(ramaClave, tipo, nivel) {
 // Multiplicadores que recibe la simulación para esa unidad
 function modificadoresUnidad(ramaClave, tipo, nivel) {
   const rama = RAMAS[ramaClave], b = (rama.bonificaciones || {})[tipo] || {}, n = NIVELES[nivel];
-  return { vida: n.multStats * (b.vida || 1), dano: n.multStats * (b.dano || 1), velocidad: (b.velocidad || 1), moral: rama.moral * n.multMoral };
+  const base = TIPOS[TIPO[tipo]] || {};
+  return { vida: n.multStats * (b.vida || 1), dano: n.multStats * (b.dano || 1), velocidad: (b.velocidad || 1), moral: rama.moral * n.multMoral * (base.moralBase || 1) };
 }
 function nombreUnidad(tipo, nivel) { return `${TIPOS[TIPO[tipo]].nombre} (${NIVELES[nivel].nombre.toLowerCase()})`; }
 function costeEjercito(ramaClave, ejercito) { return ejercito.reduce((s, e) => s + precioUnidad(ramaClave, e.tipo, e.nivel), 0); }
@@ -38,7 +39,7 @@ function reclutarIA(ramaClave, presupuesto, sesgoNivel, azar, referencia) {
     const p = precioUnidad(ramaClave, tipo, nivel); if (p > oro) return false;
     oro -= p; ejercito.push({ tipo, nivel }); return true;
   };
-  const pesos = [['infanteriaLigera', 3], ['infanteriaPesada', 2], ['lanceros', 2], ['arqueros', 2], ['caballeriaPesada', 1.5]];
+  const pesos = [['infanteriaLigera', 3], ['infanteriaPesada', 2], ['lanceros', 2], ['arqueros', 2], ['caballeriaPesada', 1.5], ['caballeriaLigera', 0.8], ['ballesteros', 0.8], ['mangoneles', 0.5]];
   for (const t of (RAMAS[ramaClave].exclusivas || [])) pesos.push([t, 1.8]);                              // y sus tropas exclusivas
   const b = RAMAS[ramaClave].bonificaciones || {}; for (const p of pesos) if (b[p[0]]) p[1] *= 1.5;      // la IA compra lo que su rama hace bien
   comprar('infanteriaPesada'); comprar('infanteriaLigera'); comprar('lanceros'); comprar('arqueros');

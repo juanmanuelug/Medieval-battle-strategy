@@ -15,8 +15,17 @@ const ICONOS_TIPO = {
   caballeriaPesada: '<path d="M4 19 c0-6 3-9 7-9 h3 l3-4 l2 1 l-1 4 c2 1 2 4 2 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 19 v-4 M16 19 v-4" stroke="currentColor" stroke-width="2"/>',
   caballeriaLigera: '<path d="M4 19 c0-6 3-9 7-9 h3 l3-4 l2 1 l-1 4 c2 1 2 4 2 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 19 v-4 M16 19 v-4 M3 6 l5 5" stroke="currentColor" stroke-width="1.6"/>',
   arquerosACaballo: '<path d="M4 19 c0-6 3-9 7-9 h3 l3-4 l2 1 l-1 4 c2 1 2 4 2 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 3 q5 4 0 8" fill="none" stroke="currentColor" stroke-width="1.6"/>',
+  // exclusivas de rama (2026-10-13): lanza de justa, hacha a dos manos, cruz templaria, hacha doble
+  caballeros: '<path d="M3 21 L14 10" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M13 7 L21 3 L17 11 Z" fill="currentColor"/><path d="M9 13 l3 3" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>',
+  guardiaVarega: '<path d="M6 21 L15 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M13 4 c4 0 7 3 7 7 c-3 0-5-1-7-3 z" fill="currentColor"/>',
+  templarios: '<path d="M10 3 h4 v7 h7 v4 h-7 v7 h-4 v-7 h-7 v-4 h7 z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
+  berserkers: '<path d="M12 4 V21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M12 6 c-5-2-8 1-8 5 c3-1 6-1 8 1 z M12 6 c5-2 8 1 8 5 c-3-1-6-1-8 1 z" fill="currentColor"/>',
+  // mangonel: armazón, brazo y piedra
+  mangoneles: '<path d="M3 19 H21 M6 19 L10 11 L14 19" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 13 L18 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="19" cy="4" r="2.2" fill="currentColor"/><circle cx="7" cy="20" r="1.6" fill="currentColor"/><circle cx="17" cy="20" r="1.6" fill="currentColor"/>',
+  // guardia del general: corona (la usa la insignia del estandarte en el campo)
+  general: '<path d="M4 17 L5 8 L9 12 L12 6 L15 12 L19 8 L20 17 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 20 H20" stroke="currentColor" stroke-width="2"/>',
 };
-const NOMBRE_CORTO_TIPO = { infanteriaLigera: 'Inf. ligera', infanteriaPesada: 'Inf. pesada', lanceros: 'Lanceros', arqueros: 'Arqueros', ballesteros: 'Ballesteros', caballeriaPesada: 'Cab. pesada', caballeriaLigera: 'Cab. ligera', arquerosACaballo: 'Arq. a caballo' };
+const NOMBRE_CORTO_TIPO = { infanteriaLigera: 'Inf. ligera', infanteriaPesada: 'Inf. pesada', lanceros: 'Lanceros', arqueros: 'Arqueros', ballesteros: 'Ballesteros', caballeriaPesada: 'Cab. pesada', caballeriaLigera: 'Cab. ligera', arquerosACaballo: 'Arq. a caballo', caballeros: 'Caballeros', guardiaVarega: 'Varegos', templarios: 'Templarios', berserkers: 'Berserkers', mangoneles: 'Mangoneles' };
 
 function construirBarraUnidades(contenedor, unidades, acciones) {
   contenedor.replaceChildren();

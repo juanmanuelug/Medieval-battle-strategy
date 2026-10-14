@@ -42,10 +42,9 @@ function crearMotor() {
     return { ok: true, coste };
   }
   // Clima de la batalla desde la semilla: despejado 55 %, lluvia 20 %, barro 15 %, tormenta 10 % (como la batalla normal)
-  function elegirClima(semilla) {
-    const tirada = ejecutar('crearAleatorio')(semilla + 7).numero();
-    return tirada < 0.55 ? 'despejado' : tirada < 0.75 ? 'lluvia' : tirada < 0.9 ? 'barro' : 'tormenta';
-  }
+  function elegirClima(semilla) { return ejecutar('climaDesdeSemilla')(semilla); }
+  // tipo de mapa desde la semilla (2026-10-13): el mismo reparto que la batalla individual
+  function elegirMapa(semilla) { return ejecutar('mapaDesdeSemilla')(semilla); }
   /* Batalla en red (paso 3): la simulación del servidor, montada con la misma función que los navegadores
      (montarSimulacionRed). El servidor aplica cada orden aquí antes de repartirla: si no vale (unidad ajena, muerta, valores
      raros), no se reparte. */
@@ -63,7 +62,7 @@ function crearMotor() {
       ganador: () => ganadorBatalla(sim),
     };
   }
-  return { contexto, ejecutar, validarEjercito, elegirClima, crearBatallaRed, RAMAS, MAX_UNIDADES };
+  return { contexto, ejecutar, validarEjercito, elegirClima, elegirMapa, crearBatallaRed, RAMAS, MAX_UNIDADES };
 }
 
 module.exports = { crearMotor, MAX_UNIDADES };

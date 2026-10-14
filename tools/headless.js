@@ -68,6 +68,10 @@ async function withPage(fn, opts) {
     const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
     const ws = await connect(target.webSocketDebuggerUrl);
     const page = new Session(ws);
+    // el tutorial del juego se abre solo la primera vez; en las pruebas se da por visto (opts.tutorial: true para verlo)
+    if (!(opts && opts.tutorial)) await page.send('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.setItem('batallas.tutorialVisto.v1', '1'); } catch (e) {}" });
+    // idioma del juego: español salvo que se pida otro (opts.idioma); si no, saldría el del navegador sin cabeza (inglés)
+    await page.send('Page.addScriptToEvaluateOnNewDocument', { source: `try { if (!localStorage.getItem('batallas.idioma.v1')) localStorage.setItem('batallas.idioma.v1', '${(opts && opts.idioma) || 'es'}'); } catch (e) {}` });
     result = await fn(page);
     ws.close();
   } finally {

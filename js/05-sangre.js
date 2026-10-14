@@ -39,14 +39,34 @@ class LienzoSangre {
     this.version++;
   }
   // Colinas (más claras, con curvas de nivel) y bosques (suelo oscuro) según las manchas del terreno
-  pintarTerreno(terreno) {
+  // nieve (2026-10-13): cubre la hierba de blanco con montones y huellas grises
+  pintarNieve(azar) {
+    const c = this.contexto, w = this.canvas.width, h = this.canvas.height, ppm = this.pixelesPorMetro;
+    c.fillStyle = '#e6ecf1'; c.fillRect(0, 0, w, h);
+    for (let k = 0; k < Math.round(w * h / 9000); k++) { c.globalAlpha = 0.5; c.fillStyle = azar.numero() < 0.5 ? '#f6f8fb' : '#d6dee6'; c.beginPath(); c.ellipse(azar.numero() * w, azar.numero() * h, (2 + azar.numero() * 8) * ppm, (1 + azar.numero() * 4) * ppm, azar.numero() * Math.PI, 0, Math.PI * 2); c.fill(); }
+    c.globalAlpha = 0.18; c.fillStyle = '#7a8a5a';
+    for (let k = 0; k < Math.round(w * h / 40000); k++) { c.beginPath(); c.ellipse(azar.numero() * w, azar.numero() * h, (0.5 + azar.numero() * 1.5) * ppm, (0.3 + azar.numero()) * ppm, 0, 0, Math.PI * 2); c.fill(); }
+    c.globalAlpha = 1; this.version++;
+  }
+  pintarTerreno(terreno, opciones) {
     if (!terreno) return;
-    const c = this.contexto, ppm = this.pixelesPorMetro;
+    const c = this.contexto, ppm = this.pixelesPorMetro, nieve = !!(opciones && opciones.nieve);
     const trazar = (m, factor) => { c.beginPath(); for (let k = 0; k <= 48; k++) { const a = -Math.PI + k / 48 * 2 * Math.PI; const r = terreno.radioEn(m, a) * factor * ppm; const px = m.x * ppm + Math.cos(a) * r, py = m.y * ppm + Math.sin(a) * r; if (k === 0) c.moveTo(px, py); else c.lineTo(px, py); } c.closePath(); };
     for (const m of terreno.manchas) {
       if (m.tipo === 2) {
-        for (const [factor, color] of [[1, '#6f8c3a'], [0.72, '#7a9842'], [0.45, '#86a34a']]) { trazar(m, factor); c.fillStyle = color; c.fill(); c.strokeStyle = '#5a7330'; c.lineWidth = 1.5; c.stroke(); }
-      } else { trazar(m, 1); c.fillStyle = '#3e5a28'; c.fill(); }
+        for (const [factor, color] of (nieve ? [[1, '#eef2f6'], [0.72, '#f4f7fa'], [0.45, '#fafcfd']] : [[1, '#6f8c3a'], [0.72, '#7a9842'], [0.45, '#86a34a']])) { trazar(m, factor); c.fillStyle = color; c.fill(); c.strokeStyle = nieve ? '#b8c4d0' : '#5a7330'; c.lineWidth = 1.5; c.stroke(); }
+      } else { trazar(m, 1); c.fillStyle = nieve ? '#4a5e48' : '#3e5a28'; c.fill(); }
+    }
+    // río (2026-10-13): franja de agua con orillas y vados de grava; con nieve, el agua se ve más fría
+    if (terreno.rio) {
+      const rio = terreno.rio, franja = (anchoExtra, color) => { c.beginPath(); for (let y = 0; y <= CAMPO.alto; y += 2) c.lineTo((rio.centroX(y) - rio.ancho / 2 - anchoExtra) * ppm, y * ppm); for (let y = CAMPO.alto; y >= 0; y -= 2) c.lineTo((rio.centroX(y) + rio.ancho / 2 + anchoExtra) * ppm, y * ppm); c.closePath(); c.fillStyle = color; c.fill(); };
+      franja(1.2, nieve ? '#9aa6ae' : '#7a6a42');           // orillas
+      franja(0, nieve ? '#5f86a8' : '#3f6f9a');             // agua
+      franja(-rio.ancho * 0.3, nieve ? '#7aa0be' : '#4f84ad');
+      for (const v of rio.vados) {
+        c.beginPath(); for (let y = v - rio.anchoVado / 2; y <= v + rio.anchoVado / 2; y += 1) c.lineTo((rio.centroX(y) - rio.ancho / 2 - 0.5) * ppm, y * ppm); for (let y = v + rio.anchoVado / 2; y >= v - rio.anchoVado / 2; y -= 1) c.lineTo((rio.centroX(y) + rio.ancho / 2 + 0.5) * ppm, y * ppm); c.closePath();
+        c.fillStyle = '#a89a72'; c.globalAlpha = 0.85; c.fill(); c.globalAlpha = 1;
+      }
     }
     this.version++;
   }
@@ -98,6 +118,15 @@ class LienzoSangre {
       c.strokeStyle = '#e8e4d8'; c.lineWidth = 1; c.beginPath(); c.moveTo(0, -0.45 * ppm); c.lineTo(0, 0.45 * ppm); c.stroke();
     }
     c.restore(); this.version++;
+  }
+  // cráter de una piedra de mangonel (2026-10-14): tierra levantada, oscura en el centro y con terrones alrededor
+  crater(x, y, azar) {
+    const c = this.contexto, ppm = this.pixelesPorMetro, px = x * ppm, py = y * ppm;
+    c.globalAlpha = 0.85; c.fillStyle = '#4a3520'; c.beginPath(); c.ellipse(px, py, 1.1 * ppm, 0.75 * ppm, azar.entre(0, Math.PI), 0, Math.PI * 2); c.fill();
+    c.globalAlpha = 0.9; c.fillStyle = '#2e2014'; c.beginPath(); c.ellipse(px, py, 0.55 * ppm, 0.38 * ppm, 0, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = 0.7; c.fillStyle = '#6a4e30';
+    for (let k = 0; k < 9; k++) { const a = azar.entre(0, Math.PI * 2), r = azar.entre(0.9, 1.9) * ppm; c.beginPath(); c.ellipse(px + Math.cos(a) * r, py + Math.sin(a) * r * 0.7, azar.entre(0.1, 0.25) * ppm, azar.entre(0.07, 0.16) * ppm, a, 0, Math.PI * 2); c.fill(); }
+    c.globalAlpha = 1; this.version++;
   }
   mancha(x, y, tamanoMetros, azar) {
     const c = this.contexto, ppm = this.pixelesPorMetro;

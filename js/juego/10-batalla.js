@@ -6,8 +6,8 @@
    arqueros disparan). Teclas: F ciclo de formación, H alto, Supr… no. iniciarBatalla(opciones) → mando. */
 function colocarEjercito(sim, equipo, ramaClave, ejercito, multMoral) {
   const frenteX = equipo === 0 ? Math.round(CAMPO.ancho * FRENTE_DESPLIEGUE) : Math.round(CAMPO.ancho * (1 - FRENTE_DESPLIEGUE)), rumbo = equipo === 0 ? 0 : Math.PI, signo = equipo === 0 ? 1 : -1;
-  const grupos = { infanteria: [], lanceros: [], arqueros: [], caballeria: [] };
-  for (const e of ejercito) { const t = e.tipo; (t === 'lanceros' ? grupos.lanceros : t === 'arqueros' ? grupos.arqueros : t === 'caballeriaPesada' ? grupos.caballeria : grupos.infanteria).push(e); }
+  const grupos = { infanteria: [], lanceros: [], arqueros: [], caballeria: [], artilleria: [] };
+  for (const e of ejercito) { const t = e.tipo; (t === 'lanceros' ? grupos.lanceros : t === 'arqueros' ? grupos.arqueros : t === 'caballeriaPesada' ? grupos.caballeria : t === 'mangoneles' ? grupos.artilleria : grupos.infanteria).push(e); }
   const unidades = [];
   const crear = (e, x, y) => {
     const soldados = soldadosDeUnidad(ramaClave, e.tipo);
@@ -38,6 +38,7 @@ function colocarEjercito(sim, equipo, ramaClave, ejercito, multMoral) {
   const anchoFrente = Math.min(ANCHO_MAX, frente.reduce((s, e) => s + ancho(e), 0));
   let xLibre = desplegarLineas(frente, frenteX, 9);
   xLibre = desplegarLineas(grupos.arqueros, xLibre - signo * 3, 7);
+  xLibre = desplegarLineas(grupos.artilleria, xLibre - signo * 6, 10);           // los mangoneles, detrás de todo (2026-10-13)
   // caballería en las alas, alternando lados; si no cabe, detrás de los arqueros
   grupos.caballeria.forEach((e, k) => {
     const lado = k % 2 ? 1 : -1, salto = Math.floor(k / 2) * 10;
@@ -60,7 +61,7 @@ function crearGeneralBatalla(sim, equipo, ramaClave, nombre, efectos) {
    ficha del servidor ({ semilla, clima, jugadores: [{ nombre, equipo, rama, ejercito }] }). Sin rasgos del general ni temor:
    los dos bandos en igualdad. → { sim, terreno, unidades: [unidades del equipo 0, unidades del equipo 1] } */
 function montarSimulacionRed(ficha) {
-  const terreno = typeof Terreno !== 'undefined' ? new Terreno(ficha.semilla) : null;
+  const terreno = typeof Terreno !== 'undefined' ? new Terreno(ficha.semilla, { mapa: ficha.mapa || mapaDesdeSemilla(ficha.semilla) }) : null;
   const sim = new Simulacion({ semilla: ficha.semilla, terreno, clima: ficha.clima });
   const jugadores = [0, 1].map(equipo => ficha.jugadores.find(j => j.equipo === equipo));
   const unidades = jugadores.map((j, equipo) => colocarEjercito(sim, equipo, j.rama, j.ejercito));
@@ -102,10 +103,9 @@ function iniciarBatalla(opciones) {
     if (reanudacion && reanudacion.ordenesPropias) for (const orden of reanudacion.ordenesPropias) aplicarOrden(sim, equipoPropio, orden, { desplegando: true });
   } else {
     semilla = (Date.now() % 100000) + 1;
-    terreno = typeof Terreno !== 'undefined' ? new Terreno(semilla) : null;
-    // clima: el elegido en la batalla personalizada o uno al azar (despejado 55 %, lluvia 20 %, barro 15 %, tormenta 10 %)
-    const azarClima = crearAleatorio(semilla + 7), tiradaClima = azarClima.numero();
-    const clima = CLIMAS[opciones.clima] ? opciones.clima : tiradaClima < 0.55 ? 'despejado' : tiradaClima < 0.75 ? 'lluvia' : tiradaClima < 0.9 ? 'barro' : 'tormenta';
+    // mapa y clima: los elegidos en la batalla personalizada o al azar desde la semilla
+    terreno = typeof Terreno !== 'undefined' ? new Terreno(semilla, { mapa: TIPOS_MAPA[opciones.mapa] ? opciones.mapa : mapaDesdeSemilla(semilla) }) : null;
+    const clima = CLIMAS[opciones.clima] ? opciones.clima : climaDesdeSemilla(semilla);
     sim = new Simulacion({ semilla, terreno, clima });
     unidadesJugador = colocarEjercito(sim, 0, reino.rama, reino.ejercito, efectosGeneralPropio.multMoralPropia);
     unidadesIA = colocarEjercito(sim, 1, ramaIA, ejercitoIA, efectosGeneralPropio.multMoralEnemiga);
@@ -115,7 +115,8 @@ function iniciarBatalla(opciones) {
     colinaDefensiva = actitudIA === 'defensiva' && typeof prepararDefensaIA === 'function' ? prepararDefensaIA(sim, unidadesIA, terreno) : null;
   }
   const sangre = new LienzoSangre(CAMPO.ancho, CAMPO.alto, 6);   // 6 px/m: la sangre y los restos se ven menos pixelados al acercar
-  sangre.pintarTerreno(terreno);
+  if (sim.clima.nieve) sangre.pintarNieve(crearAleatorio(semilla + 17));   // suelo nevado (2026-10-13)
+  sangre.pintarTerreno(terreno, { nieve: !!sim.clima.nieve });
   if (sim.clima.barro) sangre.pintarBarro(crearAleatorio(semilla + 11));
   // azar propio para las manchas del suelo: si usaran sim.azar, cada navegador lo gastaría a su ritmo de fotogramas y la
   // simulación dejaría de ser idéntica a la del servidor y a la del rival (batallas en red)
@@ -188,14 +189,20 @@ function iniciarBatalla(opciones) {
   /* ----- órdenes a la selección ----- */
   /* Mover la selección a un punto. Con varias unidades se forman en una FILA centrada en el punto y perpendicular a la
      dirección de avance (o al rumbo arrastrado), cada una con el ancho de su frente y un hueco entre ellas, conservando el
-     orden lateral que ya tienen para que no se crucen. Con `conservarPosiciones` (Alt) se mantienen las posiciones relativas. */
+     orden lateral que ya tienen para que no se crucen. Con `conservarPosiciones` (Alt) se mantiene la disposición: cada unidad
+     conserva su sitio respecto a las demás y, si se arrastra un rumbo, el conjunto entero gira hacia él (la infantería que iba
+     delante sigue delante, la caballería de los flancos sigue en los flancos) (2026-10-14). */
   // Plan de movimiento: dónde queda cada unidad y con qué rumbo. `rumboDibujo` es el rumbo con que se previsualiza la huella;
   // `rumboFinal` el que recibe la orden (null = conservar el actual al llegar). Lo usan moverSeleccion y el arrastre del ratón.
   function planMover(x, y, rumbo, conservarPosiciones) {
     const sel = vivas(seleccion); if (!sel.length) return [];
     const cx = sel.reduce((s, u) => s + u.origenX, 0) / sel.length, cy = sel.reduce((s, u) => s + u.origenY, 0) / sel.length;
     if (sel.length === 1 || conservarPosiciones) {
-      return sel.map(u => { const dim = sim.dimensionesUnidad(u); return { u, x: limitar(x + (u.origenX - cx), 3, CAMPO.ancho - 3), y: limitar(y + (u.origenY - cy), 3, CAMPO.alto - 3), rumboFinal: rumbo, rumboDibujo: rumbo !== null ? rumbo : u.rumbo, ancho: dim.ancho, fondo: dim.fondo }; });
+      // giro de la disposición: del rumbo medio actual del conjunto al rumbo pedido (sin rumbo, solo se traslada)
+      let giro = 0;
+      if (rumbo !== null && sel.length > 1) { const rumboMedio = Math.atan2(sel.reduce((s, u) => s + Math.sin(u.rumbo), 0), sel.reduce((s, u) => s + Math.cos(u.rumbo), 0)); giro = rumbo - rumboMedio; }
+      const cosG = Math.cos(giro), senG = Math.sin(giro);
+      return sel.map(u => { const dim = sim.dimensionesUnidad(u), rx = u.origenX - cx, ry = u.origenY - cy; return { u, x: limitar(x + rx * cosG - ry * senG, 3, CAMPO.ancho - 3), y: limitar(y + rx * senG + ry * cosG, 3, CAMPO.alto - 3), rumboFinal: rumbo, rumboDibujo: rumbo !== null ? rumbo : u.rumbo, ancho: dim.ancho, fondo: dim.fondo }; });
     }
     const rumboFila = rumbo !== null ? rumbo : Math.atan2(y - cy, x - cx);
     const lateralX = -Math.sin(rumboFila), lateralY = Math.cos(rumboFila);        // eje de la fila (perpendicular al avance)
@@ -289,9 +296,10 @@ function iniciarBatalla(opciones) {
     else if (k === 'g') { if (e.shiftKey) deshacerGrupo(); else crearGrupo(); }
     else if (k === 'e') alternarEscaramuza();
     else if (k === 'h') ordenSeleccion('formar');
-    else if (k === 'a' && !e.ctrlKey) ordenSeleccion('avanzar', e.shiftKey ? 'correr' : 'andar');    // Mayús+A: a la carrera
+    // W A S D mueven la cámara (render-iso.js); atacar va en R y disparar en T (2026-10-13, pedido tras probarlo con amigos)
+    else if (k === 'r') ordenSeleccion('avanzar', e.shiftKey ? 'correr' : 'andar');    // Mayús+R: a la carrera
     else if (k === 'c') ordenSeleccion('cargar');
-    else if (k === 'd') ordenSeleccion('disparar', e.shiftKey ? 'correr' : 'andar');
+    else if (k === 't') ordenSeleccion('disparar', e.shiftKey ? 'correr' : 'andar');
     else if (k === 'f' && seleccion.length) {
       // siguiente formación del ciclo que pueda usar alguna unidad de la selección
       const actual = seleccion[0].formacion.clave;
@@ -318,7 +326,11 @@ function iniciarBatalla(opciones) {
     // el jugador de la derecha lo ve girado 180°, como el campo
     c.save(); if (girada) { c.translate(w, h); c.scale(-1, -1); }
     c.fillStyle = '#4f6a2d'; c.fillRect(0, 0, w, h);
-    if (terreno) for (const m of terreno.manchas) { c.fillStyle = m.tipo === 2 ? '#7a9842' : '#2f4a1e'; c.beginPath(); for (let k = 0; k <= 24; k++) { const a = -Math.PI + k / 24 * 2 * Math.PI, r = terreno.radioEn(m, a) * escalaMini; const px = m.x * escalaMini + Math.cos(a) * r, py = m.y * escalaMini + Math.sin(a) * r; if (k === 0) c.moveTo(px, py); else c.lineTo(px, py); } c.closePath(); c.fill(); }
+    const nevado = sim.clima.nieve;
+    if (nevado) { c.fillStyle = '#dfe6ec'; c.fillRect(0, 0, w, h); }
+    if (terreno) for (const m of terreno.manchas) { c.fillStyle = m.tipo === 2 ? (nevado ? '#f1f4f7' : '#7a9842') : (nevado ? '#4a5e48' : '#2f4a1e'); c.beginPath(); for (let k = 0; k <= 24; k++) { const a = -Math.PI + k / 24 * 2 * Math.PI, r = terreno.radioEn(m, a) * escalaMini; const px = m.x * escalaMini + Math.cos(a) * r, py = m.y * escalaMini + Math.sin(a) * r; if (k === 0) c.moveTo(px, py); else c.lineTo(px, py); } c.closePath(); c.fill(); }
+    // río y vados (2026-10-13)
+    if (terreno && terreno.rio) for (let y = 0; y < CAMPO.alto; y += 2) { const vado = terreno.rio.vados.some(v => Math.abs(y - v) <= terreno.rio.anchoVado / 2); c.fillStyle = vado ? '#9aa88a' : '#3f6f9a'; c.fillRect((terreno.rio.centroX(y) - terreno.rio.ancho / 2) * escalaMini, y * escalaMini, terreno.rio.ancho * escalaMini, 2 * escalaMini + 0.5); }
     c.strokeStyle = '#2a201a'; c.strokeRect(0.5, 0.5, w - 1, h - 1);
     for (const u of sim.unidades) {
       if (u.vivos === 0 || oculto(u.equipo)) continue;
@@ -394,7 +406,8 @@ function iniciarBatalla(opciones) {
     }
     if (sim.sangre.length) {
       for (const m of sim.sangre) {
-        sangre.mancha(m.x, m.y, m.tamano, azarManchas); if (renderizador.sangrar) renderizador.sangrar(m);
+        if (m.tipo !== 'impacto') sangre.mancha(m.x, m.y, m.tamano, azarManchas);   // la piedra que cae al suelo no deja sangre
+        if (renderizador.sangrar) renderizador.sangrar(m);
         if (m.tipo === 'muerte') registroMapa.muertes.push([+m.x.toFixed(1), +m.y.toFixed(1), m.equipo]); else if (m.tipo === 'atropello') registroMapa.atropellos.push([+m.x.toFixed(1), +m.y.toFixed(1)]);
       }
       sim.sangre.length = 0;
@@ -419,7 +432,7 @@ function iniciarBatalla(opciones) {
   }
   requestAnimationFrame(bucle);
   return {
-    sim, unidadesJugador, unidadesIA, clima: sim.clima, equipoPropio, enRed: !!red,
+    sim, unidadesJugador, unidadesIA, clima: sim.clima, mapa: terreno ? TIPOS_MAPA[terreno.mapa] : null, equipoPropio, enRed: !!red,
     // red: el cliente del lobby entrega aquí los turnos del servidor (en orden) y los avisos de desincronía
     recibirTurno: turno => { if (red) turnosRed.push(turno); },
     desincronia: n => { avisoDesincronia = n; console.warn('Batalla en red: el estado de este navegador se ha desviado del servidor en el turno', n); },

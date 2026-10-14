@@ -105,7 +105,7 @@ function pintarSala(sala) {
   if (selector.options.length !== (sala.presupuestos || []).length) html('#sel-mj-presupuesto', (sala.presupuestos || []).map(p => `<option value="${p}">${p.toLocaleString('es-ES')} de oro</option>`).join(''));
   selector.value = String(sala.presupuesto); selector.disabled = !soyAnfitrion || sala.fase !== 'espera';
   selector.title = soyAnfitrion ? 'Oro de cada jugador para su ejército' : 'Lo elige el anfitrión';
-  elemento('#mj-sala-clima').textContent = sala.clima ? 'Clima: ' + nombreClima(sala.clima) : '';
+  elemento('#mj-sala-clima').textContent = sala.clima ? 'Clima: ' + nombreClima(sala.clima) + (sala.mapa && TIPOS_MAPA[sala.mapa] ? ' · Mapa: ' + TIPOS_MAPA[sala.mapa].nombre : '') : '';
   // estado de cada jugador en la preparación
   if (sala.fase !== 'espera') for (const [k, j] of sala.jugadores.entries()) { const tarjeta = document.querySelectorAll('#mj-sala-jugadores .jugador-sala')[k]; const estado = tarjeta && tarjeta.querySelector('.estado-listo'); if (estado) { estado.textContent = j.ejercitoConfirmado ? 'Ejército confirmado' : 'Eligiendo ejército…'; estado.classList.toggle('si', !!j.ejercitoConfirmado); } }
   elemento('#mj-preparacion').classList.toggle('oculto', sala.fase !== 'preparacion');
@@ -329,7 +329,7 @@ async function empezarBatallaRed(ficha, reanudacion) {
     alTerminar: resultado => terminarBatallaRed(resultado, jugadores, colores),
   });
   for (const turno of turnosEnEspera.splice(0)) batalla.recibirTurno(turno);
-  elemento('#hud-batalla-titulo').insertAdjacentHTML('beforeend', ` · <span class="clima" title="${textoEsc(batalla.clima.descripcion || '')}">${textoEsc(batalla.clima.nombre || batalla.clima.tipo)}</span><span id="hud-aviso-actitud"></span>`);
+  elemento('#hud-batalla-titulo').insertAdjacentHTML('beforeend', ` · <span class="clima" title="${textoEsc(batalla.clima.descripcion || '')}">${textoEsc(batalla.clima.nombre || batalla.clima.tipo)}</span>${batalla.mapa ? ` · <span class="clima" title="${textoEsc(batalla.mapa.descripcion)}">${textoEsc(batalla.mapa.nombre)}</span>` : ''}<span id="hud-aviso-actitud"></span>`);
   elemento('#marcador-jugador-nombre').textContent = yo.nombre; elemento('#marcador-enemigo-nombre').textContent = rival.nombre;
   montarBarraUnidades(batalla.unidadesJugador, null);
   elemento('#discurso').classList.add('oculto');
