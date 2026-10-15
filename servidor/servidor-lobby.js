@@ -39,13 +39,15 @@
                          · salir · listo {listo} · chat {texto} · buscarPartida · cancelarBusqueda
                          · opcionesSala {presupuesto} (anfitrión) · ejercito {rama, ejercito, blason} · retirarEjercito
                          · orden {orden} · listoDespliegue · resumen {n, h} · rendirse
+                         · estadoCompleto {n, estado} · resultado {n, ganador}   (solo en modo relevo)
                          · pedirPausa · responderPausa {acepta} · reanudarPausa
      servidor → cliente: bienvenida {id, version} · salas {lista} · enSala {sala} · fueraDeSala · chat {de, texto, hora}
                          · buscando {enCola} · busquedaCancelada · emparejado {salaId}
                          · salaLista {semilla, equipo, clima, presupuesto, sala} · ejercitoAceptado {coste}
                          · batallaLista {semilla, clima, presupuesto, tiempoDespliegue, jugadores: [{nombre, equipo, rama, ejercito, blason, coste}]}
                          · turno {n, ordenes: [{e, o}], pasos, comienza?, fin?: {ganador, motivo}} · despliegue {listos: [equipo]}
-                         · desincronia {n} · estado {n, estado} · reanudarBatalla {ficha, equipo, n, desplegando, listos, estado | ordenesPropias}
+                         · desincronia {n} · estado {n, estado, siguientes?} · reanudarBatalla {ficha, equipo, n, desplegando, listos, estado | ordenesPropias, siguientes?}
+                         · pedirEstado {n}   (solo en modo relevo)
                          · rivalDesconectado {nombre, espera} · rivalVuelto {nombre, quedanDespliegue}
                          · pausaSolicitada {espera} · pausaPedida {nombre, espera} · pausaRechazada {motivo}
                          · pausa {activa, por, duracion, pausasQuedan}
@@ -64,7 +66,7 @@ const os = require('os');
 const crypto = require('crypto');
 
 const RAIZ_JUEGO = path.resolve(__dirname, '..');
-const TIPOS_MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.md': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json' };
+const TIPOS_MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.md': 'text/plain; charset=utf-8', '.mp3': 'audio/mpeg', '.webmanifest': 'application/manifest+json' };
 /* Lista blanca de lo que se sirve por HTTP (2026-10-13): solo lo que el juego carga. Nada de servidor/, ni el README, ni
    tools/, ni capturas, ni el material de partida del arte (arte/entrada, arte/demos). Rutas relativas a
    la carpeta del juego, con «/». Si el juego empieza a cargar algo nuevo, hay que añadirlo aquí. */
@@ -76,6 +78,7 @@ const RUTAS_PUBLICAS = [
   /^figuras\/[\w-]+\.js$/,                       // figuras heráldicas, se cargan al usarlas
   /^arte\/[\w.-]+\.(png|json|js)$/,              // arte propio: manifest y hojas, solo en arte/ (sin subcarpetas)
   /^tutorial\/(en\/)?[\w-]+\.jpg$/,                     // capturas del tutorial (tools/capturas-tutorial.js)
+  /^sonido\/[\w-]+\.mp3$/,                              // muestras de sonido (js/juego/12-sonido.js)
 ];
 const esRutaPublica = relativa => RUTAS_PUBLICAS.some(patron => patron.test(relativa));
 // Archivos del juego por HTTP: «/» es juego.html; solo los de la lista blanca
@@ -117,10 +120,24 @@ const ESPERA_RECONEXION = 60;         // segundos que la batalla espera congelad
 const MS_ENTRE_REENVIOS = 5000;       // como mucho un reenvío del estado completo cada 5 s por jugador
 const MAX_PAUSAS = 3;                 // pausas de común acuerdo por jugador y batalla
 const DURACION_PAUSA = 120;           // s; después la batalla sigue sola
+/* Modo de las batallas en red (2026-10-14). En el plan gratis de Render (0,1 CPU) el servidor no puede simular una batalla
+   grande: medido con 20 unidades por bando, repartía 3,7 turnos por segundo de los 10 debidos y la batalla iba al 40 % de la
+   velocidad. Dos modos, con interruptor:
+   · árbitro (BATALLA_ARBITRO=1, u opción arbitro: true): el servidor simula la batalla con el mismo código, descarta las
+     órdenes que no valen en su simulación, compara los resúmenes con el suyo, manda su estado a quien se desvía y decide el final.
+   · relevo (por defecto): el servidor no simula. Reparte los turnos igual (las órdenes se validan contra la simulación del
+     principio, sin avanzar: dueño de la unidad, valores raros), compara los resúmenes de los dos navegadores entre sí y, si
+     no coinciden, pide el estado al del equipo 0 y se lo manda al otro con los turnos que hubo después; para reconectar a
+     alguien en combate, se lo pide al que sigue conectado (la batalla sigue congelada mientras tanto); y el final lo anuncia
+     el primer navegador que lo detecta (mismo criterio: derrota de un bando + 3 s de remate). Un cliente trucado podría
+     mentir sobre el final: se acepta para partidas entre amigos. */
+const ARBITRO_POR_DEFECTO = /^(1|true|si|sí)$/i.test(String(process.env.BATALLA_ARBITRO || '').trim());
+const TURNOS_EN_HISTORIAL = 900;      // relevo: turnos repartidos que se guardan (90 s) para reenviarlos detrás de un estado
+const ESPERA_ESTADO = 20000;          // relevo: ms que se espera el estado pedido a un navegador antes de rendirse
 const ESPERA_RESPUESTA_PAUSA = 15;    // s para aceptar o rechazar una pausa pedida
 
 function crearServidorLobby(opciones) {
-  const o = Object.assign({ puerto: 8787, registro: true, esperaReconexion: ESPERA_RECONEXION }, opciones || {});
+  const o = Object.assign({ puerto: 8787, registro: true, esperaReconexion: ESPERA_RECONEXION, arbitro: ARBITRO_POR_DEFECTO }, opciones || {});
   const servidorHttp = http.createServer(servirArchivo);
   const wss = new WebSocketServer({ server: servidorHttp, maxPayload: 1024 * 1024 });
   servidorHttp.listen(o.puerto);
@@ -157,11 +174,16 @@ function crearServidorLobby(opciones) {
       ocultas: [[], []],                    // despliegue a ciegas: órdenes del rival que cada equipo aún no ha recibido
       desplieguePropio: [[], []],           // órdenes de despliegue de cada equipo (para reconstruirlo si se reconecta)
       pedirEstado: new Set(), reenviado: new Map(),
-      pausa: null, solicitudPausa: null, pausasUsadas: [0, 0] };
+      pausa: null, solicitudPausa: null, pausasUsadas: [0, 0],
+      arbitro: !!o.arbitro,
+      historial: [],                        // relevo: turnos repartidos en combate (los últimos TURNOS_EN_HISTORIAL)
+      resumenesJugadores: new Map(),        // relevo: n → [resumen del equipo 0, resumen del equipo 1]
+      solicitudEstado: null,                // relevo: { fuente, destinos: [{ jugador, reconexion }], desde }
+      reincorporando: null };               // relevo: jugador que vuelve en combate y espera el estado (la batalla sigue congelada)
     sala.batalla = batalla; sala.fase = 'batalla';
     sala.jugadores.forEach((jug, equipo) => enviar(jug, Object.assign({}, ficha, { claveReconexion: batalla.claves[equipo] })));
     batalla.reloj = setInterval(() => { try { turnoBatalla(sala); } catch (e) { log('error en el turno', sala.codigo, e.stack); terminarBatalla(sala, null, 'error'); } }, MS_TURNO);
-    log('batalla en marcha', sala.codigo);
+    log('batalla en marcha', sala.codigo, batalla.arbitro ? '(servidor árbitro)' : '(servidor de relevo)');
   }
   const repartir = (sala, mensaje) => { const texto = JSON.stringify(mensaje); for (const j of sala.jugadores) if (j.ws.readyState === 1) j.ws.send(texto); };
   const jugadorDeEquipo = (sala, equipo) => sala.jugadores.find(j => sala.batalla.equipos.get(j.id) === equipo);
@@ -172,6 +194,12 @@ function crearServidorLobby(opciones) {
       for (const [equipo, ausente] of b.ausentes) if (Date.now() - ausente.desde > o.esperaReconexion * 1000) return terminarBatalla(sala, b.ausentes.size === 2 ? null : 1 - equipo, 'abandono');
       return;
     }
+    if (b.solicitudEstado && Date.now() - b.solicitudEstado.desde > ESPERA_ESTADO) {
+      const s = b.solicitudEstado; b.solicitudEstado = null;
+      log('el estado pedido no llegó', sala.codigo, s.fuente.nombre);
+      if (s.destinos.some(d => d.reconexion)) return terminarBatalla(sala, null, 'error');
+    }
+    if (b.reincorporando) return;          // relevo: se espera el estado para quien vuelve; mientras, nada avanza
     if (b.solicitudPausa && Date.now() - b.solicitudPausa.desde > ESPERA_RESPUESTA_PAUSA * 1000) {
       const pidio = jugadorDeEquipo(sala, b.solicitudPausa.equipo); b.solicitudPausa = null;
       if (pidio) enviar(pidio, { tipo: 'pausaRechazada', motivo: 'Tu rival no ha respondido.' });
@@ -182,7 +210,7 @@ function crearServidorLobby(opciones) {
     const ordenes = [];
     for (const { e, o } of b.pendientes.splice(0)) if (b.simulacion.aplicar(e, o, b.desplegando)) ordenes.push({ e, o });
     // en pausa: las órdenes se aplican, pero la simulación no avanza
-    if (b.pausa) { if (ordenes.length) repartir(sala, { tipo: 'turno', n: ++b.turno, ordenes, pasos: 0 }); return; }
+    if (b.pausa) { if (ordenes.length) { const turnoPausa = { tipo: 'turno', n: ++b.turno, ordenes, pasos: 0 }; repartir(sala, turnoPausa); guardarEnHistorial(b, turnoPausa); } return; }
     if (b.desplegando && !(b.listos.size === 2 || Date.now() - b.inicio > TIEMPO_DESPLIEGUE * 1000)) {
       // despliegue a ciegas: cada uno recibe solo lo suyo; lo del rival se guarda para el turno que empieza la batalla
       if (!ordenes.length) return;
@@ -198,13 +226,24 @@ function crearServidorLobby(opciones) {
     const comienza = b.desplegando;
     if (comienza) { b.desplegando = false; log('batalla: fin del despliegue', sala.codigo); }
     const turno = { tipo: 'turno', n: ++b.turno, ordenes, pasos: PASOS_POR_TURNO };
-    b.simulacion.avanzar(PASOS_POR_TURNO);
-    if (turno.n % TURNOS_ENTRE_RESUMENES === 0) { b.resumenes.set(turno.n, b.simulacion.resumen()); b.resumenes.delete(turno.n - TURNOS_ENTRE_RESUMENES * 30); }
+    if (b.arbitro) {
+      b.simulacion.avanzar(PASOS_POR_TURNO);
+      if (turno.n % TURNOS_ENTRE_RESUMENES === 0) { b.resumenes.set(turno.n, b.simulacion.resumen()); b.resumenes.delete(turno.n - TURNOS_ENTRE_RESUMENES * 30); }
+    }
     if (comienza) {
       // el turno que empieza la batalla trae a cada uno el despliegue del rival (y las órdenes de este turno, todavía de despliegue)
       for (const equipo of [0, 1]) { const jugador = jugadorDeEquipo(sala, equipo); if (jugador) enviar(jugador, Object.assign({}, turno, { comienza: true, ordenes: b.ocultas[equipo].concat(ordenes) })); }
       b.ocultas = [[], []];
-    } else repartir(sala, turno);
+    } else { repartir(sala, turno); guardarEnHistorial(b, turno); }
+    // relevo: el estado lo tiene que dar un navegador
+    if (!b.arbitro) {
+      if (b.pedirEstado.size && !b.solicitudEstado) {
+        const destinos = [...b.pedirEstado].map(id => sala.jugadores.find(j => j.id === id)).filter(Boolean).map(jugador => ({ jugador, reconexion: false }));
+        b.pedirEstado.clear();
+        if (destinos.length) solicitarEstado(sala, destinos);
+      }
+      return;
+    }
     // reenvío del estado a quien se ha desviado: el del final de este turno, que llega justo detrás de él
     if (b.pedirEstado.size) {
       const estado = b.simulacion.serializar();
@@ -215,6 +254,32 @@ function crearServidorLobby(opciones) {
     const tiempo = b.simulacion.tiempo();
     if (b.finEn === null && tiempo > 5 && b.simulacion.algunoDerrotado()) b.finEn = tiempo + 3;
     if (b.finEn !== null && tiempo >= b.finEn) terminarBatalla(sala, b.simulacion.ganador(), 'derrota');
+  }
+  /* ----- modo relevo ----- */
+  function guardarEnHistorial(b, turno) {
+    if (b.arbitro) return;
+    b.historial.push(turno);
+    if (b.historial.length > TURNOS_EN_HISTORIAL) b.historial.splice(0, b.historial.length - TURNOS_EN_HISTORIAL);
+  }
+  // pide el estado a un navegador conectado que no sea de los destinos (el del equipo 0 si puede ser)
+  function solicitarEstado(sala, destinos) {
+    const b = sala.batalla, excluidos = destinos.map(d => d.jugador);
+    const candidatos = sala.jugadores.filter(j => !excluidos.includes(j) && j.ws.readyState === 1 && ![...b.ausentes.values()].some(a => a.jugador === j));
+    candidatos.sort((p, q) => b.equipos.get(p.id) - b.equipos.get(q.id));
+    const fuente = candidatos[0];
+    if (!fuente) return false;
+    b.solicitudEstado = { fuente, destinos, desde: Date.now() };
+    enviar(fuente, { tipo: 'pedirEstado', n: b.turno });
+    return true;
+  }
+  // mensaje para volver a una batalla (en el modo relevo, el estado y los turnos siguientes los pone quien llama)
+  function mensajeReanudacion(sala, equipo, clave) {
+    const b = sala.batalla;
+    return { tipo: 'reanudarBatalla', ficha: Object.assign({}, b.ficha, { claveReconexion: clave }), equipo, n: b.turno, desplegando: b.desplegando, listos: [...b.listos], quedanDespliegue: quedanDespliegue(b), pausa: b.pausa ? { por: (jugadorDeEquipo(sala, b.pausa.por) || {}).nombre || '', quedan: DURACION_PAUSA * 1000 - (Date.now() - b.pausa.desde) } : null };
+  }
+  function avisarVuelta(sala, jugador) {
+    const b = sala.batalla;
+    for (const j of sala.jugadores) if (j !== jugador) enviar(j, { tipo: 'rivalVuelto', nombre: jugador.nombre, quedanDespliegue: quedanDespliegue(b) });
   }
   // ganador: equipo que gana (null si se anula por un error del servidor)
   function terminarBatalla(sala, ganador, motivo) {
@@ -260,12 +325,20 @@ function crearServidorLobby(opciones) {
       sala.jugadores[sala.jugadores.indexOf(anterior)] = jugador; jugador.sala = sala;
       b.equipos.delete(anterior.id); b.equipos.set(jugador.id, equipo);
       if (b.listos.has(equipo) && b.desplegando) b.listos.delete(equipo);   // vuelve a desplegar: tiene que volver a pulsar «comenzar»
-      const reanudacion = { tipo: 'reanudarBatalla', ficha: Object.assign({}, b.ficha, { claveReconexion: clave }), equipo, n: b.turno, desplegando: b.desplegando, listos: [...b.listos], quedanDespliegue: quedanDespliegue(b), pausa: b.pausa ? { por: (jugadorDeEquipo(sala, b.pausa.por) || {}).nombre || '', quedan: DURACION_PAUSA * 1000 - (Date.now() - b.pausa.desde) } : null };
-      // desplegando, el estado entero enseñaría el despliegue del rival: se le devuelven solo sus órdenes
-      if (b.desplegando) reanudacion.ordenesPropias = b.desplieguePropio[equipo]; else reanudacion.estado = b.simulacion.serializar();
+      const reanudacion = mensajeReanudacion(sala, equipo, clave);
       enviar(jugador, { tipo: 'enSala', sala: resumenSala(sala) });
+      // desplegando, el estado entero enseñaría el despliegue del rival: se le devuelven solo sus órdenes
+      if (b.desplegando) reanudacion.ordenesPropias = b.desplieguePropio[equipo];
+      else if (!b.arbitro) {
+        // relevo: el estado lo da el otro navegador; la batalla sigue congelada hasta que llegue (estadoCompleto)
+        b.reincorporando = { jugador, equipo, clave, desde: Date.now() };
+        if (!solicitarEstado(sala, [{ jugador, reconexion: true }])) { b.reincorporando = null; log('nadie puede dar el estado', sala.codigo); terminarBatalla(sala, null, 'abandono'); return true; }
+        log('vuelve a la batalla', sala.codigo, jugador.nombre, 'tras', Math.round((Date.now() - desde) / 1000), 's; se pide el estado al rival');
+        return true;
+      }
+      else reanudacion.estado = b.simulacion.serializar();
       enviar(jugador, reanudacion);
-      for (const j of sala.jugadores) if (j !== jugador) enviar(j, { tipo: 'rivalVuelto', nombre: jugador.nombre, quedanDespliegue: quedanDespliegue(b) });
+      avisarVuelta(sala, jugador);
       log('vuelve a la batalla', sala.codigo, jugador.nombre, 'tras', Math.round((Date.now() - desde) / 1000), 's');
       return true;
     }
@@ -375,6 +448,18 @@ function crearServidorLobby(opciones) {
     },
     resumen(j, m) {
       const b = batallaDe(j); if (!b) return;
+      if (!b.arbitro) {
+        if (!Number.isInteger(m.n) || typeof m.h !== 'string') return;
+        const equipo = b.equipos.get(j.id), par = b.resumenesJugadores.get(m.n) || [null, null];
+        par[equipo] = m.h; b.resumenesJugadores.set(m.n, par); b.resumenesJugadores.delete(m.n - TURNOS_ENTRE_RESUMENES * 30);
+        if (par[0] !== null && par[1] !== null && par[0] !== par[1]) {
+          // no se sabe quién tiene razón: manda el equipo 0 y se corrige al otro
+          const desviado = jugadorDeEquipo(j.sala, 1); if (!desviado) return;
+          b.desincronias++; enviar(desviado, { tipo: 'desincronia', n: m.n }); log('desincronía', j.sala.codigo, desviado.nombre, 'turno', m.n, '(relevo)');
+          if (Date.now() - (b.reenviado.get(desviado.id) || 0) > MS_ENTRE_REENVIOS) { b.pedirEstado.add(desviado.id); b.reenviado.set(desviado.id, Date.now()); }
+        }
+        return;
+      }
       const propio = b.resumenes.get(m.n);
       if (propio !== undefined && propio !== m.h) {
         b.desincronias++; enviar(j, { tipo: 'desincronia', n: m.n }); log('desincronía', j.sala.codigo, j.nombre, 'turno', m.n);
@@ -382,6 +467,33 @@ function crearServidorLobby(opciones) {
       }
     },
     rendirse(j) { const b = batallaDe(j); if (b) terminarBatalla(j.sala, 1 - b.equipos.get(j.id), 'rendicion'); },
+    // relevo: el estado que se pidió a este navegador, al acabar su turno n; se reenvía con los turnos repartidos después
+    estadoCompleto(j, m) {
+      const b = batallaDe(j), s = b && b.solicitudEstado; if (!s || s.fuente !== j) return;
+      if (!Number.isInteger(m.n) || m.n > b.turno || typeof m.estado !== 'string') return;
+      const siguientes = b.historial.filter(t => t.n > m.n);
+      if (m.n < b.turno && (!siguientes.length || siguientes[0].n !== m.n + 1)) { log('estado demasiado antiguo para reenviarlo', j.sala.codigo, 'turno', m.n); b.solicitudEstado = null; return; }
+      b.solicitudEstado = null;
+      for (const { jugador, reconexion } of s.destinos) {
+        if (reconexion) {
+          const r = b.reincorporando; if (!r || r.jugador !== jugador) continue;
+          b.reincorporando = null;
+          enviar(jugador, Object.assign(mensajeReanudacion(j.sala, r.equipo, r.clave), { n: m.n, estado: m.estado, siguientes }));
+          avisarVuelta(j.sala, jugador);
+          log('estado del rival entregado a', jugador.nombre, 'turno', m.n, '+', siguientes.length, 'turnos', Math.round(m.estado.length / 1024) + ' KB');
+        } else {
+          enviar(jugador, { tipo: 'estado', n: m.n, estado: m.estado, siguientes });
+          log('estado reenviado', j.sala.codigo, jugador.nombre, 'turno', m.n, '+', siguientes.length, 'turnos', Math.round(m.estado.length / 1024) + ' KB');
+        }
+      }
+    },
+    // relevo: un navegador ha visto la derrota de un bando (y sus 3 s de remate); vale el primero que llega
+    resultado(j, m) {
+      const b = batallaDe(j); if (!b || b.arbitro || b.desplegando) return;
+      if (!Number.isInteger(m.n) || m.n > b.turno || (m.ganador !== 0 && m.ganador !== 1)) return;
+      log('resultado anunciado por', j.nombre, 'en el turno', m.n);
+      terminarBatalla(j.sala, m.ganador, 'derrota');
+    },
     pedirPausa(j) {
       const b = batallaDe(j); if (!b || b.pausa) return;
       const equipo = b.equipos.get(j.id), rechazar = motivo => enviar(j, { tipo: 'pausaRechazada', motivo });
@@ -429,7 +541,7 @@ function crearServidorLobby(opciones) {
   log('servidor de lobby escuchando en el puerto', o.puerto);
   if (o.registro) { log('el juego, en este equipo:  http://localhost:' + o.puerto + '/'); for (const ip of direccionesLocales()) log('el juego, en tu red:       http://' + ip + ':' + o.puerto + '/'); }
   estadoGlobal = () => ({ jugadores: jugadores.size, salas: salas.size, enCola: cola.length });
-  return { wss, servidorHttp, cerrar: () => new Promise(r => { clearInterval(latido); for (const ws of jugadores.keys()) ws.terminate(); wss.close(() => servidorHttp.close(() => r())); }), estado: () => ({ jugadores: jugadores.size, salas: salas.size, enCola: cola.length }) };
+  return { wss, servidorHttp, cerrar: () => new Promise(r => { clearInterval(latido); for (const ws of jugadores.keys()) ws.terminate(); wss.close(() => servidorHttp.close(() => r())); }), estado: () => ({ jugadores: jugadores.size, salas: salas.size, enCola: cola.length, modo: o.arbitro ? 'arbitro' : 'relevo' }) };
 }
 
 if (require.main === module) crearServidorLobby({ puerto: Number(process.argv[2]) || Number(process.env.PORT) || 8787 });

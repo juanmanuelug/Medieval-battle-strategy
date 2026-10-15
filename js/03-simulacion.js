@@ -5,6 +5,7 @@ const CABALLERIA_ATASCADA = 0.65;     // daño de un jinete parado en la melé c
 const CONTRAGOLPE_ATROPELLO = 0.8;   // fracción del daño del arrollado que recibe el jinete al arrollarlo (2026-10-13)
 const CARRERILLA_CARGA = 5;    // metros seguidos al galope que necesita un jinete para atropellar (bajado de 10 el 2026-10-09)
 const EMPUJE_MAXIMO_PASO = 0.12;   // m: tope del empuje de separación por paso (sin saltos ni temblor en los montones)
+const MARGEN_DESCARTE = 1 + 1e-7;      // ver el bucle de vecinos de actualizarSoldado (descarte por distancia al cuadrado)
 const HOLGURA_ALIADOS = 1.15;      // los aliados guardan un 15 % más que la suma de radios: menos solapes entre propios
 const ATACANTES_MAXIMOS = 3;       // a partir de aquí un enemigo se considera cubierto y los demás buscan otro hueco
 // Línea contra línea: un soldado con orden ofensiva solo sale de su puesto para golpear a un enemigo que esté a menos de
@@ -321,12 +322,16 @@ class Simulacion {
     }
     this.empujeX.fill(0, 0, n); this.empujeY.fill(0, 0, n);
     const atacantesAnterior = this.atacantesPrevio; this.atacantesPrevio = this.atacantes; this.atacantes = atacantesAnterior; this.atacantes.fill(0, 0, n);
+    this.prepararDatosUnidades();
     for (let i = 0; i < n; i++) this.actualizarSoldado(i, dt);
     for (let i = 0; i < n; i++) {
       if (!this.vivo(i) || this.estado[i] === ESTADO.VOLANDO) continue;
       let empujeX = this.empujeX[i], empujeY = this.empujeY[i];
-      const magnitudEmpuje = Math.hypot(empujeX, empujeY);
-      if (magnitudEmpuje > EMPUJE_MAXIMO_PASO) { empujeX *= EMPUJE_MAXIMO_PASO / magnitudEmpuje; empujeY *= EMPUJE_MAXIMO_PASO / magnitudEmpuje; }
+      // solo se calcula la magnitud si puede pasar del máximo (con el mismo margen que el descarte del bucle de vecinos: exacto)
+      if (empujeX * empujeX + empujeY * empujeY > EMPUJE_MAXIMO_PASO * EMPUJE_MAXIMO_PASO / MARGEN_DESCARTE) {
+        const magnitudEmpuje = Math.hypot(empujeX, empujeY);
+        if (magnitudEmpuje > EMPUJE_MAXIMO_PASO) { empujeX *= EMPUJE_MAXIMO_PASO / magnitudEmpuje; empujeY *= EMPUJE_MAXIMO_PASO / magnitudEmpuje; }
+      }
       let x = this.posX[i] + empujeX, y = this.posY[i] + empujeY;
       x = limitar(x, 0.5, CAMPO.ancho - 0.5); y = limitar(y, 0.5, CAMPO.alto - 0.5);
       this.velocidadActual[i] = distancia(this.previaX[i], this.previaY[i], x, y) / dt;
@@ -337,6 +342,25 @@ class Simulacion {
     }
     this.actualizarFlechas();
     this.recontar();
+  }
+  /* margen del descarte por distancia al cuadrado en el bucle de vecinos: mil millones de veces el error de redondeo relativo
+     (~1e-16) de dx² + dy² y de Math.hypot; así un candidato descartado nunca habría pasado la comparación con la distancia exacta */
+  /* Datos de cada unidad que el bucle de vecinos de actualizarSoldado lee miles de veces por paso (radio y masa de su tropa y
+     si su orden es de marcha o de estar parado), en arrays por id de unidad: leerlos así es mucho más barato que recorrer
+     unidad → stats → campo y comparar cadenas (revisión de rendimiento, 2026-10-15). Se rellenan antes del bucle de soldados,
+     cuando ya no cambian en el paso (actualizarSoldado no toca órdenes ni stats). Float64Array: los mismos números exactos
+     que en los objetos, así que el resultado de la simulación no cambia ni en un decimal. */
+  prepararDatosUnidades() {
+    const cuantas = this.unidades.length;
+    if (!this.radioUnidad || this.radioUnidad.length < cuantas) {
+      this.radioUnidad = new Float64Array(cuantas + 16); this.masaUnidad = new Float64Array(cuantas + 16); this.marchaUnidad = new Uint8Array(cuantas + 16);
+    }
+    for (let k = 0; k < cuantas; k++) {
+      const u = this.unidades[k], orden = u.orden;
+      this.radioUnidad[k] = u.stats.radio; this.masaUnidad[k] = u.stats.masa;
+      // 1 = parada (formar, disparar): la atraviesan los que marchan; 2 = en marcha (mover, avanzar, atacar, cargar); 0 = otra
+      this.marchaUnidad[k] = orden === 'formar' || orden === 'disparar' ? 1 : orden === 'mover' || orden === 'avanzar' || orden === 'atacar' || orden === 'cargar' ? 2 : 0;
+    }
   }
   // Moral objetivo = moral máxima + factores (FACTORES_MORAL); la moral real baja hacia ella hasta MORAL_CAIDA por segundo y
   // sube hasta MORAL_SUBIDA (más con el general cerca). Deja en u.factoresMoral la lista [texto, valor] de lo que pesa ahora.
@@ -762,40 +786,66 @@ class Simulacion {
     const enMuro = u.formacion && u.formacion.clave === 'muro' && !luchoYo;
     const puedeAtravesar = enMarcha && !luchoYo;
     const paradoYo = (u.orden === 'formar' || u.orden === 'disparar') && !luchoYo;   // parado: me atraviesan sin empujarme
+    // referencias locales y datos de unidad precalculados (prepararDatosUnidades): mismas operaciones en el mismo orden que antes
+    const buffer = this.bufferVecinos, posX = this.posX, posY = this.posY, unidadDe = this.unidadDe, equipoDe = this.equipo, estadoDe = this.estado;
+    const atacantesPrevio = this.atacantesPrevio, radioUnidad = this.radioUnidad, masaUnidad = this.masaUnidad, marchaUnidad = this.marchaUnidad;
+    const empujeX = this.empujeX, empujeY = this.empujeY;
+    const objetivoFijoId = u.objetivoFijo, montado = datos.montado, alcanceGolpe = datos.alcance;
+    const VOLANDO = ESTADO.VOLANDO, LUCHANDO = ESTADO.LUCHANDO;
     for (let k = 0; k < cuantos; k++) {
-      const j = this.bufferVecinos[k]; if (j === i) continue;
-      const dx = this.posX[j] - x, dy = this.posY[j] - y; const d = Math.hypot(dx, dy);
-      const otraUnidad = this.unidades[this.unidadDe[j]], otrosDatos = otraUnidad.stats;
-      const aliado = this.equipo[j] === miEquipo;
+      const j = buffer[k]; if (j === i) continue;
+      const dx = posX[j] - x, dy = posY[j] - y, distancia2 = dx * dx + dy * dy;
+      const unidadOtro = unidadDe[j], radioOtro = radioUnidad[unidadOtro], estadoOtro = estadoDe[j];
+      const aliado = equipoDe[j] === miEquipo;
+      /* Descarte sin calcular la distancia (2026-10-15): Math.hypot era el 38 % del paso. Si el candidato está claramente más
+         lejos de lo que podría cambiar algo (choque con un aliado; enemigo más cercano, mejor blanco o choque con un enemigo),
+         se salta. «Claramente»: distancia² > cota² × MARGEN_DESCARTE, con un margen muy por encima del error de redondeo, así
+         que solo se saltan candidatos que el cálculo completo tampoco habría usado: la simulación da exactamente lo mismo. */
+      if (aliado) {
+        // en el muro de escudos los compañeros van hombro con hombro: entre ellos no se aplica la holgura entre aliados (el muro es
+        // más apretado que esa holgura y nunca llegaban a su casilla, empujándose sin parar). Solo en el muro y fuera de la melé:
+        // aplicarlo a todas las formaciones apelotonaba a los que esperan detrás de los que luchan
+        const hombroConHombro = enMuro && unidadOtro === miUnidad && estadoOtro !== LUCHANDO;
+        const minimo = (miRadio + radioOtro) * (!hombroConHombro ? HOLGURA_ALIADOS : 1);
+        if (distancia2 > minimo * minimo * MARGEN_DESCARTE) continue;
+        // una unidad en marcha atraviesa a las unidades aliadas PARADAS (formadas o disparando) que no pelean: si no, los arqueros
+        // desplegados detrás de su infantería no podían pasar entre ella. Dos unidades en marcha sí chocan entre sí, y también con
+        // los que luchan, para no amontonarse en la melé. Y en los dos sentidos (2026-10-14): el parado tampoco se deja empujar por
+        // el que pasa; antes la infantería en marcha arrastraba a los arqueros parados que atravesaba
+        const atraviesa = unidadOtro !== miUnidad && estadoOtro !== LUCHANDO && (
+          (puedeAtravesar && marchaUnidad[unidadOtro] === 1) || (paradoYo && marchaUnidad[unidadOtro] === 2));
+        if (atraviesa) continue;
+        const d = Math.hypot(dx, dy);
+        if (d < minimo && d > 1e-4 && estadoOtro !== VOLANDO) {
+          const masaOtro = masaUnidad[unidadOtro];
+          const solape = (minimo - d) * (masaOtro / (miMasa + masaOtro));
+          empujeX[i] -= dx / d * solape; empujeY[i] -= dy / d * solape;
+        }
+        continue;
+      }
+      // enemigo: la distancia solo cuenta si puede mejorar al más cercano o al mejor blanco (la puntuación nunca es menor que la
+      // distancia) o si choca
+      const minimo = miRadio + radioOtro;
+      const cota = enemigoD > objetivoPuntuacion ? (enemigoD > minimo ? enemigoD : minimo) : (objetivoPuntuacion > minimo ? objetivoPuntuacion : minimo);
+      if (distancia2 > cota * cota * MARGEN_DESCARTE) continue;
+      const d = Math.hypot(dx, dy);
       // con objetivo fijo, los enemigos de otras unidades no se eligen como blanco salvo que estén pegados (para defenderse);
       // el choque físico con ellos sigue más abajo
       // y desde el 2026-10-13, aunque esté pegado, solo si además le cierra el paso (está por delante, hacia su objetivo): a los
       // que tiene a los lados o detrás los deja atrás para cumplir la orden
       // (solo la caballería, 2026-10-14: la infantería interceptada contesta a quien la ataque y sigue después hacia su blanco)
       // la infantería se defiende de todo el que tenga a alcance de golpe (si no, la golpeaban desde 1,45 m y ella solo «veía» a 1,08 m)
-      const ignorado = !aliado && fijo && this.unidadDe[j] !== u.objetivoFijo && (datos.montado ? (d > miRadio + otrosDatos.radio + 0.35 || !(haciaFijoD < 4 || (dx * haciaFijoX + dy * haciaFijoY) > 0.4 * d * haciaFijoD)) : d > datos.alcance + otrosDatos.radio + 0.3);
-      if (!aliado && !ignorado && this.estado[j] !== ESTADO.VOLANDO) {
+      const ignorado = fijo && unidadOtro !== objetivoFijoId && (montado ? (d > miRadio + radioOtro + 0.35 || !(haciaFijoD < 4 || (dx * haciaFijoX + dy * haciaFijoY) > 0.4 * d * haciaFijoD)) : d > alcanceGolpe + radioOtro + 0.3);
+      if (!ignorado && estadoOtro !== VOLANDO) {
         if (d < enemigoD) { enemigoD = d; enemigo = j; }
-        const puntuacion = d + 0.6 * this.atacantesPrevio[j] + (this.atacantesPrevio[j] >= ATACANTES_MAXIMOS ? 3 : 0);
+        const atacantes = atacantesPrevio[j];
+        const puntuacion = d + 0.6 * atacantes + (atacantes >= ATACANTES_MAXIMOS ? 3 : 0);
         if (puntuacion < objetivoPuntuacion) { objetivoPuntuacion = puntuacion; objetivoLibre = j; }
       }
-      // en el muro de escudos los compañeros van hombro con hombro: entre ellos no se aplica la holgura entre aliados (el muro es
-      // más apretado que esa holgura y nunca llegaban a su casilla, empujándose sin parar). Solo en el muro y fuera de la melé:
-      // aplicarlo a todas las formaciones apelotonaba a los que esperan detrás de los que luchan
-      const hombroConHombro = enMuro && aliado && this.unidadDe[j] === miUnidad && this.estado[j] !== ESTADO.LUCHANDO;
-      const minimo = (miRadio + otrosDatos.radio) * (aliado && !hombroConHombro ? HOLGURA_ALIADOS : 1);
-      // una unidad en marcha atraviesa a las unidades aliadas PARADAS (formadas o disparando) que no pelean: si no, los arqueros
-      // desplegados detrás de su infantería no podían pasar entre ella. Dos unidades en marcha sí chocan entre sí, y también con
-      // los que luchan, para no amontonarse en la melé
-      // los que luchan, para no amontonarse en la melé. Y en los dos sentidos (2026-10-14): el parado tampoco se deja empujar por
-      // el que pasa; antes la infantería en marcha arrastraba a los arqueros parados que atravesaba
-      const ordenOtra = otraUnidad.orden;
-      const atraviesa = aliado && this.unidadDe[j] !== miUnidad && this.estado[j] !== ESTADO.LUCHANDO && (
-        (puedeAtravesar && (ordenOtra === 'formar' || ordenOtra === 'disparar')) ||
-        (paradoYo && (ordenOtra === 'mover' || ordenOtra === 'avanzar' || ordenOtra === 'atacar' || ordenOtra === 'cargar')));
-      if (!atraviesa && d < minimo && d > 1e-4 && this.estado[j] !== ESTADO.VOLANDO) {
-        const solape = (minimo - d) * (otrosDatos.masa / (miMasa + otrosDatos.masa));
-        this.empujeX[i] -= dx / d * solape; this.empujeY[i] -= dy / d * solape;
+      if (d < minimo && d > 1e-4 && estadoOtro !== VOLANDO) {
+        const masaOtro = masaUnidad[unidadOtro];
+        const solape = (minimo - d) * (masaOtro / (miMasa + masaOtro));
+        empujeX[i] -= dx / d * solape; empujeY[i] -= dy / d * solape;
       }
     }
     this.enfriamiento[i] -= dt;

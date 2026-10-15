@@ -189,6 +189,8 @@ lobby.al('turno', entregarTurno);
 // estado completo del servidor tras una desincronía: va en la misma cola, detrás del turno al que corresponde
 lobby.al('estado', entregarTurno);
 lobby.al('desincronia', m => { if (batalla && batalla.enRed) batalla.desincronia(m.n); });
+// servidor en modo relevo: quiere el estado de este navegador para pasárselo al rival (desincronía o reconexión)
+lobby.al('pedirEstado', m => { if (batalla && batalla.enRed) batalla.pedirEstado(m.n); });
 // aviso de que el rival ya ha terminado de desplegar
 function mostrarRivalListo(listos) {
   if (!batalla || !batalla.enRed || !batalla.enDespliegue()) return;
@@ -321,6 +323,8 @@ async function empezarBatallaRed(ficha, reanudacion) {
       listoDespliegue: () => lobby.enviar({ tipo: 'listoDespliegue' }),
       rendirse: () => lobby.enviar({ tipo: 'rendirse' }),
       resumen: (n, h) => lobby.enviar({ tipo: 'resumen', n, h }),
+      enviarEstado: (n, estado) => lobby.enviar({ tipo: 'estadoCompleto', n, estado }),
+      resultado: (n, ganador) => lobby.enviar({ tipo: 'resultado', n, ganador }),
       pedirPausa: () => lobby.enviar({ tipo: 'pedirPausa' }),
       reanudarPausa: () => lobby.enviar({ tipo: 'reanudarPausa' }),
       reanudacion: reanudacion || null,

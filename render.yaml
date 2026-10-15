@@ -13,3 +13,7 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20.18.0
+      # modo de las batallas en red (2026-10-14): "0" = relevo, el servidor no simula (lo que cabe en el plan gratis);
+      # "1" = árbitro, el servidor simula cada batalla (necesita más CPU: ver servidor/LEEME.md)
+      - key: BATALLA_ARBITRO
+        value: "0"

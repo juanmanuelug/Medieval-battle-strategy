@@ -57,6 +57,26 @@ El nombre que ve el resto es el de tu rey o reina.
 
 Mensajes JSON `{ tipo, ... }`. Están descritos al principio de `servidor-lobby.js`.
 
+## Modo de las batallas en red: relevo o árbitro (2026-10-14)
+
+El servidor tiene dos modos, con un interruptor: la variable de entorno `BATALLA_ARBITRO` (o la opción `arbitro` de
+`crearServidorLobby`).
+
+- **Relevo** (por defecto, `BATALLA_ARBITRO` vacía o `0`): el servidor no simula. Reparte los turnos, valida que cada orden
+  mueva unidades de quien la manda, compara los resúmenes de estado de los dos navegadores y, si no coinciden, pide el estado
+  completo al del equipo 0 y se lo manda al otro con los turnos que hubo después. Para reconectar a alguien en pleno combate
+  pide el estado al que sigue conectado. El final lo anuncia el primer navegador que ve la derrota de un bando (con los 3 s
+  de remate). Gasto medido con 20 unidades por bando: 2,9 ms de CPU por segundo de batalla.
+- **Árbitro** (`BATALLA_ARBITRO=1`): el servidor simula cada batalla con el mismo código, descarta las órdenes que no valen
+  en su simulación, manda su estado a quien se desvía y decide el final. Más seguro frente a un cliente trucado, pero
+  caro: 221 ms de CPU por segundo de batalla con 20 unidades por bando. En el plan gratis de Render (0,1 CPU) no da abasto:
+  medido el 2026-10-14, repartía 3,7 turnos por segundo de 10 y la batalla iba al 40 % de la velocidad. Necesita un plan con
+  más CPU (Starter, 0,5 CPU).
+
+En Render se cambia en el servicio, pestaña *Environment*: `BATALLA_ARBITRO` = `1` o `0`, y se guarda (redespliega solo).
+`/salud` dice qué modo está activo (`modo`). Los navegadores no necesitan saberlo: responden a lo que pida el servidor.
+Pruebas: `node prueba-batalla-red.js` (árbitro) y `node prueba-batalla-red.js --relevo`.
+
 ## Publicar en Render (gratis, encendido 24/7)
 
 Un solo servicio de Render sirve el juego y las partidas en red; un «despertador» externo gratuito evita que se duerma.

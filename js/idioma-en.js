@@ -8,6 +8,7 @@ const TEXTOS_EN = {
   'Batallas medievales': 'Medieval Battles',
   'Funda tu reino, recluta un ejército y dirígelo en batallas masivas.': 'Found your kingdom, raise an army and lead it in massive battles.',
   'Inicio': 'Start', 'Continuar': 'Continue', 'Nuevo reino': 'New kingdom', 'Cómo se juega': 'How to play',
+  'Silenciar (M)': 'Mute (M)', 'Activar el sonido (M)': 'Turn the sound on (M)', 'Volumen': 'Volume',
   '¿Qué quieres hacer?': 'What do you want to do?',
   'Batalla': 'Battle', 'Multijugador': 'Multiplayer', 'Batalla personalizada': 'Custom battle',
   'Elige tu rama, recluta tu ejército y lucha contra un ejército que la IA recluta según la dificultad.': 'Choose your faction, raise your army and fight an army the AI recruits according to the difficulty.',

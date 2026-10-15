@@ -3,11 +3,15 @@
    simulación con el motor del juego y aplican los turnos del servidor. Comprueba que las tres simulaciones siguen idénticas
    (resúmenes de estado), que el servidor descarta órdenes a unidades ajenas, el despliegue a ciegas, la batalla hasta el
    final, el reenvío del estado a quien se desvía, la reconexión (en combate y en el despliegue), el abandono por no volver
-   a tiempo y la rendición. Uso: node prueba-batalla-red.js (unos 3 minutos) */
+   a tiempo y la rendición. Uso: node prueba-batalla-red.js [--relevo] (unos 3 minutos)
+   Sin opciones prueba el servidor árbitro (simula y manda su estado); con --relevo, el servidor de relevo (no simula: pide el
+   estado a un cliente para pasárselo al otro, y el final lo anuncian los clientes). Los clientes de prueba hacen las dos cosas,
+   como el navegador. */
 const WebSocket = require('ws');
 const { crearServidorLobby } = require('./servidor-lobby.js');
 const { crearMotor } = require('./motor.js');
 const PUERTO = 8898;
+const RELEVO = process.argv.includes('--relevo');
 const esperar = ms => new Promise(r => setTimeout(r, ms));
 const motorComun = crearMotor();
 const resumenDe = sim => motorComun.ejecutar('resumenEstado')(sim);
@@ -15,28 +19,45 @@ const resumenDe = sim => motorComun.ejecutar('resumenEstado')(sim);
 // Cliente que se comporta como el navegador: con la ficha monta la simulación y con cada turno aplica las órdenes y avanza
 function cliente(nombre, claveReconexion) {
   const ws = new WebSocket('ws://127.0.0.1:' + PUERTO);
-  const c = { ws, nombre, mensajes: [], ultimo: {}, turnos: 0, desincronias: [], estadosRecibidos: 0, fin: null, motor: motorComun, sim: null, desplegando: true };
+  const c = { ws, nombre, mensajes: [], ultimo: {}, turnos: 0, atrasado: false, estadosGuardados: [], desincronias: [], estadosRecibidos: 0, fin: null, motor: motorComun, sim: null, desplegando: true };
   const x = c.motor.ejecutar;
   c.enviar = m => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };
   ws.on('message', d => {
     const m = JSON.parse(String(d)); c.mensajes.push(m); c.ultimo[m.tipo] = m;
-    if (m.tipo === 'batallaLista') { c.clave = m.claveReconexion; c.equipo = m.jugadores.find(j => j.nombre === nombre).equipo; c.sim = x('montarSimulacionRed')(m).sim; c.desplegando = true; c.fin = null; }
+    if (m.tipo === 'batallaLista') { c.clave = m.claveReconexion; c.equipo = m.jugadores.find(j => j.nombre === nombre).equipo; c.sim = x('montarSimulacionRed')(m).sim; c.desplegando = true; c.fin = null; c.finSimulado = null; c.resultadoEnviado = false; c.ultimoTurno = 0; }
     if (m.tipo === 'reanudarBatalla') {
       c.clave = m.ficha.claveReconexion; c.equipo = m.equipo; c.sim = x('montarSimulacionRed')(m.ficha).sim; c.desplegando = m.desplegando; c.fin = null;
+      c.finSimulado = null; c.resultadoEnviado = false; c.ultimoTurno = m.n;
       if (m.estado) x('restaurarEstado')(c.sim, m.estado);
+      for (const t of m.siguientes || []) aplicarTurno(t, false);
       for (const o of m.ordenesPropias || []) x('aplicarOrden')(c.sim, c.equipo, o, { desplegando: true });
     }
     if (m.tipo === 'desincronia') c.desincronias.push(m.n);
-    if (m.tipo === 'estado') { x('restaurarEstado')(c.sim, m.estado); c.estadosRecibidos++; }
-    if (m.tipo === 'turno') {
-      for (const { e, o } of m.ordenes) x('aplicarOrden')(c.sim, e, o, { desplegando: c.desplegando });
-      if (m.comienza) c.desplegando = false;
-      if (m.fin) c.fin = m.fin;
-      for (let k = 0; k < m.pasos; k++) c.sim.avanzar();
-      c.turnos++;
-      if (m.pasos && m.n % 10 === 0) c.enviar({ tipo: 'resumen', n: m.n, h: x('resumenEstado')(c.sim) });
+    if (m.tipo === 'estado') { x('restaurarEstado')(c.sim, m.estado); c.estadosRecibidos++; c.ultimoTurno = m.n; for (const t of m.siguientes || []) aplicarTurno(t, false); }
+    if (m.tipo === 'turno') aplicarTurno(m, true);
+    // servidor de relevo: pide el estado al acabar el turno n (este cliente aplica cada turno al recibirlo: ya está en él)
+    // con c.atrasado, responde con un estado de varios turnos antes (como un navegador que va por detrás del servidor)
+    if (m.tipo === 'pedirEstado' && !c.desplegando) {
+      const viejo = c.atrasado && c.estadosGuardados.length ? c.estadosGuardados[0] : null;
+      c.enviar(viejo ? { tipo: 'estadoCompleto', n: viejo.n, estado: viejo.estado } : { tipo: 'estadoCompleto', n: c.ultimoTurno, estado: x('serializarEstado')(c.sim) });
     }
   });
+  function aplicarTurno(m, nuevo) {
+    for (const { e, o } of m.ordenes) x('aplicarOrden')(c.sim, e, o, { desplegando: c.desplegando });
+    if (m.comienza) c.desplegando = false;
+    if (m.fin) c.fin = m.fin;
+    for (let k = 0; k < m.pasos; k++) c.sim.avanzar();
+    c.ultimoTurno = m.n;
+    if (c.atrasado && m.pasos) { c.estadosGuardados.push({ n: m.n, estado: x('serializarEstado')(c.sim) }); if (c.estadosGuardados.length > 6) c.estadosGuardados.shift(); }
+    if (!nuevo) return;
+    c.turnos++;
+    if (m.pasos && m.n % 10 === 0) c.enviar({ tipo: 'resumen', n: m.n, h: x('resumenEstado')(c.sim) });
+    // final de la batalla, con el mismo criterio que el navegador (derrota de un bando + 3 s de remate)
+    if (m.pasos && !c.resultadoEnviado) {
+      if (c.finSimulado === null && c.sim.tiempo > 5 && (c.sim.equipoDerrotado(0) || c.sim.equipoDerrotado(1))) c.finSimulado = c.sim.tiempo + 3;
+      if (c.finSimulado !== null && c.sim.tiempo >= c.finSimulado) { c.enviar({ tipo: 'resultado', n: m.n, ganador: x('ganadorBatalla')(c.sim) }); c.resultadoEnviado = true; }
+    }
+  }
   c.listo = new Promise(r => ws.on('open', () => { c.enviar(claveReconexion ? { tipo: 'hola', nombre, claveReconexion } : { tipo: 'hola', nombre }); r(); }));
   c.espera = async (tipo, ms) => { const t0 = Date.now(); while (Date.now() - t0 < (ms || 3000)) { if (c.ultimo[tipo]) return c.ultimo[tipo]; await esperar(10); } throw new Error(nombre + ' no recibió ' + tipo); };
   c.limpiar = tipo => { delete c.ultimo[tipo]; };
@@ -61,7 +82,8 @@ const atacarTodos = c => c.enviar({ tipo: 'orden', orden: { a: 'orden', u: c.pro
 const alaPar = async (a, b) => { for (let k = 0; k < 40 && a.sim.paso !== b.sim.paso; k++) await esperar(5); return a.sim.paso === b.sim.paso; };
 
 (async () => {
-  const servidor = crearServidorLobby({ puerto: PUERTO, registro: false, esperaReconexion: 3 });
+  const servidor = crearServidorLobby({ puerto: PUERTO, registro: false, esperaReconexion: 3, arbitro: !RELEVO });
+  console.log('servidor ' + (RELEVO ? 'de relevo (no simula)' : 'árbitro (simula)'));
   const fallos = [], comprobar = (condicion, texto) => { console.log((condicion ? 'bien  ' : 'FALLO ') + texto); if (!condicion) fallos.push(texto); };
   try {
     let ana = cliente('Ana'), beto = cliente('Beto');
@@ -129,6 +151,18 @@ const alaPar = async (a, b) => { for (let k = 0; k < 40 && a.sim.paso !== b.sim.
     await esperar(2500);
     await alaPar(ana, beto);
     comprobar(beto.desincronias.length === desincroniasAntes && resumenDe(ana.sim) === resumenDe(beto.sim), 'tras copiar el estado, Beto vuelve a ir idéntico a Ana');
+    if (RELEVO) {
+      // el que da el estado va por detrás: manda el de 6 turnos antes y el servidor añade los turnos repartidos desde entonces
+      ana.atrasado = true; await esperar(5600);
+      const estadosAntes = beto.estadosRecibidos;
+      beto.sim.vida[beto.propias()[1].indices[0]] -= 25;
+      await esperar(2500);
+      const ultimoEstado = beto.mensajes.filter(m => m.tipo === 'estado').pop();
+      comprobar(beto.estadosRecibidos > estadosAntes && ultimoEstado && ultimoEstado.siguientes.length >= 5, 'relevo: con un estado atrasado llegan también los turnos posteriores (' + (ultimoEstado ? ultimoEstado.siguientes.length : 0) + ')');
+      ana.atrasado = false; ana.estadosGuardados = [];
+      await esperar(2000); await alaPar(ana, beto);
+      comprobar(resumenDe(ana.sim) === resumenDe(beto.sim), 'relevo: tras reaplicarlos, Beto vuelve a ir idéntico a Ana');
+    }
     // reconexión en combate: Beto pierde la conexión; la batalla se congela; vuelve con su clave
     const claveBeto = beto.clave; ana.limpiar('rivalDesconectado'); ana.limpiar('rivalVuelto');
     beto.ws.terminate(); await ana.espera('rivalDesconectado');

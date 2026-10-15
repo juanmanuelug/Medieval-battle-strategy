@@ -281,6 +281,9 @@ function iniciarBatalla(opciones) {
       avisar();
     },
   });
+  // sonido con muestras reales (js/juego/12-sonido.js): escucha el estado de la simulación y sus eventos, nunca la toca
+  const sonido = typeof crearSonidoBatalla === 'function' ? crearSonidoBatalla(sim, renderizador, { clima: sim.clima }) : null;
+  if (sonido && !desplegando) sonido.comienzo();
   renderizador.encuadrarEn(CAMPO.ancho / 2, CAMPO.alto / 2, 2.2);
   if (desplegando && renderizador.mostrarZona) { renderizador.mostrarZona(ZONA_DESPLIEGUE); renderizador.encuadrarEn(equipoPropio === 0 ? Math.round(CAMPO.ancho * FRENTE_DESPLIEGUE) - 12 : CAMPO.ancho - Math.round(CAMPO.ancho * FRENTE_DESPLIEGUE) + 12, CAMPO.alto / 2, 2.6); }
   sim.recontar();
@@ -357,36 +360,91 @@ function iniciarBatalla(opciones) {
      avanzar después de aplicarlas (0 en el despliegue, 3 = 100 ms en la batalla). Se aplican en orden de llegada; si se
      acumulan (la pestaña estuvo en segundo plano, un tirón de red), se simula más deprisa hasta ponerse al día. Cada 10 turnos
      (1 s) se manda al servidor un resumen del estado para comprobar que nadie se ha desviado. */
-  const turnosRed = [];
+  // con el servidor en modo relevo, una reanudación trae, además del estado, los turnos que hubo después de él
+  const turnosRed = red && red.reanudacion && Array.isArray(red.reanudacion.siguientes) ? red.reanudacion.siguientes.slice() : [];
   let pasosTurno = 0, turnoActual = null, finRed = null, momentoFin = 0, avisoDesincronia = null;
+  /* Servidor en modo relevo (2026-10-14; el servidor no simula, ver servidor-lobby.js): le pide a un navegador su estado para
+     pasárselo a otro (desincronía o reconexión) y el final de la batalla lo anuncian los navegadores. En modo árbitro estos
+     mensajes no se piden o el servidor los ignora. */
+  let estadoPedido = null;                                  // el servidor pidió el estado al acabar el turno n (o después)
+  let ultimoTurnoHecho = red && red.reanudacion ? red.reanudacion.n || 0 : 0;
+  let finSimulado = null, resultadoEnviado = false;         // derrota de un bando: 3 s de remate, como en el servidor árbitro
+  function responderEstado() {
+    if (estadoPedido === null || desplegando || pasosTurno || ultimoTurnoHecho < estadoPedido || !red.enviarEstado) return;
+    red.enviarEstado(ultimoTurnoHecho, serializarEstado(sim)); estadoPedido = null;
+  }
+  function comprobarFin() {
+    if (resultadoEnviado || !red.resultado) return;
+    if (finSimulado === null && sim.tiempo > 5 && (sim.equipoDerrotado(0) || sim.equipoDerrotado(1))) finSimulado = sim.tiempo + 3;
+    if (finSimulado !== null && sim.tiempo >= finSimulado) { red.resultado(turnoActual.n, ganadorBatalla(sim)); resultadoEnviado = true; }
+  }
   let resincronizaciones = 0;
   function tomarTurno() {
     const turno = turnosRed.shift(); if (!turno) return false;
     // estado completo del servidor (este navegador se había desviado): se copia encima, al final del turno turno.n
-    if (turno.tipo === 'estado') { restaurarEstado(sim, turno.estado); resincronizaciones++; avisoDesincronia = null; pasosTurno = 0; console.info('Batalla en red: estado corregido con el del servidor (turno ' + turno.n + ')'); return true; }
+    if (turno.tipo === 'estado') {
+      restaurarEstado(sim, turno.estado); resincronizaciones++; avisoDesincronia = null; pasosTurno = 0; ultimoTurnoHecho = turno.n;
+      // modo relevo: el estado es el de otro navegador al acabar el turno n, y detrás vienen los turnos que este ya había
+      // simulado desde entonces: se vuelven a simular encima del estado bueno
+      if (Array.isArray(turno.siguientes) && turno.siguientes.length) turnosRed.unshift(...turno.siguientes);
+      console.info('Batalla en red: estado corregido (turno ' + turno.n + (turno.siguientes ? ', ' + turno.siguientes.length + ' turnos que se vuelven a simular' : '') + ')');
+      return true;
+    }
     turnoActual = turno;
     for (const { e, o } of turno.ordenes || []) {
       aplicarOrden(sim, e, o, { desplegando });
       if (e === equipoPropio && o.k) { const k = ordenesEnCamino.findIndex(p => p.orden.k === o.k); if (k >= 0) ordenesEnCamino.splice(0, k + 1); }   // esta y las anteriores ya llegaron (o se descartaron)
     }
-    if (turno.comienza && desplegando) { desplegando = false; if (renderizador.mostrarZona) renderizador.mostrarZona(null); avisar(); }
+    if (turno.comienza && desplegando) { desplegando = false; if (renderizador.mostrarZona) renderizador.mostrarZona(null); if (sonido) sonido.comienzo(); avisar(); }
     if (turno.fin && !terminada) { terminada = true; finRed = turno.fin; momentoFin = performance.now(); seleccion = []; avisar(); }
     pasosTurno = turno.pasos || 0;
     if (!pasosTurno) turnoTerminado();
     return true;
   }
-  function turnoTerminado() { if (turnoActual && turnoActual.pasos && turnoActual.n % 10 === 0 && red.resumen) red.resumen(turnoActual.n, resumenEstado(sim)); }
+  function turnoTerminado() {
+    if (!turnoActual) return;
+    ultimoTurnoHecho = turnoActual.n;
+    if (turnoActual.pasos && turnoActual.n % 10 === 0 && red.resumen) red.resumen(turnoActual.n, resumenEstado(sim));
+    if (turnoActual.pasos) comprobarFin();
+    responderEstado();
+  }
+  /* Colchón de turnos (2026-10-14). Por internet los turnos no llegan cada 100 ms exactos: antes, si uno llegaba tarde la
+     batalla se paraba y luego recuperaba de golpe (hasta 30 pasos en un fotograma, un tirón de más de 100 ms). Ahora se
+     guardan COLCHON_TURNOS turnos de combate antes de simularlos y se simula a ritmo constante; si el colchón crece, se
+     acelera un poco (RITMO_RECUPERACION) en vez de saltar; si se queda muy atrás (pestaña en segundo plano, estado
+     reenviado con turnos detrás), recupera deprisa pero con un tope por fotograma; y si se vacía, espera a volver a tenerlo
+     lleno antes de seguir. Cuesta unos 200 ms más entre la orden y verla cumplida (las órdenes en camino lo disimulan).
+     Los turnos sin pasos (despliegue, pausa) y los estados no esperan. red.colchon cambia el tamaño (las pruebas).
+     Adaptable: cada vez que se vacía, crece un turno (hasta COLCHON_MAXIMO); tras ESPERA_REDUCIR s sin vaciarse, baja uno (no
+     de COLCHON_TURNOS): con buena conexión el retraso sigue siendo pequeño y con una mala la batalla deja de congelarse. */
+  const COLCHON_TURNOS = red && Number.isInteger(red.colchon) ? red.colchon : 2;
+  const PASOS_POR_TURNO_RED = 3;            // los del servidor (PASOS_POR_TURNO en servidor-lobby.js)
+  const RITMO_RECUPERACION = 1.25, PASOS_MAX_FOTOGRAMA = 6, PASOS_MAX_RECUPERANDO = 12;
+  const COLCHON_MAXIMO = Math.max(COLCHON_TURNOS, 5), ESPERA_REDUCIR = 15000;
+  let rellenando = true, colchonActual = COLCHON_TURNOS, ultimoVaciado = performance.now();
+  function pasosPendientes() { let n = pasosTurno; for (const t of turnosRed) if (t.tipo !== 'estado') n += t.pasos || 0; return n; }
   function pasosDeRed(transcurrido) {
-    if (!desplegando && !terminada) acumulador += transcurrido;
-    const atrasado = turnosRed.length > 2;
+    // lo que no hace avanzar la simulación se aplica al momento
+    while (!pasosTurno && turnosRed.length && (turnosRed[0].tipo === 'estado' || !turnosRed[0].pasos)) tomarTurno();
+    if (colchonActual > COLCHON_TURNOS && performance.now() - ultimoVaciado > ESPERA_REDUCIR) { colchonActual--; ultimoVaciado = performance.now(); }
+    const objetivo = colchonActual * PASOS_POR_TURNO_RED, pendientes = pasosPendientes();
+    if (rellenando) { if (pendientes < Math.max(1, objetivo)) { acumulador = 0; return 0; } rellenando = false; }
+    const muyAtrasado = pendientes > objetivo + 45;                   // más de 1,5 s por detrás
+    const ritmo = pendientes > objetivo + 3 * PASOS_POR_TURNO_RED ? RITMO_RECUPERACION : 1;
+    if (!desplegando && !terminada) acumulador += transcurrido * ritmo;
     let pasos = 0;
-    while (pasos < (atrasado ? 30 : 6)) {
-      if (!pasosTurno) { if (!tomarTurno()) break; continue; }
-      if (acumulador < PASO_SIMULACION && !atrasado) break;
+    while (pasos < (muyAtrasado ? PASOS_MAX_RECUPERANDO : PASOS_MAX_FOTOGRAMA)) {
+      if (!pasosTurno) {
+        if (!turnosRed.length) {                                  // colchón vacío: a rellenar, y un turno más de colchón
+          if (!terminada && !desplegando && !pausaRed) { rellenando = true; colchonActual = Math.min(COLCHON_MAXIMO, colchonActual + 1); ultimoVaciado = performance.now(); }
+          break;
+        }
+        tomarTurno(); continue;
+      }
+      if (acumulador < PASO_SIMULACION && !muyAtrasado) break;
       sim.avanzar(); pasosTurno--; pasos++; acumulador = Math.max(0, acumulador - PASO_SIMULACION);
       if (!pasosTurno) turnoTerminado();
     }
-    // sin turnos por delante no se acumula tiempo: así no hay tirón cuando llegue el siguiente
     if (!pasosTurno && !turnosRed.length) acumulador = Math.min(acumulador, PASO_SIMULACION);
     return pasos;
   }
@@ -404,10 +462,12 @@ function iniciarBatalla(opciones) {
       while (acumulador >= PASO_SIMULACION && pasos < 6) { inteligenciaArtificial(); sim.avanzar(); acumulador -= PASO_SIMULACION; pasos++; }
       if (pasos === 6) acumulador = 0;
     }
+    if (sonido) sonido.actualizar(transcurrido, { pausado: red ? pausaRed : pausado, desplegando });
     if (sim.sangre.length) {
       for (const m of sim.sangre) {
         if (m.tipo !== 'impacto') sangre.mancha(m.x, m.y, m.tamano, azarManchas);   // la piedra que cae al suelo no deja sangre
         if (renderizador.sangrar) renderizador.sangrar(m);
+        if (sonido) sonido.evento(m);
         if (m.tipo === 'muerte') registroMapa.muertes.push([+m.x.toFixed(1), +m.y.toFixed(1), m.equipo]); else if (m.tipo === 'atropello') registroMapa.atropellos.push([+m.x.toFixed(1), +m.y.toFixed(1)]);
       }
       sim.sangre.length = 0;
@@ -423,6 +483,7 @@ function iniciarBatalla(opciones) {
       activo = false; window.removeEventListener('keydown', tecla);
       const e = sim.estadisticas;
       const victoria = red ? finRed.ganador === equipoPropio : ganadorBatalla(sim) === 0;
+      if (sonido) sonido.final(victoria);
       const fichaUnidad = u => ({ nombre: u.nombre, equipo: u.equipo, total: u.total, vivos: u.vivos, huyo: u.huyendo, bajasCausadas: u.bajasCausadas, esGeneral: u.esGeneral, nivel: u.nivel });
       const guardiaEnemiga = unidadesIA.find(u => u.esGeneral);
       const P = equipoPropio, R = equipoRival;
@@ -435,10 +496,13 @@ function iniciarBatalla(opciones) {
     sim, unidadesJugador, unidadesIA, clima: sim.clima, mapa: terreno ? TIPOS_MAPA[terreno.mapa] : null, equipoPropio, enRed: !!red,
     // red: el cliente del lobby entrega aquí los turnos del servidor (en orden) y los avisos de desincronía
     recibirTurno: turno => { if (red) turnosRed.push(turno); },
+    // modo relevo: el servidor pide el estado de este navegador al acabar el turno n (se manda en cuanto se llega a él)
+    pedirEstado: n => { if (!red) return; estadoPedido = n; responderEstado(); },
     desincronia: n => { avisoDesincronia = n; console.warn('Batalla en red: el estado de este navegador se ha desviado del servidor en el turno', n); },
     desincronizado: () => avisoDesincronia,
     resincronizaciones: () => resincronizaciones,
     ordenesPendientes: () => ordenesEnCamino.length,
+    colchonTurnos: () => colchonActual,
     terminada: () => terminada,
     // grupos de unidades (G / Mayús+G / 1-9)
     crearGrupo, deshacerGrupo, grupoDe, llamarGrupo, grupos: () => grupos, alternarEscaramuza,
@@ -452,7 +516,7 @@ function iniciarBatalla(opciones) {
     colinaDefensiva: () => colinaDefensiva,
     // en red, «comenzar» solo avisa al servidor de que este jugador ha terminado de desplegar: la batalla empieza cuando lo
     // estén los dos (o se agote el tiempo de despliegue), con el turno que trae «comienza»
-    comenzar: () => { if (!desplegando) return; if (red) { red.listoDespliegue(); esperandoRival = true; avisar(); return; } desplegando = false; if (renderizador.mostrarZona) renderizador.mostrarZona(null); ultimoTiempo = performance.now(); avisar(); },
+    comenzar: () => { if (!desplegando) return; if (red) { red.listoDespliegue(); esperandoRival = true; avisar(); return; } desplegando = false; if (renderizador.mostrarZona) renderizador.mostrarZona(null); if (sonido) sonido.comienzo(); ultimoTiempo = performance.now(); avisar(); },
     esperandoRival: () => esperandoRival && desplegando,
     rendirse: () => { if (red && !terminada) red.rendirse(); },
     zonaDespliegue: ZONA_DESPLIEGUE,
@@ -464,6 +528,6 @@ function iniciarBatalla(opciones) {
     velocidadActual: () => multiplicador,
     // en red, pausar pide la pausa al rival y reanudar la quita (las dos pasan por el servidor)
     fijarPausa: valor => { if (red) { if (valor && !pausaRed) red.pedirPausa(); else if (!valor && pausaRed) red.reanudarPausa(); } else pausado = !!valor; avisar(); return pausado; },
-    detener: () => { activo = false; window.removeEventListener('keydown', tecla); renderizador.destruir(); },
+    detener: () => { activo = false; window.removeEventListener('keydown', tecla); if (sonido) sonido.detener(); renderizador.destruir(); },
   };
 }
