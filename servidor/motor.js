@@ -24,7 +24,7 @@ function crearMotor() {
   vm.runInContext(fuenteBatalla.slice(fuenteBatalla.indexOf('function colocarEjercito'), fuenteBatalla.indexOf('function iniciarBatalla')), contexto, { filename: 'colocarEjercito' });
   const ejecutar = codigo => vm.runInContext(codigo, contexto);
   const RAMAS = ejecutar('RAMAS'), NIVELES = ejecutar('NIVELES');
-  const tiposDisponibles = ejecutar('tiposDisponibles'), costeEjercito = ejecutar('costeEjercito');
+  const tiposDisponibles = ejecutar('tiposDisponibles'), costeEjercito = ejecutar('costeEjercito'), incumpleLimitesEjercito = ejecutar('incumpleLimitesEjercito');
 
   // Ejército de un jugador: rama existente, lista de { tipo, nivel } con tropas de esa rama, niveles válidos, sin pasarse del
   // presupuesto y con un tope de unidades
@@ -37,6 +37,7 @@ function crearMotor() {
       if (!e || !disponibles.includes(e.tipo)) return { ok: false, motivo: 'Tropa no disponible para esa rama: ' + (e && e.tipo) };
       if (!Number.isInteger(e.nivel) || e.nivel < 0 || e.nivel >= NIVELES.length) return { ok: false, motivo: 'Nivel no válido.' };
     }
+    const limites = incumpleLimitesEjercito(ejercito); if (limites) return { ok: false, motivo: limites };   // nivel único y máximo por tropa (mangoneles)
     const coste = costeEjercito(rama, ejercito);
     if (coste > presupuesto) return { ok: false, coste, motivo: 'Cuesta ' + coste + ' y el presupuesto es ' + presupuesto + '.' };
     return { ok: true, coste };

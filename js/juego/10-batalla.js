@@ -428,7 +428,11 @@ function iniciarBatalla(opciones) {
     while (!pasosTurno && turnosRed.length && (turnosRed[0].tipo === 'estado' || !turnosRed[0].pasos)) tomarTurno();
     if (colchonActual > COLCHON_TURNOS && performance.now() - ultimoVaciado > ESPERA_REDUCIR) { colchonActual--; ultimoVaciado = performance.now(); }
     const objetivo = colchonActual * PASOS_POR_TURNO_RED, pendientes = pasosPendientes();
-    if (rellenando) { if (pendientes < Math.max(1, objetivo)) { acumulador = 0; return 0; } rellenando = false; }
+    // no se espera a llenar el colchón si no van a llegar más turnos de combate por ahora: fin de la batalla en la cola, un
+    // último turno sin pasos (pausa) o pausa en marcha; si no, los turnos que quedan delante no se simularían nunca
+    const ultimoEnCola = turnosRed[turnosRed.length - 1];
+    const noLleganMas = pausaRed || turnosRed.some(t => t.fin) || (ultimoEnCola && ultimoEnCola.tipo !== 'estado' && !ultimoEnCola.pasos);
+    if (rellenando) { if (pendientes < Math.max(1, objetivo) && !noLleganMas) { acumulador = 0; return 0; } rellenando = false; }
     const muyAtrasado = pendientes > objetivo + 45;                   // más de 1,5 s por detrás
     const ritmo = pendientes > objetivo + 3 * PASOS_POR_TURNO_RED ? RITMO_RECUPERACION : 1;
     if (!desplegando && !terminada) acumulador += transcurrido * ritmo;

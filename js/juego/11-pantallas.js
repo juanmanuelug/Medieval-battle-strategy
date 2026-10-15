@@ -98,7 +98,7 @@ function iniciarPantallaTienda() {
     const datos = TIPOS[TIPO[tipo]], b = (rama.bonificaciones || {})[tipo] || {};
     const nombresBono = { vida: 'vida', dano: 'daño', velocidad: 'velocidad', precio: 'precio' };
     const bonos = Object.entries(b).map(([k, v]) => nombresBono[k] + ' ×' + v).join(', ');
-    return `<div class="tropa"><span class="retrato-tropa" data-tipo="${tipo}" data-rama="${reino.rama}" data-nivel="1"></span><div class="tropa-nombre"><strong>${textoEsc(datos.nombre)}</strong><span>${soldadosDeUnidad(reino.rama, tipo)} soldados por unidad · vida ${datos.vida}, daño ${datos.dano}, velocidad ${datos.velocidad}${datos.alcanceTiro ? ', ' + datos.municion + ' andanadas' : ''}${bonos ? ' · ' + bonos : ''}</span></div><div class="niveles">${NIVELES.map((n, i) => `<button class="btn-comprar" data-tipo="${tipo}" data-nivel="${i}" title="${textoEsc(n.nombre)}: ×${n.multStats} vida y daño, ×${n.multMoral} moral">${galones(i)}${textoEsc(n.nombre)}<br><small>${precioUnidad(reino.rama, tipo, i).toLocaleString('es-ES')}</small></button>`).join('')}</div></div>`;
+    return `<div class="tropa"><span class="retrato-tropa" data-tipo="${tipo}" data-rama="${reino.rama}" data-nivel="1"></span><div class="tropa-nombre"><strong>${textoEsc(datos.nombre)}</strong><span>${soldadosDeUnidad(reino.rama, tipo)} soldados por unidad · vida ${datos.vida}, daño ${datos.dano}, velocidad ${datos.velocidad}${datos.alcanceTiro ? ', ' + datos.municion + ' andanadas' : ''}${bonos ? ' · ' + bonos : ''}</span>${maximoDeTropa(tipo) < Infinity ? `<span class="tropa-limite">Máximo ${maximoDeTropa(tipo)} por ejército</span>` : ''}</div><div class="niveles">${NIVELES.map((n, i) => !nivelesDeTropa(tipo).includes(i) ? '' : `<button class="btn-comprar" data-tipo="${tipo}" data-nivel="${i}" title="${textoEsc(n.nombre)}: ×${n.multStats} vida y daño, ×${n.multMoral} moral">${galones(i)}${textoEsc(n.nombre)}<br><small>${precioUnidad(reino.rama, tipo, i).toLocaleString('es-ES')}</small></button>`).join('')}</div></div>`;
   }).join(''));
   const [colorReino, colorReinoSecundario] = coloresDelBlason(estadoBlason(reino));
   pintarRetratosConBlason(elemento('#tienda-tropas'), colorReino, colorReinoSecundario, estadoBlason(reino));
@@ -115,13 +115,13 @@ function pintarResumenEjercito() {
   html('#tienda-oro', `<strong>${oro(reino.oro)}</strong> disponibles · ejército: ${reino.ejercito.length} unidades, ${soldados} soldados`);
   html('#tienda-ejercito', resumen.length ? resumen.map(r => `<div class="fila-ejercito"><span>${r.unidades} × ${textoEsc(nombreUnidad(r.tipo, r.nivel))}</span><span>${r.soldados} soldados · ${r.precio.toLocaleString('es-ES')}</span><button class="btn-vender" data-tipo="${r.tipo}" data-nivel="${r.nivel}" title="Devolver una unidad">−</button></div>`).join('') : '<p class="nota">Aún no has reclutado nada. Compra unidades con los botones de arriba; cada botón añade una unidad completa.</p>');
   elemento('#btn-batalla').disabled = reino.ejercito.length === 0;
-  for (const b of document.querySelectorAll('.btn-comprar')) b.disabled = precioUnidad(reino.rama, b.dataset.tipo, +b.dataset.nivel) > reino.oro;
+  for (const b of document.querySelectorAll('#tienda-tropas .btn-comprar')) b.disabled = precioUnidad(reino.rama, b.dataset.tipo, +b.dataset.nivel) > reino.oro || !puedeAnadirTropa(reino.ejercito, b.dataset.tipo);
 }
 elementoListo(() => {
   elemento('#tienda-tropas').addEventListener('click', e => {
     const b = e.target.closest('.btn-comprar'); if (!b) return;
     const precio = precioUnidad(reino.rama, b.dataset.tipo, +b.dataset.nivel);
-    if (precio > reino.oro) return;
+    if (precio > reino.oro || !puedeAnadirTropa(reino.ejercito, b.dataset.tipo)) return;
     reino.oro -= precio; reino.ejercito.push({ tipo: b.dataset.tipo, nivel: +b.dataset.nivel }); guardarReino(reino); pintarResumenEjercito();
   });
   elemento('#tienda-ejercito').addEventListener('click', e => {
@@ -159,7 +159,7 @@ function pintarTropasPersonalizadas() {
   html('#personalizada-rama-nota', `${textoEsc(rama.descripcion)} ${(rama.ventajas || []).map(textoEsc).join(' · ')}`);
   html('#personalizada-tropas', tiposDisponibles(config.rama).map(tipo => {
     const datos = TIPOS[TIPO[tipo]];
-    return `<div class="tropa"><span class="retrato-tropa" data-tipo="${tipo}" data-rama="${config.rama}" data-nivel="1"></span><div class="tropa-nombre"><strong>${textoEsc(datos.nombre)}</strong><span>${soldadosDeUnidad(config.rama, tipo)} soldados por unidad · vida ${datos.vida}, daño ${datos.dano}, velocidad ${datos.velocidad}</span></div><div class="niveles">${NIVELES.map((n, i) => `<button class="btn-comprar btn-anadir-ia" data-tipo="${tipo}" data-nivel="${i}" title="Añadir una unidad de ${textoEsc(n.nombre.toLowerCase())}">${galones(i)}${textoEsc(n.nombre)}<br><small>${precioUnidad(config.rama, tipo, i).toLocaleString('es-ES')}</small></button>`).join('')}</div></div>`;
+    return `<div class="tropa"><span class="retrato-tropa" data-tipo="${tipo}" data-rama="${config.rama}" data-nivel="1"></span><div class="tropa-nombre"><strong>${textoEsc(datos.nombre)}</strong><span>${soldadosDeUnidad(config.rama, tipo)} soldados por unidad · vida ${datos.vida}, daño ${datos.dano}, velocidad ${datos.velocidad}</span>${maximoDeTropa(tipo) < Infinity ? `<span class="tropa-limite">Máximo ${maximoDeTropa(tipo)} por ejército</span>` : ''}</div><div class="niveles">${NIVELES.map((n, i) => !nivelesDeTropa(tipo).includes(i) ? '' : `<button class="btn-comprar btn-anadir-ia" data-tipo="${tipo}" data-nivel="${i}" title="Añadir una unidad de ${textoEsc(n.nombre.toLowerCase())}">${galones(i)}${textoEsc(n.nombre)}<br><small>${precioUnidad(config.rama, tipo, i).toLocaleString('es-ES')}</small></button>`).join('')}</div></div>`;
   }).join(''));
   pintarRetratosConBlason(elemento('#personalizada-tropas'), parseInt(rama.colores[0].slice(1), 16), parseInt(rama.colores[1].slice(1), 16), PuenteDisenador.blasonPorDefecto(rama.colores[0], rama.colores[1], rama.simbolo));
   pintarResumenPersonalizado();
@@ -172,10 +172,11 @@ function pintarResumenPersonalizado() {
   html('#personalizada-resumen', `Enemigo: ${config.ejercito.length} unidades, ${soldados} soldados, valor ${valor.toLocaleString('es-ES')} · tu ejército: ${reino.ejercito.length} unidades, ${soldadosPropios} soldados, valor ${propio.toLocaleString('es-ES')}${propio ? ` (el enemigo vale ${Math.round(valor / propio * 100)} % del tuyo)` : ''}`);
   html('#personalizada-ejercito', resumen.length ? resumen.map(r => `<div class="fila-ejercito"><span>${r.unidades} × ${textoEsc(nombreUnidad(r.tipo, r.nivel))}</span><span>${r.soldados} soldados · ${r.precio.toLocaleString('es-ES')}</span><button class="btn-vender btn-quitar-ia" data-tipo="${r.tipo}" data-nivel="${r.nivel}" title="Quitar una unidad">−</button></div>`).join('') : '<p class="nota">Añade unidades enemigas con los botones de arriba. Además de estas, la IA siempre lleva la guardia de su general.</p>');
   elemento('#btn-personalizada-batalla').disabled = config.ejercito.length === 0;
+  for (const b of document.querySelectorAll('.btn-anadir-ia')) b.disabled = !puedeAnadirTropa(config.ejercito, b.dataset.tipo);
 }
 elementoListo(() => {
   elemento('#sel-rama-ia').addEventListener('change', e => { const config = configuracionPersonalizada(); config.rama = e.target.value; config.ejercito = []; guardarReino(reino); pintarTropasPersonalizadas(); });
-  elemento('#personalizada-tropas').addEventListener('click', e => { const b = e.target.closest('.btn-anadir-ia'); if (!b) return; configuracionPersonalizada().ejercito.push({ tipo: b.dataset.tipo, nivel: +b.dataset.nivel }); guardarReino(reino); pintarResumenPersonalizado(); });
+  elemento('#personalizada-tropas').addEventListener('click', e => { const b = e.target.closest('.btn-anadir-ia'); if (!b || !puedeAnadirTropa(configuracionPersonalizada().ejercito, b.dataset.tipo)) return; configuracionPersonalizada().ejercito.push({ tipo: b.dataset.tipo, nivel: +b.dataset.nivel }); guardarReino(reino); pintarResumenPersonalizado(); });
   elemento('#personalizada-ejercito').addEventListener('click', e => { const b = e.target.closest('.btn-quitar-ia'); if (!b) return; const ejercito = configuracionPersonalizada().ejercito; const i = ejercito.findIndex(x => x.tipo === b.dataset.tipo && x.nivel === +b.dataset.nivel); if (i >= 0) ejercito.splice(i, 1); guardarReino(reino); pintarResumenPersonalizado(); });
   elemento('#btn-personalizada-vaciar').addEventListener('click', () => { configuracionPersonalizada().ejercito = []; guardarReino(reino); pintarResumenPersonalizado(); });
   elemento('#btn-personalizada-volver').addEventListener('click', () => { iniciarPantallaTienda(); mostrar('tienda'); });

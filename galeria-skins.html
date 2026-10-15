@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skins: direcciones y fotogramas · Batallas medievales</title>
+<link rel="stylesheet" href="estilo.css">
+<style>
+  :root { --fondo: #1f2418; --panel: #2a3320; --borde: #5a6a3e; --texto: #e8e4d8; --suave: #b8b4a4; --oro: #d9b45a; --celda: #4a6a2e; --celda-espejo: #3a4a2a; }
+  html, body { height: auto; overflow: auto; }   /* estilo.css (el del juego) bloquea el scroll con overflow:hidden */
+  body { background: var(--fondo); color: var(--texto); margin: 0; padding: 18px 24px 60px; font-family: system-ui, sans-serif; line-height: 1.45; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; color: var(--oro); }
+  h2 { font-size: 1.15rem; margin: 34px 0 8px; color: var(--oro); border-bottom: 1px solid var(--borde); padding-bottom: 4px; }
+  h3 { font-size: 1.05rem; margin: 26px 0 6px; }
+  p, li { max-width: 980px; }
+  .nota { color: var(--suave); font-size: 0.92rem; }
+  code, kbd { background: #141810; padding: 1px 5px; border-radius: 4px; font-size: 0.9em; }
+  table.resumen { border-collapse: collapse; margin: 10px 0 6px; font-size: 0.92rem; }
+  table.resumen th, table.resumen td { border: 1px solid var(--borde); padding: 4px 9px; text-align: left; vertical-align: top; }
+  table.resumen th { background: var(--panel); color: var(--oro); font-weight: 600; }
+  .controles { position: sticky; top: 0; z-index: 5; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; background: var(--fondo); padding: 10px 0; border-bottom: 1px solid var(--borde); margin-bottom: 8px; }
+  .controles label { display: flex; gap: 6px; align-items: center; }
+  .skin { background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; padding: 12px 14px; margin: 14px 0; }
+  .skin header { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: baseline; }
+  .skin header h3 { margin: 0; }
+  .skin .ficha { color: var(--suave); font-size: 0.9rem; }
+  .skin .acciones { margin-left: auto; display: flex; gap: 8px; }
+  .skin .acciones button { background: #141810; color: var(--texto); border: 1px solid var(--borde); border-radius: 6px; padding: 5px 10px; cursor: pointer; font: inherit; font-size: 0.88rem; }
+  .skin .acciones button:hover { border-color: var(--oro); color: var(--oro); }
+  .skin canvas { display: block; max-width: 100%; margin-top: 10px; border-radius: 6px; }
+  .skin details { margin-top: 8px; }
+  .skin pre { background: #141810; padding: 8px 10px; border-radius: 6px; overflow: auto; font-size: 0.82rem; }
+  ul.compacta { margin: 4px 0 0; padding-left: 20px; }
+</style>
+</head>
+<body>
+<h1>Skins para Batallas medievales: direcciones y fotogramas por tipo de tropa</h1>
+<p class="nota">Esta página la genera el propio juego con sus sprites actuales. Sirve de referencia de lo que hay que entregar por cada skin: qué vistas, qué fotogramas, a qué tamaño y con qué nombres. Los dibujos de abajo son los que se quieren sustituir, no un modelo de estilo.</p>
+
+<h2>1. Cómo se ve el juego</h2>
+<ul>
+  <li><strong>Vista isométrica 2D</strong>, cámara fija en diagonal, con zoom. Cada soldado es un sprite plano apoyado por los pies en el suelo; el motor lo dibuja mirando a una de <strong>8 direcciones</strong> y los ordena por profundidad.</li>
+  <li><strong>Escala</strong>: 40 píxeles por metro. Un soldado de 1,8 m mide <strong>72 px de alto</strong>; un jinete con su caballo, unos 2,2 m, <strong>88 px</strong>. En pantalla se ve a menudo más pequeño (la cámara suele estar lejos: 2 000 soldados a la vez), así que lo que importa es la silueta y el contraste, no el detalle fino. Si se trabaja a más resolución (×2 o ×4), basta con entregarlo así y se reduce.</li>
+  <li><strong>Colores del reino</strong>: cada ejército lleva los dos esmaltes de su blasón (rojo y oro, azul y plata…), y el escudo lleva el blasón entero. El skin no debe llevar esos colores pintados: va una <strong>máscara</strong> aparte (ver punto 4).</li>
+</ul>
+
+<h2>2. Direcciones</h2>
+<p>Se dibujan <strong>cinco vistas</strong> y las otras tres salen en espejo automáticamente. Si se prefiere dibujar las ocho (para que el escudo quede siempre en el brazo correcto), se usan tal cual.</p>
+<table class="resumen">
+  <tr><th>Vista</th><th>Qué es</th><th>Obligatoria</th></tr>
+  <tr><td><code>S</code></td><td>De frente, mirando al espectador</td><td>sí</td></tr>
+  <tr><td><code>SW</code></td><td>Tres cuartos de frente, mirando a la izquierda</td><td>sí</td></tr>
+  <tr><td><code>W</code></td><td>Perfil izquierdo</td><td>sí</td></tr>
+  <tr><td><code>NW</code></td><td>Tres cuartos de espaldas, hacia la izquierda</td><td>sí</td></tr>
+  <tr><td><code>N</code></td><td>De espaldas</td><td>sí</td></tr>
+  <tr><td><code>SE</code>, <code>E</code>, <code>NE</code></td><td>Espejo de SW, W y NW</td><td>no (opcional)</td></tr>
+</table>
+
+<h2>3. Fotogramas</h2>
+<p>Por cada vista, <strong>9 fotogramas</strong>. En total, 45 celdas por skin (72 si se dibujan las ocho vistas).</p>
+<table class="resumen">
+  <tr><th>Animación</th><th>Fotogramas</th><th>Cuándo se ve</th><th>Qué debe mostrar</th></tr>
+  <tr><td><code>quieto</code></td><td>1</td><td>Parado en formación</td><td>Postura de reposo con el arma; es el fotograma que más se ve.</td></tr>
+  <tr><td><code>paso</code></td><td>4 (<code>paso_1</code> a <code>paso_4</code>)</td><td>Andando, corriendo o, a caballo, al galope</td><td>Ciclo de andar en bucle: zancada izquierda, paso, zancada derecha, paso (en caballería, las cuatro fases del galope). La velocidad la pone el juego: un ciclo cada 2 m.</td></tr>
+  <tr><td><code>golpe</code></td><td>3 (<code>golpe_1</code> a <code>golpe_3</code>)</td><td>Cada ataque, 0,28 s en total</td><td>Armar, golpear, recoger. Lanceros: atrás, estocada, recoger. Tiradores: tensar, soltar, bajar el arma. Mangonel: brazo armado, disparo, brazo arriba.</td></tr>
+  <tr><td><code>cadaver</code></td><td>1</td><td>Muerto en el suelo (queda toda la batalla)</td><td>Cuerpo tendido, visto desde arriba en diagonal, con el arma caída al lado. La caída la hace el juego girando el sprite, no hace falta animarla.</td></tr>
+</table>
+
+<h2>4. Formato de entrega</h2>
+<ul>
+  <li><strong>Una imagen por fotograma</strong>, PNG con fondo transparente (o un fondo liso que se quita), todas del mismo tamaño y con el personaje apoyado por los pies en el mismo punto (el <strong>ancla</strong>: centro horizontal, a un 8 % del borde inferior). El juego las monta en hojas con una herramienta; no hay que montarlas a mano.</li>
+  <li><strong>Nombre del archivo</strong>: <code>tipo_direccion_animacion[_n].png</code>. Ejemplos: <code>infanteriaPesada_S_quieto.png</code>, <code>infanteriaPesada_SW_paso_3.png</code>, <code>caballeriaPesada_N_golpe_2.png</code>, <code>arqueros_W_cadaver.png</code>.</li>
+  <li><strong>Máscara de color</strong>: por cada fotograma, otra PNG igual con sufijo <code>_mascara</code> donde solo aparece, en blanco (sombreado en grises), lo que debe teñirse con el color principal del reino: sobrevesta, banda del escudo, gualdrapa del caballo, pendón de la lanza. Lo demás transparente. Opcional, pero sin ella todos los ejércitos se verán iguales.</li>
+  <li><strong>Variantes</strong> (opcionales, se añaden al nombre): por facción <code>tipo.cristiano_…</code> (cristiano, ortodoxo, musulman, cruzado, tribus) y por veteranía mínima <code>tipo.cristiano.veteranos_…</code> (leva, milicia, hombresDeArmas, veteranos). Un skin sin facción vale para todas. El general y el portaestandarte usan hoy el mismo skin que su tropa.</li>
+  <li><strong>Orden sugerido</strong>: primero un skin por tipo, válido para todas las facciones y con máscara (13 skins × 45 celdas). Después, si se quiere, variantes por facción de los tipos comunes y por veteranía.</li>
+</ul>
+<p class="nota">El tamaño de celda que se indica en cada skin es el mínimo que contiene el dibujo actual con sus armas (por eso la caballería con lanza sale más alta). Vale cualquier tamaño mayor, siempre que sea el mismo en las 45 imágenes del skin y el ancla no cambie.</p>
+<p class="nota">Las plantillas PNG de cada tipo (botón «Plantilla») traen la rejilla con las 45 celdas rotuladas, la cruz del ancla y el sprite actual muy tenue como guía de tamaño y postura: se puede pintar encima en cualquier programa (Aseprite, Photoshop, Krita, Procreate) y recortar después, o entregar la hoja entera tal cual. El botón «Referencia» baja la misma hoja con los sprites actuales nítidos, como ejemplo de hoja terminada.</p>
+
+<h2>5. Los skins</h2>
+<svg id="canvas" class="oculto" style="display:none" xmlns="http://www.w3.org/2000/svg"></svg>
+<div class="controles">
+  <label>Facción de referencia <select id="sel-rama"></select></label>
+  <label>Veteranía <select id="sel-nivel"><option value="0">leva</option><option value="1">milicia</option><option value="2" selected>hombres de armas</option><option value="3">veteranos</option></select></label>
+  <label>Zoom <select id="sel-zoom"><option value="1">1× (tamaño real)</option><option value="2" selected>2×</option><option value="3">3×</option></select></label>
+  <label><input type="checkbox" id="chk-espejo" checked> mostrar las tres vistas en espejo</label>
+  <span class="nota" id="resumen-total"></span>
+</div>
+<div id="skins"></div>
+
+<script src="disenador/js/00-utilidades-base.js"></script>
+<script src="disenador/js/01-catalogo-de-formas.js"></script>
+<script src="disenador/js/02-catalogo-de-patrones-particiones-y-pieza.js"></script>
+<script src="disenador/js/03c-indice-figuras.js"></script>
+<script src="disenador/js/03-catalogo-de-simbolos-y-figuras.js"></script>
+<script src="disenador/js/03b-ordenes-militares.js"></script>
+<script src="disenador/puente.js"></script>
+<script src="disenador/js/05-render-svg.js"></script>
+<script src="js/00-aleatorio-y-utilidades.js"></script>
+<script src="js/01-datos-unidades.js"></script>
+<script src="js/sprites-munecos.js"></script>
+<script src="js/juego/07-ramas-y-niveles.js"></script>
+<script>
+(() => {
+  const PX_POR_METRO = 40;                      // escala real del juego: S = 40 → 1,8 m = 72 px
+  const FOTOGRAMAS = [
+    { clave: 'quieto', titulo: 'quieto' },
+    { clave: 'paso1', titulo: 'paso_1' }, { clave: 'paso2', titulo: 'paso_2' }, { clave: 'paso3', titulo: 'paso_3' }, { clave: 'paso4', titulo: 'paso_4' },
+    { clave: 'golpe1', titulo: 'golpe_1' }, { clave: 'golpe2', titulo: 'golpe_2' }, { clave: 'golpe3', titulo: 'golpe_3' },
+    { clave: 'cadaver', titulo: 'cadaver' },
+  ];
+  // vistas: índice de dirección del motor (0 = E, en sentido horario), nombre y si sale en espejo
+  const VISTAS = [
+    { d: 2, nombre: 'S', espejo: false }, { d: 3, nombre: 'SW', espejo: false }, { d: 4, nombre: 'W', espejo: false }, { d: 5, nombre: 'NW', espejo: false }, { d: 6, nombre: 'N', espejo: false },
+    { d: 1, nombre: 'SE', espejo: true }, { d: 0, nombre: 'E', espejo: true }, { d: 7, nombre: 'NE', espejo: true },
+  ];
+  const DESCRIPCION = {
+    infanteriaLigera: 'A pie, arma de mano corta y escudo redondo. Sin armadura o con gambesón.',
+    infanteriaPesada: 'A pie, espada o hacha y escudo grande. Cota de malla o placas, yelmo.',
+    lanceros: 'A pie, lanza larga a dos manos (la estocada es el golpe) y escudo pequeño o ninguno.',
+    arqueros: 'A pie, arco largo. golpe_1 tensa, golpe_2 suelta, golpe_3 baja el arco. Carcaj a la espalda.',
+    ballesteros: 'A pie, ballesta. golpe_1 apunta, golpe_2 dispara, golpe_3 baja el arma. Pavés o sin escudo.',
+    caballeriaPesada: 'Jinete con lanza o espada y escudo sobre caballo con gualdrapa. paso_1 a paso_4 son el galope.',
+    caballeriaLigera: 'Jinete ligero con lanza corta o espada, sin armadura pesada, caballo sin gualdrapa. Galope en paso_1 a paso_4.',
+    arquerosACaballo: 'Jinete con arco sobre caballo ligero; dispara al galope. golpe_1 tensa, golpe_2 suelta, golpe_3 baja.',
+    caballeros: 'Caballería de choque cristiana: armadura de placas, gran yelmo, lanza de justa, gualdrapa completa.',
+    guardiaVarega: 'Infantería pesada ortodoxa con hacha danesa a dos manos y sin escudo.',
+    templarios: 'Infantería de élite cruzada: sobrevesta blanca con cruz roja, escudo, espada.',
+    berserkers: 'Infantería ligera tribal: pecho desnudo con pintura de guerra, hacha o espada, sin escudo ni armadura.',
+    mangoneles: 'Máquina de asedio con ruedas y dos sirvientes. golpe_1 brazo armado con la piedra, golpe_2 disparo (brazo contra el tope), golpe_3 brazo arriba. cadaver es la máquina destrozada.',
+  };
+  const selectorRama = document.getElementById('sel-rama');
+  for (const [clave, rama] of Object.entries(RAMAS)) { const opcion = document.createElement('option'); opcion.value = clave; opcion.textContent = rama.nombre; selectorRama.appendChild(opcion); }
+  const contenedor = document.getElementById('skins');
+  let blasonActual = null, ramaBlason = null;
+
+  const disponibleEn = clave => { const tropa = TROPA[clave]; if (!tropa) return 'todas las facciones'; if (!tropa.exclusiva) return 'todas las facciones'; const ramas = Object.entries(RAMAS).filter(([r, datos]) => (datos.exclusivas || []).includes(clave)).map(([r, datos]) => datos.nombre); return ramas.length ? 'solo ' + ramas.join(', ') : 'exclusiva'; };
+
+  /* caja de los píxeles visibles de un lienzo (el dibujo por código usa un lienzo fijo más grande que el muñeco) */
+  function cajaVisible(lienzo) {
+    const { width, height } = lienzo, datos = lienzo.getContext('2d').getImageData(0, 0, width, height).data;
+    let x0 = width, y0 = height, x1 = -1, y1 = -1;
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) if (datos[(y * width + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    return x1 < 0 ? { x0: 0, y0: 0, x1: 0, y1: 0 } : { x0, y0, x1, y1 };
+  }
+  /* dibuja todos los fotogramas y vistas de un tipo a escala real y calcula la celda que los contiene (ancla incluida) */
+  function dibujosDe(datos, rama, nivel, S, general) {
+    const dibujos = [];
+    let izquierda = 0, derecha = 0, arriba = 0, abajo = 0;
+    for (const vista of VISTAS) for (const fotograma of FOTOGRAMAS) {
+      const dibujo = dibujarMuneco2D({ equipo: 0, datos, direccion: vista.d, fotograma: fotograma.clave, S, rama, nivel, general: !!general });
+      dibujos.push({ vista, fotograma, dibujo });
+      const caja = cajaVisible(dibujo.canvas);
+      izquierda = Math.max(izquierda, dibujo.anclaX - caja.x0); derecha = Math.max(derecha, caja.x1 + 1 - dibujo.anclaX);
+      arriba = Math.max(arriba, dibujo.anclaY - caja.y0); abajo = Math.max(abajo, caja.y1 + 1 - dibujo.anclaY);
+    }
+    const redondear = v => Math.ceil(v / 8) * 8;
+    const anchoCelda = redondear(2 * Math.max(izquierda, derecha) + 8), altoCelda = redondear(arriba + abajo + 12);
+    const ancla = [0.5, +((arriba + 6) / altoCelda).toFixed(2)];
+    return { dibujos, celda: [anchoCelda, altoCelda], ancla };
+  }
+
+  /* hoja: filas = vistas, columnas = fotogramas. modo 'plantilla' (rejilla, rótulos, guía tenue) o 'referencia' (sprites nítidos) */
+  function pintarHoja(info, opciones) {
+    const { celda, ancla, dibujos } = info;
+    const vistas = VISTAS.filter(v => !v.espejo || opciones.conEspejo);
+    const zoom = opciones.zoom || 1, margenArriba = opciones.rotulos ? 22 : 0, margenIzquierda = opciones.rotulos ? 34 : 0;
+    const lienzo = document.createElement('canvas');
+    lienzo.width = (margenIzquierda + FOTOGRAMAS.length * celda[0]) * zoom; lienzo.height = (margenArriba + vistas.length * celda[1]) * zoom;
+    const c = lienzo.getContext('2d'); c.imageSmoothingEnabled = zoom < 1;
+    c.scale(zoom, zoom);
+    if (opciones.fondo) { c.fillStyle = opciones.fondo; c.fillRect(0, 0, lienzo.width, lienzo.height); }
+    vistas.forEach((vista, fila) => {
+      FOTOGRAMAS.forEach((fotograma, columna) => {
+        const x0 = margenIzquierda + columna * celda[0], y0 = margenArriba + fila * celda[1];
+        if (opciones.fondoCelda) { c.fillStyle = vista.espejo ? '#3a4a2a' : '#4a6a2e'; c.fillRect(x0, y0, celda[0], celda[1]); }
+        if (opciones.rejilla) { c.strokeStyle = opciones.modo === 'plantilla' ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.35)'; c.lineWidth = 1; c.strokeRect(x0 + 0.5, y0 + 0.5, celda[0] - 1, celda[1] - 1); }
+        const entrada = dibujos.find(e => e.vista === vista && e.fotograma === fotograma);
+        const px = x0 + ancla[0] * celda[0], py = y0 + ancla[1] * celda[1];
+        c.save();
+        if (opciones.modo === 'plantilla') c.globalAlpha = 0.28; else if (vista.espejo) c.globalAlpha = 0.55;
+        c.drawImage(entrada.dibujo.canvas, px - entrada.dibujo.anclaX, py - entrada.dibujo.anclaY);
+        c.restore();
+        if (opciones.marcarAncla) { c.strokeStyle = opciones.modo === 'plantilla' ? '#ff4d4d' : 'rgba(255,80,80,0.8)'; c.lineWidth = 1; c.beginPath(); c.moveTo(px - 5, py + 0.5); c.lineTo(px + 5, py + 0.5); c.moveTo(px + 0.5, py - 5); c.lineTo(px + 0.5, py + 5); c.stroke(); }
+        if (opciones.rotulosCelda) { c.fillStyle = opciones.modo === 'plantilla' ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.55)'; c.font = '9px system-ui, sans-serif'; c.fillText(vista.nombre + ' · ' + fotograma.titulo + (vista.espejo ? ' (espejo)' : ''), x0 + 3, y0 + 10); }
+      });
+    });
+    if (opciones.rotulos) {
+      const colorRotulo = opciones.fondo ? '#e8e4d8' : '#5a5448', colorRotuloEspejo = opciones.fondo ? '#b8b4a4' : '#8a8478';   // sobre transparente (exportación) se ven en claro y en oscuro
+      c.fillStyle = colorRotulo; c.font = 'bold 11px system-ui, sans-serif'; c.textAlign = 'center';
+      FOTOGRAMAS.forEach((fotograma, columna) => c.fillText(fotograma.titulo, margenIzquierda + (columna + 0.5) * celda[0], 14));
+      c.textAlign = 'right';
+      vistas.forEach((vista, fila) => { c.fillStyle = vista.espejo ? colorRotuloEspejo : colorRotulo; c.fillText(vista.nombre, margenIzquierda - 6, margenArriba + (fila + 0.5) * celda[1] + 4); });
+      c.textAlign = 'left';
+    }
+    return lienzo;
+  }
+
+  function descargar(lienzo, nombre) { lienzo.toBlob(blob => { const enlace = document.createElement('a'); enlace.href = URL.createObjectURL(blob); enlace.download = nombre; enlace.click(); setTimeout(() => URL.revokeObjectURL(enlace.href), 2000); }, 'image/png'); }
+
+  async function pintar() {
+    const rama = selectorRama.value, nivel = +document.getElementById('sel-nivel').value, zoom = +document.getElementById('sel-zoom').value, conEspejo = document.getElementById('chk-espejo').checked;
+    const colores = RAMAS[rama].colores.map(h => parseInt(h.slice(1), 16));
+    if (ramaBlason !== rama) { ramaBlason = rama; try { blasonActual = await blasonParaSprites(PuenteDisenador.blasonPorDefecto(RAMAS[rama].colores[0], RAMAS[rama].colores[1], RAMAS[rama].simbolo)); } catch (e) { blasonActual = null; } }
+    EQUIPOS[0].color = colores[0]; EQUIPOS[0].colorSecundario = colores[1]; EQUIPOS[0].blason = blasonActual;
+    contenedor.replaceChildren();
+    let totalCeldas = 0;
+    for (const datos of TIPOS) {
+      const info = dibujosDe(datos, rama, nivel, PX_POR_METRO);
+      totalCeldas += 45;
+      const seccion = document.createElement('section'); seccion.className = 'skin'; seccion.id = 'skin-' + datos.clave;
+      const cabecera = document.createElement('header');
+      cabecera.innerHTML = `<h3>${datos.nombre} <code>${datos.clave}</code></h3><span class="ficha">${datos.montado ? 'a caballo' : datos.artilleria ? 'máquina' : 'a pie'} · ${disponibleEn(datos.clave)} · celda ${info.celda[0]} × ${info.celda[1]} px · ancla [${info.ancla[0]}, ${info.ancla[1]}] · 45 celdas</span>`;
+      const acciones = document.createElement('div'); acciones.className = 'acciones';
+      const botonPlantilla = document.createElement('button'); botonPlantilla.textContent = 'Plantilla PNG'; botonPlantilla.title = 'Hoja con la rejilla, rótulos, ancla y el sprite actual muy tenue como guía';
+      botonPlantilla.addEventListener('click', () => descargar(pintarHoja(info, { modo: 'plantilla', zoom: 1, conEspejo: false, rejilla: true, marcarAncla: true, rotulosCelda: true, fondo: null }), 'plantilla_' + datos.clave + '.png'));
+      const botonReferencia = document.createElement('button'); botonReferencia.textContent = 'Referencia PNG'; botonReferencia.title = 'La misma hoja con los sprites actuales, como ejemplo de hoja terminada';
+      botonReferencia.addEventListener('click', () => descargar(pintarHoja(info, { modo: 'referencia', zoom: 1, conEspejo: false, rejilla: false, marcarAncla: false, rotulosCelda: false, fondo: null }), 'referencia_' + datos.clave + '.png'));
+      acciones.append(botonPlantilla, botonReferencia); cabecera.appendChild(acciones);
+      seccion.appendChild(cabecera);
+      const descripcion = document.createElement('p'); descripcion.className = 'nota'; descripcion.textContent = DESCRIPCION[datos.clave] || ''; seccion.appendChild(descripcion);
+      seccion.appendChild(pintarHoja(info, { modo: 'referencia', zoom, conEspejo, rejilla: true, marcarAncla: true, rotulosCelda: true, rotulos: true, fondoCelda: true, fondo: '#2a3320' }));
+      const detalles = document.createElement('details');
+      const nombres = ['S', 'SW', 'W', 'NW', 'N'].flatMap(v => FOTOGRAMAS.map(f => `${datos.clave}_${v}_${f.titulo}.png`));
+      detalles.innerHTML = `<summary class="nota">Los 45 nombres de archivo y el manifest de ejemplo</summary><pre>${nombres.join('\n')}</pre><pre>{ "pxPorMetro": ${PX_POR_METRO}, "tipos": { "${datos.clave}": { "hoja": "${datos.clave}.png", "mascara": "${datos.clave}_mascara.png", "celda": [${info.celda[0]}, ${info.celda[1]}], "ancla": [${info.ancla[0]}, ${info.ancla[1]}], "direcciones": ["S", "SW", "W", "NW", "N"], "animaciones": { "quieto": [0], "paso": [1, 2, 3, 4], "golpe": [5, 6, 7], "cadaver": [8] } } } }</pre>`;
+      seccion.appendChild(detalles);
+      contenedor.appendChild(seccion);
+    }
+    document.getElementById('resumen-total').textContent = TIPOS.length + ' skins × 45 celdas = ' + totalCeldas + ' imágenes (sin contar máscaras ni variantes)';
+  }
+  for (const id of ['sel-rama', 'sel-nivel', 'sel-zoom', 'chk-espejo']) document.getElementById(id).addEventListener('change', pintar);
+  pintar();
+
+  /* exportación por lotes (tools/exportar-skins.js): hoja de referencia de un tipo con la facción y veteranía dadas, como data URL PNG.
+     nivel 0-3, o 'general' (hombres de armas con cimera y penacho de general) */
+  window.exportarHoja = async (tipoClave, rama, nivel) => {
+    const datos = TIPOS.find(t => t.clave === tipoClave); if (!datos) throw new Error('tipo desconocido: ' + tipoClave);
+    const colores = RAMAS[rama].colores.map(h => parseInt(h.slice(1), 16));
+    if (ramaBlason !== rama) { ramaBlason = rama; try { blasonActual = await blasonParaSprites(PuenteDisenador.blasonPorDefecto(RAMAS[rama].colores[0], RAMAS[rama].colores[1], RAMAS[rama].simbolo)); } catch (e) { blasonActual = null; } }
+    EQUIPOS[0].color = colores[0]; EQUIPOS[0].colorSecundario = colores[1]; EQUIPOS[0].blason = blasonActual;
+    const general = nivel === 'general';
+    const info = dibujosDe(datos, rama, general ? 3 : +nivel, PX_POR_METRO, general);
+    return pintarHoja(info, { modo: 'referencia', zoom: 1, conEspejo: false, rejilla: true, marcarAncla: false, rotulosCelda: false, rotulos: true, fondo: null }).toDataURL('image/png');
+  };
+  window.tiposDeRama = rama => tiposDisponibles(rama);
+})();
+</script>
+</body>
+</html>

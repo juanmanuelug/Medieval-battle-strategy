@@ -15,6 +15,7 @@ let archivos = 0, bytes = 0;
   fs.mkdirSync(hasta, { recursive: true });
   for (const entrada of fs.readdirSync(desde, { withFileTypes: true })) {
     if (EXCLUIR.has(entrada.name)) continue;
+    if (entrada.name === 'sonido' || entrada.name === '12-sonido.js') continue;   // sonido con muestras: desactivado y sin subir (2026-10-14)
     if (desde === ORIGEN && /^(muestra|comparativa|galeria)-.*\.png$/.test(entrada.name)) continue;   // capturas de trabajo: no hacen falta para jugar
     const a = path.join(desde, entrada.name), b = path.join(hasta, entrada.name);
     if (entrada.isDirectory()) copiar(a, b);

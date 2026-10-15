@@ -37,6 +37,7 @@ body.juego.en-batalla{overflow:hidden}
 .tarjeta-rama ul{margin:0;padding-left:18px;font-size:13px}
 .tropa{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border-top:1px solid var(--line);padding:10px 0}
 .tropa-nombre span{display:block;color:var(--muted);font-size:12px}
+.tropa-nombre span.tropa-limite{color:var(--gold);font-weight:600}   /* tropas con máximo por ejército (mangoneles) */
 .niveles{display:flex;gap:6px;flex-wrap:wrap}
 .btn-comprar{background:#2c231d;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit;font-size:12px;line-height:1.25;min-width:96px}
 .btn-comprar small{color:var(--gold2)}
@@ -291,3 +292,8 @@ body.batalla-red #btn-b-rapido { display: none; }      /* en red se puede pedir 
 #selector-idioma{position:fixed;left:10px;bottom:10px;z-index:70;display:flex;border:1px solid var(--gold);border-radius:8px;overflow:hidden;background:#221b16e6}
 #selector-idioma button{background:transparent;color:var(--muted,#b8a98f);border:0;padding:5px 9px;font:600 12px/1 system-ui,sans-serif;cursor:pointer}
 #selector-idioma button.activo{background:var(--gold);color:#1a1410}
+/* control de sonido (js/juego/12-sonido.js): junto al selector de idioma; el deslizador se despliega al pasar el ratón */
+#control-sonido{position:fixed;left:86px;bottom:10px;z-index:70;display:flex;align-items:center;border:1px solid var(--gold);border-radius:8px;background:#221b16e6;height:24px}
+#control-sonido button{background:transparent;border:0;padding:0 7px;font-size:13px;line-height:22px;cursor:pointer;color:var(--muted,#b8a98f)}
+#control-sonido input[type=range]{width:0;opacity:0;margin:0;transition:width .15s,opacity .15s;accent-color:var(--gold);cursor:pointer}
+#control-sonido:hover input[type=range],#control-sonido:focus-within input[type=range]{width:80px;opacity:1;margin-right:8px}

@@ -3,6 +3,7 @@
    Una entrada de ejército es { tipo, nivel } (nivel = índice en NIVELES); los soldados y el precio salen de los datos. */
 function soldadosDeUnidad(ramaClave, tipo) { const rama = RAMAS[ramaClave]; return TROPA[tipo].rama === 'artilleria' ? TROPA[tipo].tamano : Math.round(TROPA[tipo].tamano * (rama.extraSoldados || 1)); }
 function precioUnidad(ramaClave, tipo, nivel) {
+  if (TROPA[tipo].precioFijo) return TROPA[tipo].precioFijo;           // mangoneles: el mismo precio en todas las ramas
   const rama = RAMAS[ramaClave], b = (rama.bonificaciones || {})[tipo] || {};
   return Math.round(soldadosDeUnidad(ramaClave, tipo) * TROPA[tipo].precio * NIVELES[nivel].multPrecio * (b.precio || 1));
 }
@@ -13,6 +14,40 @@ function modificadoresUnidad(ramaClave, tipo, nivel) {
   return { vida: n.multStats * (b.vida || 1), dano: n.multStats * (b.dano || 1), velocidad: (b.velocidad || 1), moral: rama.moral * n.multMoral * (base.moralBase || 1) };
 }
 function nombreUnidad(tipo, nivel) { return `${TIPOS[TIPO[tipo]].nombre} (${NIVELES[nivel].nombre.toLowerCase()})`; }
+/* Límites por tropa (2026-10-15): nivelUnico (solo se vende en ese nivel) y maximo (unidades por ejército), en TROPA.
+   Los usan las tres tiendas, la IA y el servidor (validarEjercito). */
+function nivelesDeTropa(tipo) { const t = TROPA[tipo]; return t && Number.isInteger(t.nivelUnico) ? [t.nivelUnico] : NIVELES.map((n, i) => i); }
+function maximoDeTropa(tipo) { const t = TROPA[tipo]; return t && t.maximo ? t.maximo : Infinity; }
+function puedeAnadirTropa(ejercito, tipo) { return ejercito.filter(e => e.tipo === tipo).length < maximoDeTropa(tipo); }
+// motivo por el que un ejército no cumple los límites por tropa (texto para el jugador), o null si los cumple
+function incumpleLimitesEjercito(ejercito) {
+  const cuentas = {};
+  for (const e of ejercito) {
+    if (!TROPA[e.tipo]) continue;
+    if (!nivelesDeTropa(e.tipo).includes(e.nivel)) return 'Esa tropa no se vende en ese nivel.';
+    cuentas[e.tipo] = (cuentas[e.tipo] || 0) + 1;
+    if (cuentas[e.tipo] > maximoDeTropa(e.tipo)) return 'Como mucho ' + maximoDeTropa(e.tipo) + ' unidades de ' + TIPOS[TIPO[e.tipo]].nombre + '.';
+  }
+  return null;
+}
+/* Ejércitos guardados antes de los límites: las unidades de un nivel que ya no se vende se quitan (pasarlas al nivel permitido
+   regalaría la diferencia: de leva a veteranos cuesta más del triple) y, de las que quedan, las que pasan del máximo también.
+   Devuelve el oro de lo quitado, a lo que costaba entonces (los mangoneles con su precio de antes, por máquina). */
+function precioAntesDeLimites(ramaClave, tipo, nivel) {
+  const t = TROPA[tipo]; if (!t.precioFijo) return precioUnidad(ramaClave, tipo, nivel);
+  const b = ((RAMAS[ramaClave] || {}).bonificaciones || {})[tipo] || {};
+  return Math.round(soldadosDeUnidad(ramaClave, tipo) * t.precio * NIVELES[nivel].multPrecio * (b.precio || 1));
+}
+function ajustarEjercitoALimites(ramaClave, ejercito) {
+  let devolver = 0; const cuentas = {};
+  for (let k = 0; k < ejercito.length; k++) {
+    const e = ejercito[k]; if (!TROPA[e.tipo] || !NIVELES[e.nivel]) continue;
+    const nivelValido = nivelesDeTropa(e.tipo).includes(e.nivel);
+    if (nivelValido) cuentas[e.tipo] = (cuentas[e.tipo] || 0) + 1;
+    if (!nivelValido || cuentas[e.tipo] > maximoDeTropa(e.tipo)) { devolver += precioAntesDeLimites(ramaClave, e.tipo, e.nivel); ejercito.splice(k--, 1); }
+  }
+  return devolver;
+}
 function costeEjercito(ramaClave, ejercito) { return ejercito.reduce((s, e) => s + precioUnidad(ramaClave, e.tipo, e.nivel), 0); }
 function resumenEjercito(ramaClave, ejercito) {
   const porTipo = {};
@@ -34,8 +69,10 @@ function reclutarIA(ramaClave, presupuesto, sesgoNivel, azar, referencia) {
   const elegirNivel = () => limitar(Math.round(nivelCentro + (azar.numero() - 0.5) * 1.4), 0, NIVELES.length - 1);
   const comprar = tipo => {
     if (soldadosComprados() + soldadosDeUnidad(ramaClave, tipo) > topeSoldados) return false;
-    let nivel = elegirNivel();
-    while (nivel > 0 && precioUnidad(ramaClave, tipo, nivel) > oro) nivel--;      // si no llega, baja de nivel
+    if (!puedeAnadirTropa(ejercito, tipo)) return false;                       // tope por tropa (mangoneles)
+    const niveles = nivelesDeTropa(tipo);
+    let nivel = niveles.length === 1 ? niveles[0] : elegirNivel();
+    while (niveles.length > 1 && nivel > 0 && precioUnidad(ramaClave, tipo, nivel) > oro) nivel--;      // si no llega, baja de nivel
     const p = precioUnidad(ramaClave, tipo, nivel); if (p > oro) return false;
     oro -= p; ejercito.push({ tipo, nivel }); return true;
   };
@@ -53,7 +90,7 @@ function reclutarIA(ramaClave, presupuesto, sesgoNivel, azar, referencia) {
   let mejoras = 0;
   while (oro > 0 && mejoras++ < 40) {
     let mejor = null, mejorCoste = Infinity;
-    for (const e of ejercito) { if (e.nivel >= NIVELES.length - 1) continue; const coste = precioUnidad(ramaClave, e.tipo, e.nivel + 1) - precioUnidad(ramaClave, e.tipo, e.nivel); if (coste <= oro && coste < mejorCoste) { mejorCoste = coste; mejor = e; } }
+    for (const e of ejercito) { if (e.nivel >= NIVELES.length - 1 || !nivelesDeTropa(e.tipo).includes(e.nivel + 1)) continue; const coste = precioUnidad(ramaClave, e.tipo, e.nivel + 1) - precioUnidad(ramaClave, e.tipo, e.nivel); if (coste <= oro && coste < mejorCoste) { mejorCoste = coste; mejor = e; } }
     if (!mejor) break;
     oro -= mejorCoste; mejor.nivel++;
   }

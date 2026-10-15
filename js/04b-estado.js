@@ -9,7 +9,8 @@
    semilla (terreno, clima) ni la sangre pendiente de pintar.
    Los arrays tipados viajan en base64 y solo hasta el último valor distinto del final (el resto sigue con el valor
    inicial): los de soldados son de 5.000 y una batalla usa unos cientos. */
-const CAMPOS_SIN_COPIA = ['terreno', 'rejilla', 'bufferVecinos', 'azar', 'unidades', 'sangre', 'clima'];
+const CAMPOS_SIN_COPIA = ['terreno', 'rejilla', 'bufferVecinos', 'azar', 'unidades', 'sangre', 'clima',
+  'radioUnidad', 'masaUnidad', 'marchaUnidad'];   // estos tres los rehace prepararDatosUnidades en cada paso (2026-10-15)
 const TIPOS_ARRAY = { Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Uint8Array, Uint16Array, Uint32Array };
 const LETRAS_BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 

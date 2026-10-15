@@ -3,7 +3,15 @@
    Se guarda en localStorage (sin backend): nombre, rey, rama, blasón (por defecto o importado del diseñador), oro,
    ejército comprado y marcador. */
 const CLAVE_REINO = 'batallas.reino.v1';
-function cargarReino() { try { const r = JSON.parse(localStorage.getItem(CLAVE_REINO) || 'null'); return r && r.nombre ? r : null; } catch (e) { return null; } }
+function cargarReino() {
+  try {
+    const r = JSON.parse(localStorage.getItem(CLAVE_REINO) || 'null'); if (!r || !r.nombre) return null;
+    // reinos guardados antes de los límites por tropa (mangoneles, 2026-10-15): se ajustan y se devuelve el oro de lo quitado
+    if (Array.isArray(r.ejercito) && typeof ajustarEjercitoALimites === 'function') r.oro = (r.oro || 0) + ajustarEjercitoALimites(r.rama, r.ejercito);
+    if (r.personalizada && Array.isArray(r.personalizada.ejercito) && typeof ajustarEjercitoALimites === 'function') ajustarEjercitoALimites(r.personalizada.rama, r.personalizada.ejercito);
+    return r;
+  } catch (e) { return null; }
+}
 function guardarReino(reino) { try { localStorage.setItem(CLAVE_REINO, JSON.stringify(reino)); return true; } catch (e) { return false; } }
 function borrarReino() { try { localStorage.removeItem(CLAVE_REINO); } catch (e) {} }
 function nuevoReino(nombre, rey) {

@@ -200,7 +200,7 @@ const TEXTOS_EN = {
   'Solo el anfitrión cambia las opciones.': 'Only the host changes the options.', 'Las opciones solo se cambian antes de empezar.': 'Options can only be changed before starting.', 'Presupuesto no válido.': 'Invalid budget.',
   'Ahora no se puede confirmar un ejército.': 'An army cannot be confirmed now.', 'En el despliegue no hace falta pausa: la batalla aún no ha empezado.': 'No pause is needed during deployment: the battle has not started yet.',
   'Ya hay una pausa pedida.': 'A pause has already been requested.', 'Tu rival no ha respondido.': 'Your opponent did not answer.', 'Mensaje ilegible.': 'Unreadable message.', 'Error del servidor.': 'Server error.',
-  'Rama desconocida.': 'Unknown faction.', 'El ejército está vacío.': 'The army is empty.', 'Nivel no válido.': 'Invalid level.',
+  'Rama desconocida.': 'Unknown faction.', 'El ejército está vacío.': 'The army is empty.', 'Nivel no válido.': 'Invalid level.', 'Esa tropa no se vende en ese nivel.': 'That troop is not sold at that level.',
 };
 
 const PATRONES_EN = [
@@ -280,6 +280,8 @@ const PATRONES_EN = [
   [/^Presupuesto: ([\d.]+) de oro por jugador$/, 'Budget: $1 gold per player'],
   [/^Ejército no válido: (.+)$/, (m, motivo) => 'Invalid army: ' + traducirTexto(motivo)],
   [/^Como mucho (\d+) unidades\.$/, 'At most $1 units.'],
+  [/^Como mucho (\d+) unidades de (.+)\.$/, (m, n, nombre) => `At most ${n} units of ${TEXTOS_EN[nombre] || nombre}.`],
+  [/^Máximo (\d+) por ejército$/, 'At most $1 per army'],
   [/^Tropa no disponible para esa rama: (.+)$/, 'Troop not available for that faction: $1'],
   [/^Cuesta (\d+) y el presupuesto es (\d+)\.$/, 'It costs $1 and the budget is $2.'],
   [/^Orden desconocida: (.+)$/, 'Unknown command: $1'],

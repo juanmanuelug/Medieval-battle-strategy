@@ -65,7 +65,8 @@ function cliente(nombre, claveReconexion) {
   return c;
 }
 const EJERCITO_A = [{ tipo: 'infanteriaPesada', nivel: 1 }, { tipo: 'lanceros', nivel: 1 }, { tipo: 'arqueros', nivel: 1 }, { tipo: 'caballeriaPesada', nivel: 1 }];
-const EJERCITO_B = [{ tipo: 'infanteriaLigera', nivel: 1 }, { tipo: 'lanceros', nivel: 1 }, { tipo: 'arquerosACaballo', nivel: 1 }, { tipo: 'caballeriaLigera', nivel: 1 }];
+// sin exclusivas: desde que son siempre veteranas (2026-10-15) algunas batallas se alargan más de 7 min, y esta prueba es del protocolo
+const EJERCITO_B = [{ tipo: 'infanteriaLigera', nivel: 1 }, { tipo: 'lanceros', nivel: 1 }, { tipo: 'ballesteros', nivel: 1 }, { tipo: 'caballeriaLigera', nivel: 1 }];
 
 async function prepararBatalla(ana, beto) {
   ana.limpiar('enSala'); ana.enviar({ tipo: 'crearSala', nombre: 'Prueba', privada: true });
@@ -76,7 +77,8 @@ async function prepararBatalla(ana, beto) {
   await ana.espera('salaLista');
   ana.enviar({ tipo: 'ejercito', rama: 'cristiano', ejercito: EJERCITO_A, blason: null });
   beto.enviar({ tipo: 'ejercito', rama: 'musulman', ejercito: EJERCITO_B, blason: null });
-  await ana.espera('batallaLista'); await beto.espera('batallaLista');
+  try { await ana.espera('batallaLista', 6000); await beto.espera('batallaLista', 6000); }
+  catch (e) { console.log('   sin ficha: Ana ' + JSON.stringify({ sala: ana.ultimo.enSala && ana.ultimo.enSala.sala, error: ana.ultimo.error, aceptado: !!ana.ultimo.ejercitoAceptado, salaLista: !!ana.ultimo.salaLista }) + ' · Beto ' + JSON.stringify({ error: beto.ultimo.error, aceptado: !!beto.ultimo.ejercitoAceptado, salaLista: !!beto.ultimo.salaLista })); throw e; }
 }
 const atacarTodos = c => c.enviar({ tipo: 'orden', orden: { a: 'orden', u: c.propias().map(u => u.id), orden: 'avanzar', m: 'correr' } });
 const alaPar = async (a, b) => { for (let k = 0; k < 40 && a.sim.paso !== b.sim.paso; k++) await esperar(5); return a.sim.paso === b.sim.paso; };
@@ -173,10 +175,11 @@ const alaPar = async (a, b) => { for (let k = 0; k < 40 && a.sim.paso !== b.sim.
     comprobar(resumenDe(beto.sim) === resumenDe(ana.sim) && beto.sim.paso === ana.sim.paso, 'Beto vuelve con su clave y recibe el estado exacto de la batalla');
     await esperar(1500); await alaPar(ana, beto);
     comprobar(ana.sim.paso > pasoCongelado && resumenDe(ana.sim) === resumenDe(beto.sim), 'la batalla sigue y los dos siguen idénticos');
-    // hasta el final
+    // hasta el final (los arqueros a caballo, veteranos desde 2026-10-15, escaramuceando alargan la batalla: se les quita)
+    beto.enviar({ tipo: 'orden', orden: { a: 'escaramuza', u: beto.propias().map(u => u.id), activa: false } });
     atacarTodos(beto);
     const t0 = Date.now();
-    while (!ana.fin && Date.now() - t0 < 240000) await esperar(100);
+    while (!ana.fin && Date.now() - t0 < 420000) await esperar(100);   // hasta 7 min: con exclusivas veteranas la retirada controlada alarga algunas batallas (2026-10-15)
     await esperar(300);
     comprobar(!!ana.fin && !!beto.fin && ana.fin.ganador === beto.fin.ganador && ana.fin.motivo === 'derrota', 'la batalla termina para los dos con el mismo resultado: gana el equipo ' + (ana.fin && ana.fin.ganador) + ' a los ' + Math.round(ana.sim.tiempo) + ' s');
     comprobar(!ana.desincronias.length && !beto.desincronias.length, 'ninguna desincronía más en ' + ana.turnos + ' turnos');

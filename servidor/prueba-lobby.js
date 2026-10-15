@@ -106,7 +106,7 @@ function cliente(nombre) {
     hugo.enviar({ tipo: 'ejercito', rama: 'cristiano', ejercito: [{ tipo: 'infanteriaPesada', nivel: 1 }, { tipo: 'ballesteros', nivel: 1 }], blason: { shape: 'heater', layers: [] } });
     const aceptado = await hugo.espera('ejercitoAceptado'); await esperar(50);
     comprobar(aceptado.coste > 0 && ines.ultimo.enSala.sala.jugadores[0].ejercitoConfirmado === true && !JSON.stringify(ines.ultimo.enSala).includes('ballesteros'), 'acepta el ejército de Hugo; Ines ve que está confirmado pero no sus tropas');
-    ines.enviar({ tipo: 'ejercito', rama: 'musulman', ejercito: [{ tipo: 'arquerosACaballo', nivel: 1 }, { tipo: 'infanteriaLigera', nivel: 2 }] });
+    ines.enviar({ tipo: 'ejercito', rama: 'musulman', ejercito: [{ tipo: 'arquerosACaballo', nivel: 3 }, { tipo: 'infanteriaLigera', nivel: 2 }] });
     const [bh, bi] = await Promise.all([hugo.espera('batallaLista'), ines.espera('batallaLista')]);
     comprobar(bh.jugadores.length === 2 && bh.jugadores[0].nombre === 'Hugo' && bh.jugadores[0].equipo === 0 && bh.jugadores[1].rama === 'musulman' && bh.jugadores[0].blason && bh.semilla === bi.semilla, 'con los dos confirmados llega la ficha de la batalla a los dos');
     await esperar(50);

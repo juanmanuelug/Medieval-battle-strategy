@@ -38,12 +38,15 @@ const TROPA = {
   // exclusivas: una por rama, ligada a su ventaja (2026-10-13, tras la prueba con amigos); solo las ramas que las listan en
   // RAMAS[rama].exclusivas
   // artillería común: el precio es por máquina (3 por unidad); el +20 % de guerreros de las tribus no cuenta para las máquinas
-  mangoneles: { precio: 190, tamano: 3, rama: 'artilleria' },
-  arquerosACaballo: { precio: 30, tamano: 20, rama: 'arqueros', exclusiva: true },
-  caballeros: { precio: 46, tamano: 20, rama: 'caballeria', exclusiva: true },   // tropa de lujo: ver medir_exclusivas.js
-  guardiaVarega: { precio: 20, tamano: 30, rama: 'infanteria', exclusiva: true },
-  templarios: { precio: 22, tamano: 30, rama: 'infanteria', exclusiva: true },
-  berserkers: { precio: 11, tamano: 36, rama: 'infanteria', exclusiva: true },
+  // mangoneles (2026-10-15, pedido del usuario): un solo nivel (hombres de armas), precio fijo por unidad y como mucho 2 por
+  // ejército. precio (por máquina) ya no se usa para el precio; queda para devolver el oro de los reinos guardados antes
+  mangoneles: { precio: 190, tamano: 3, rama: 'artilleria', nivelUnico: 2, precioFijo: 2000, maximo: 2 },
+  // desde el 2026-10-15 (pedido del usuario) las exclusivas solo se venden como veteranos y como mucho 3 por ejército
+  arquerosACaballo: { precio: 30, tamano: 20, rama: 'arqueros', exclusiva: true, nivelUnico: 3, maximo: 3 },
+  caballeros: { precio: 46, tamano: 20, rama: 'caballeria', exclusiva: true, nivelUnico: 3, maximo: 3 },   // tropa de lujo: ver medir_exclusivas.js
+  guardiaVarega: { precio: 20, tamano: 30, rama: 'infanteria', exclusiva: true, nivelUnico: 3, maximo: 3 },
+  templarios: { precio: 22, tamano: 30, rama: 'infanteria', exclusiva: true, nivelUnico: 3, maximo: 3 },
+  berserkers: { precio: 11, tamano: 36, rama: 'infanteria', exclusiva: true, nivelUnico: 3, maximo: 3 },
 };
 RAMAS.cristiano.exclusivas = ['caballeros'];
 RAMAS.ortodoxo.exclusivas = ['guardiaVarega'];
