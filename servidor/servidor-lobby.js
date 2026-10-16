@@ -540,7 +540,7 @@ function crearServidorLobby(opciones) {
   wss.on('close', () => clearInterval(latido));
   log('servidor de lobby escuchando en el puerto', o.puerto);
   if (o.registro) { log('el juego, en este equipo:  http://localhost:' + o.puerto + '/'); for (const ip of direccionesLocales()) log('el juego, en tu red:       http://' + ip + ':' + o.puerto + '/'); }
-  estadoGlobal = () => ({ jugadores: jugadores.size, salas: salas.size, enCola: cola.length });
+  estadoGlobal = () => ({ jugadores: jugadores.size, salas: salas.size, enCola: cola.length, modo: o.arbitro ? 'arbitro' : 'relevo' });
   return { wss, servidorHttp, cerrar: () => new Promise(r => { clearInterval(latido); for (const ws of jugadores.keys()) ws.terminate(); wss.close(() => servidorHttp.close(() => r())); }), estado: () => ({ jugadores: jugadores.size, salas: salas.size, enCola: cola.length, modo: o.arbitro ? 'arbitro' : 'relevo' }) };
 }
 

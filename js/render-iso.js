@@ -87,7 +87,24 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   }
   const arte = opciones.arte || null;        // sprites desde archivos (js/sprites-archivo.js), por tipo de tropa
   const texturaSombra = (() => { const g = new PIXI.Graphics(); g.beginFill(0x000000, 0.35).drawEllipse(0, 0, 0.45 * ESCALA, 0.22 * ESCALA).endFill(); return app.renderer.generateTexture(g); })();
-  const texturaFlecha = (() => { const g = new PIXI.Graphics(); g.lineStyle(1.2, 0x2a1c10).moveTo(0, 0).lineTo(0.9 * ESCALA, 0); g.lineStyle(0).beginFill(0xbdb5a0).drawRect(0, -0.8, 1.8, 1.6).endFill(); return app.renderer.generateTexture(g); })();
+  let texturaFlecha = (() => { const g = new PIXI.Graphics(); g.lineStyle(1.2, 0x2a1c10).moveTo(0, 0).lineTo(0.9 * ESCALA, 0); g.lineStyle(0).beginFill(0xbdb5a0).drawRect(0, -0.8, 1.8, 1.6).endFill(); return app.renderer.generateTexture(g); })();
+  /* flecha con imagen (2026-10-16, js/arte-flecha.js): la línea de arriba queda de respaldo mientras carga. La imagen (vertical,
+     punta arriba) se gira para apuntar a +x con la cola en el origen, en una textura de 128 × 16 con mipmaps (nítida al acercar,
+     sin parpadeo al alejar), y el sprite se escala para medir LARGO_FLECHA metros, como la de antes */
+  const LARGO_FLECHA = 0.9, ANCHO_TEXTURA_FLECHA = 128, ALTO_TEXTURA_FLECHA = 16, ANCLA_FLECHA_CLAVADA = 0.88;   // clavada: el 12 % de la punta, dentro
+  let escalaFlecha = 1;
+  if (typeof IMAGEN_FLECHA === 'string') {
+    const imagen = new Image();
+    imagen.onload = () => {
+      const lienzo = document.createElement('canvas'); lienzo.width = ANCHO_TEXTURA_FLECHA; lienzo.height = ALTO_TEXTURA_FLECHA;
+      const c = lienzo.getContext('2d'); c.imageSmoothingQuality = 'high';
+      c.translate(ANCHO_TEXTURA_FLECHA, 0); c.rotate(Math.PI / 2);                 // el alto de la imagen pasa a ser el largo
+      c.drawImage(imagen, 0, 0, ALTO_TEXTURA_FLECHA, ANCHO_TEXTURA_FLECHA);
+      texturaFlecha = new PIXI.Texture(new PIXI.BaseTexture(lienzo, { scaleMode: PIXI.SCALE_MODES.LINEAR, mipmap: PIXI.MIPMAP_MODES.ON }));
+      escalaFlecha = LARGO_FLECHA * ESCALA / ANCHO_TEXTURA_FLECHA;
+    };
+    imagen.src = IMAGEN_FLECHA;
+  }
   // estandarte de unidad: asta + paño; si el equipo trae su blasón rasterizado (canvas), se usa como paño
   // los estandartes se generan a 8× su tamaño en el mundo: con la cámara acercada (zoom hasta 5) se veían borrosos (2026-10-12)
   const RESOLUCION_BANDERA = 8;
@@ -425,7 +442,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
      Cono (o círculo, para los que disparan en movimiento) en el suelo con el alcance real de cada unidad a distancia: el de sus datos, ×1,15 si está en una colina y por el
      clima (como en la simulación). Se ven los de los tiradores PROPIOS SELECCIONADOS (azul) y el del tirador ENEMIGO bajo el
      ratón (rojo). Los que se han quedado sin munición no tienen alcance. */
-  let enemigoBajoRaton = null, ultimaBusquedaRaton = 0;
+  let enemigoBajoRaton = null, generalBajoRaton = null, ultimaBusquedaRaton = 0;
   function alcanceDe(u) {
     const base = u.stats.alcanceTiro || 0;
     if (!base || u.vivos === 0) return 0;
@@ -450,8 +467,19 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
       // marca en el centro de la unidad
       g.lineStyle(0).beginFill(color, 0.9).drawCircle(aPantallaX(u.centroX, u.centroY), aPantallaY(u.centroX, u.centroY), 3 * grosor).endFill();
     };
+    /* aura del general (2026-10-15, pedido del usuario): círculo en el que sus unidades reciben la moral del general cerca; el
+       mismo criterio que la simulación (centro de la unidad a menos de auraPorEquipo[equipo].radio del centro del general, y solo
+       con el general en pie y sin huir) */
+    const aura = (u, color) => {
+      if (!u || !u.esGeneral || u.vivos <= 0 || u.huyendo || oculto(u.equipo)) return;
+      const radio = ((sim.auraPorEquipo && sim.auraPorEquipo[u.equipo]) || { radio: 35 }).radio;
+      const puntos = [];
+      for (let k = 0; k < 96; k++) { const a = k / 96 * Math.PI * 2, x = u.centroX + Math.cos(a) * radio, y = u.centroY + Math.sin(a) * radio; puntos.push(aPantallaX(x, y), aPantallaY(x, y)); }
+      g.lineStyle(2.4 * grosor, color, 0.95).beginFill(color, 0.07).drawPolygon(puntos).endFill();
+      g.lineStyle(0).beginFill(color, 0.9).drawCircle(aPantallaX(u.centroX, u.centroY), aPantallaY(u.centroX, u.centroY), 3 * grosor).endFill();
+    };
     const seleccionActual = opciones.seleccion ? opciones.seleccion() : [];
-    for (const u of seleccionActual) if (u.equipo === equipoPropio && !u.huyendo) circulo(u, 0x5aa0ff, 0.08);
+    for (const u of seleccionActual) if (u.equipo === equipoPropio && !u.huyendo) { if (u.esGeneral) aura(u, 0x5aa0ff); else circulo(u, 0x5aa0ff, 0.08); }
     // tirador enemigo bajo el ratón (la búsqueda por el cuerpo dibujado se hace como mucho diez veces por segundo)
     const ahora = performance.now();
     if (control.ratonX !== undefined && !control.arrastrando && ahora - ultimaBusquedaRaton > 100) {
@@ -459,9 +487,13 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
       const rect = vista.getBoundingClientRect();
       const dentro = control.ratonX >= rect.left && control.ratonX <= rect.right && control.ratonY >= rect.top && control.ratonY <= rect.bottom;
       const bajo = dentro ? unidadBajoPuntero(1 - equipoPropio, control.ratonX, control.ratonY) : null;
-      enemigoBajoRaton = bajo && bajo.stats.alcanceTiro ? bajo : null;
+      enemigoBajoRaton = bajo && (bajo.stats.alcanceTiro || bajo.esGeneral) ? bajo : null;
+      // el general propio bajo el ratón también enseña su aura (sin tener que seleccionarlo)
+      const propio = dentro && !bajo ? unidadBajoPuntero(equipoPropio, control.ratonX, control.ratonY) : null;
+      generalBajoRaton = propio && propio.esGeneral ? propio : null;
     }
-    if (enemigoBajoRaton && enemigoBajoRaton.vivos > 0) circulo(enemigoBajoRaton, 0xe0503c, 0.08);
+    if (enemigoBajoRaton && enemigoBajoRaton.vivos > 0) { if (enemigoBajoRaton.esGeneral) aura(enemigoBajoRaton, 0xe0503c); else circulo(enemigoBajoRaton, 0xe0503c, 0.08); }
+    if (generalBajoRaton && !seleccionActual.includes(generalBajoRaton)) aura(generalBajoRaton, 0x5aa0ff);
   }
 
   /* ----- dibujo ----- */
@@ -569,12 +601,15 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     });
     // flechas
     let volando = 0;
+    // la flecha de imagen es fina: al alejar la cámara se engruesa (hasta ×3) para que se siga viendo; de cerca, su grosor real
+    const grosorFlecha = texturaFlecha.baseTexture.width === ANCHO_TEXTURA_FLECHA ? limitar(3.2 / mundo.scale.x, 1, 3) : 1;
     for (let f = 0; f < sim.maxFlechas; f++) {
       const s = flechas[f], estado = sim.flechaEstado[f];
       if (estado === 0) { if (s.visible) s.visible = false; continue; }
       s.visible = true;
       const piedra = sim.flechaArea[f] > 0, texturaProyectil = piedra ? texturaPiedra : texturaFlecha;
-      if (s.texture !== texturaProyectil) { s.texture = texturaProyectil; s.anchor.set(piedra ? 0.5 : 0, 0.5); }
+      if (s.texture !== texturaProyectil) { s.texture = texturaProyectil; s.anchor.set(piedra ? 0.5 : 0, 0.5); if (piedra) s.scale.set(1); }
+      if (!piedra) s.scale.set(escalaFlecha, escalaFlecha * grosorFlecha);
       const giro = girada ? -1 : 1, dx = (sim.flechaX1[f] - sim.flechaX0[f]) * giro, dy = (sim.flechaY1[f] - sim.flechaY0[f]) * giro;
       const anguloPantalla = Math.atan2((dx + dy) * SIN30, (dx - dy) * COS30);
       if (estado === 1) {
@@ -583,10 +618,14 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
         const largo = Math.hypot(dx, dy) || 1, pendiente = 4 * sim.flechaApice[f] * (1 - 2 * posFlecha[3]) / largo;
         s.position.set(aPantallaX(posFlecha[0], posFlecha[1]), aPantallaY(posFlecha[0], posFlecha[1], posFlecha[2]));
         s.rotation = anguloPantalla - Math.atan(pendiente) * 0.8; s.alpha = 1; s.zIndex = profundidad(posFlecha[0], posFlecha[1]) + 2;
+        if (!piedra && s.anchor.x !== 0) s.anchor.set(0, 0.5);
       } else {
         let x = sim.flechaX1[f], y = sim.flechaY1[f], altura = 0;
         if (estado === 3) { const j = sim.flechaSoldado[f]; if (sim.estado[j] === ESTADO.AUSENTE) { s.visible = false; continue; } x = sim.posX[j] * a + sim.previaX[j] * b + sim.flechaOffX[f]; y = sim.posY[j] * a + sim.previaY[j] * b + sim.flechaOffY[f]; altura = sim.estado[j] === ESTADO.CADAVER ? 0.2 : 1.0; }
-        s.position.set(aPantallaX(x, y), aPantallaY(x, y, altura)); s.rotation = -1.1; s.alpha = 0.9; s.zIndex = profundidad(x, y) + 0.5;
+        // clavada: apoyada por la punta (un poco hundida) y con las plumas arriba, inclinada como antes (2026-10-16: con la imagen
+        // se veía que la flecha antigua se clavaba por la cola)
+        s.position.set(aPantallaX(x, y), aPantallaY(x, y, altura)); s.alpha = 0.9; s.zIndex = profundidad(x, y) + 0.5;
+        if (piedra) s.rotation = -1.1; else { if (s.anchor.x !== ANCLA_FLECHA_CLAVADA) s.anchor.set(ANCLA_FLECHA_CLAVADA, 0.5); s.rotation = Math.PI - 1.1; }
       }
     }
     // estandartes: parpadeo blanco si la unidad huye; bote si está seleccionada

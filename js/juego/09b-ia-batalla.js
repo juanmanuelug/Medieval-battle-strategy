@@ -5,7 +5,8 @@
    actitud = 'ofensiva' | 'defensiva' (elegida por el jugador junto a la dificultad, 2026-10-10).
 
    OFENSIVA: avanza con todo el ejército.
-   - General: sigue a su ejército a unos 25 m por detrás; carga si el enemigo está muy cerca o el jugador está roto.
+   - General (ordenesGeneralIA, 2026-10-16): se mantiene GENERAL_DETRAS m detrás del centro de su ejército (mirando al
+     enemigo) para cubrirlo con su aura; carga si el enemigo está muy cerca, si el jugador está roto o si va perdiendo.
    - Caballería: avanza; carga cuando tiene carrerilla (más de 15 m) y no está trabada; trabada cerca, pelea.
    - Tiradores: orden abierta, se acercan hasta su alcance y disparan; si el enemigo se echa encima, pelean.
    - Infantería: avanza AL PASO de lejos y pasa A LA CARRERA a menos de DISTANCIA_CARRERA si no está cansada, o para
@@ -18,7 +19,7 @@
    - Tiradores: orden abierta, disparan desde su puesto a lo que entre en alcance; no avanzan.
    - Caballería: espera en las alas y contracarga a lo que se acerque a RADIO_CONTRAATAQUE_CABALLERIA o a quien esté
      trabado con un aliado; después vuelve a su puesto.
-   - General: se queda detrás; carga solo si el enemigo está encima o el jugador está roto.
+   - General: se queda en su puesto, detrás; carga si el enemigo está encima, si el jugador está roto o si va perdiendo.
    - Paciencia: si pierde más de PACIENCIA_BAJAS de sus soldados sin haber llegado al cuerpo a cuerpo (le están acribillando
      desde lejos) o pasan PACIENCIA_SEGUNDOS sin ningún choque, pasa a ofensiva para el resto de la batalla. */
 const DISTANCIA_CARRERA_IA = 35;        // m: desde aquí la infantería corre hacia el enemigo
@@ -28,6 +29,55 @@ const RADIO_CONTRAATAQUE_CABALLERIA = 60;   // m desde el puesto: la caballería
 const RADIO_SOCORRO = 40;                   // m: un defensor acude a un aliado trabado a esta distancia
 const PACIENCIA_BAJAS = 0.15;               // fracción de soldados perdidos sin cuerpo a cuerpo antes de pasar al ataque
 const PACIENCIA_SEGUNDOS = 240;             // segundos sin ningún choque antes de pasar al ataque
+const GENERAL_DETRAS = 15;                  // m detrás del centro de su ejército a los que se coloca el general de la IA
+const GENERAL_PERDIENDO = 0.7;              // va perdiendo si la fracción que le queda de su ejército baja de esto × la del jugador…
+const GENERAL_PERDIDAS_MINIMAS = 0.15;      // …y ya ha perdido al menos esta fracción (unas pocas bajas al principio no cuentan)
+const GENERAL_DESESPERADO = 0.35;           // o si le queda menos de esta fracción de su ejército, pase lo que pase con el jugador
+
+/* El general de la IA (2026-10-16, pedido del usuario: con su ejército destruido se quedaba parado sin luchar). Cada segundo:
+   - Carga si tiene un enemigo encima (25 m), si el jugador está roto (menos de 40 en pie) o si va perdiendo. «Perdiendo» mira
+     cómo va la batalla, no el tamaño de los ejércitos (empezar en inferioridad no es ir perdiendo): la fracción que le queda de
+     su ejército (soldados en pie sin la guardia, frente a los del principio) baja de GENERAL_PERDIENDO × la del jugador habiendo
+     perdido ya GENERAL_PERDIDAS_MINIMAS, o de GENERAL_DESESPERADO, o no le queda ninguna tropa. Va en cuña a por la
+     unidad del jugador que pelea con los suyos más cerca de él; si no hay ninguna, a por la más cercana.
+   - Si no, se queda junto a sus tropas: en ofensiva, GENERAL_DETRAS m detrás del centro de su ejército, del lado contrario al
+     jugador, para que su aura de moral las cubra; en defensiva, en su puesto. */
+function ordenesGeneralIA(sim, u, unidadesIA, t, enDefensa, estado) {
+  const enPie = equipo => sim.unidades.reduce((s, x) => s + (x.equipo === equipo && !x.esGeneral && !x.huyendo ? x.vivos : 0), 0);
+  const propios = enPie(1), delJugador = enPie(0);
+  if (!estado.iniciales) estado.iniciales = [Math.max(1, delJugador), Math.max(1, propios)];   // ejércitos al empezar (sin las guardias)
+  const fraccionPropia = propios / estado.iniciales[1], fraccionJugador = delJugador / estado.iniciales[0];
+  const jugadorRoto = sim.estadisticas.vivos[0] - sim.estadisticas.huyendo[0] < 40;
+  const perdiendo = propios === 0 || fraccionPropia < GENERAL_DESESPERADO || (fraccionPropia < fraccionJugador * GENERAL_PERDIENDO && fraccionPropia < 1 - GENERAL_PERDIDAS_MINIMAS);
+  const enemigos = sim.unidades.filter(e => e.equipo === 0 && e.vivos > 0 && !e.huyendo);
+  let cercano = null, dCercano = Infinity;
+  for (const e of enemigos) { const d = distancia(u.centroX, u.centroY, e.centroX, e.centroY); if (d < dCercano) { dCercano = d; cercano = e; } }
+  const atacando = u.orden === 'cargar' || u.orden === 'avanzar' || (u.orden === 'atacar' && u.objetivoFijo >= 0 && sim.unidades[u.objetivoFijo].vivos > 0 && !sim.unidades[u.objetivoFijo].huyendo);
+  if (t > 20 && (dCercano < 25 || jugadorRoto || perdiendo)) {
+    if (atacando || !cercano) return;
+    // blanco: la unidad del jugador trabada con los suyos más cercana al general; si no, la más cercana
+    let blanco = null, dBlanco = Infinity;
+    for (const a of unidadesIA) {
+      if (a === u || a.vivos === 0 || a.huyendo || a.luchando === 0 || a.objetivoUnidad < 0) continue;
+      const e = sim.unidades[a.objetivoUnidad]; if (!e || e.equipo !== 0 || e.vivos === 0 || e.huyendo) continue;
+      const d = distancia(u.centroX, u.centroY, e.centroX, e.centroY); if (d < dBlanco) { dBlanco = d; blanco = e; }
+    }
+    if (!blanco) blanco = cercano;
+    if (u.formacion.clave !== 'cuna') sim.formar(u, 'cuna');
+    sim.ordenarAtaque(u, blanco, 'correr');
+    return;
+  }
+  if (enDefensa) return;
+  if (sim.paso % 90 !== 0) return;
+  // detrás del centro de su ejército, del lado contrario al del jugador
+  let sx = 0, sy = 0, n = 0, ex = 0, ey = 0, m = 0;
+  for (const a of unidadesIA) if (!a.esGeneral && a.vivos > 0 && !a.huyendo) { sx += a.centroX * a.vivos; sy += a.centroY * a.vivos; n += a.vivos; }
+  for (const e of enemigos) { ex += e.centroX * e.vivos; ey += e.centroY * e.vivos; m += e.vivos; }
+  if (!n || !m) return;
+  const cx = sx / n, cy = sy / n, hx = ex / m - cx, hy = ey / m - cy, largo = Math.hypot(hx, hy) || 1;
+  const x = limitar(cx - hx / largo * GENERAL_DETRAS, 8, CAMPO.ancho - 8), y = limitar(cy - hy / largo * GENERAL_DETRAS, 8, CAMPO.alto - 8);
+  if (distancia(u.origenX, u.origenY, x, y) > 8) sim.ordenar(u, 'mover', x, y, Math.atan2(hy, hx));
+}
 const ACTITUDES_IA = {
   ofensiva: { nombre: 'Ofensiva', descripcion: 'El enemigo avanza con todo su ejército a por el tuyo.' },
   defensiva: { nombre: 'Defensiva', descripcion: 'El enemigo se planta (en una colina si tiene una cerca) y espera tu ataque; contraataca lo que se le acerca. Si le acribillas desde lejos o no atacas en cuatro minutos, pierde la paciencia y ataca.' },
@@ -77,25 +127,13 @@ function inteligenciaArtificialBatalla(sim, unidadesIA, nivelIA, actitudElegida)
 }
 
 function iaOfensiva(sim, unidadesIA, estado, t, dificil) {
-  // centro del ejército (sin la guardia), para que el general lo siga
-  let sx = 0, sy = 0, n = 0;
-  for (const u of unidadesIA) if (!u.esGeneral && u.vivos > 0 && !u.huyendo) { sx += u.centroX; sy += u.centroY; n++; }
   for (const u of unidadesIA) {
     if (u.vivos === 0 || u.huyendo) continue;
     const datos = u.stats, objetivo = u.objetivoUnidad >= 0 ? sim.unidades[u.objetivoUnidad] : null;
     const d = objetivo ? distancia(u.centroX, u.centroY, objetivo.centroX, objetivo.centroY) : 999;
     // las unidades que esperaban en su puesto (defensiva que perdió la paciencia) arrancan
     if (estado.motivoCambio && !u.arrancadaIA && !u.esGeneral) { u.arrancadaIA = true; if (u.orden === 'formar' || u.orden === 'mover') { if (u.formacion.clave === 'muro') sim.formar(u, 'linea'); sim.ordenar(u, 'avanzar'); } }
-    if (u.esGeneral) {
-      const cerca = objetivo && d < 25;
-      if ((cerca || sim.estadisticas.vivos[0] - sim.estadisticas.huyendo[0] < 40) && t > 20) { if (u.orden !== 'cargar' && u.orden !== 'avanzar') sim.ordenar(u, 'cargar'); }
-      else if (n && sim.paso % 90 === 0) {
-        // sigue a su ejército, 25 m por detrás del centro
-        const x = limitar(sx / n + 25, 8, CAMPO.ancho - 8), y = limitar(sy / n, 8, CAMPO.alto - 8);
-        if (distancia(u.origenX, u.origenY, x, y) > 10) sim.ordenar(u, 'mover', x, y, Math.PI);
-      }
-      continue;
-    }
+    if (u.esGeneral) { ordenesGeneralIA(sim, u, unidadesIA, t, false, estado); continue; }
     // los tiradores van antes que los jinetes: los arqueros a caballo escaramucean en vez de cargar (2026-10-13)
     if (datos.alcanceTiro) {
       // avanzan hasta su alcance (se detienen al 70 %) disparando; sin flechas o con el enemigo encima, pelean
@@ -136,10 +174,7 @@ function iaDefensiva(sim, unidadesIA, estado, t) {
     const desdeUnidad = enemigoMasCercanoA(u.centroX, u.centroY);
     const trabada = u.luchando > 0;
     const volverAlPuesto = () => { if (distancia(u.origenX, u.origenY, puesto.x, puesto.y) > 4) sim.ordenar(u, 'mover', puesto.x, puesto.y, puesto.rumbo); else if (u.orden !== 'formar') sim.ordenar(u, 'formar'); };
-    if (u.esGeneral) {
-      if ((desdeUnidad.d < 25 || sim.estadisticas.vivos[0] - sim.estadisticas.huyendo[0] < 40) && t > 20 && u.orden !== 'cargar' && u.orden !== 'avanzar') sim.ordenar(u, 'cargar');
-      continue;
-    }
+    if (u.esGeneral) { ordenesGeneralIA(sim, u, unidadesIA, t, true, estado); continue; }
     if (datos.alcanceTiro) {
       // disparan desde su puesto; solo pelean si se les echan encima
       if (u.formacion.clave !== 'abierta' && !trabada) sim.formar(u, 'abierta');

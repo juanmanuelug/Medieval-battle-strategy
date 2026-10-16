@@ -1,3 +1,22 @@
+# Desde la subida del 15 de octubre
+
+## Interfaz
+- **Aura del general a la vista**: al seleccionar tu general o pasar el ratón por encima se ve el círculo en el que da moral a tus tropas (en rojo, el del general enemigo). Desaparece si el general cae o huye.
+- **Flechas nuevas**: con punta de acero, astil de madera y plumas blancas (imagen de dominio público de OpenGameArt). Se ven nítidas al acercar la cámara y se engruesan un poco al alejarla para que las andanadas se sigan viendo.
+
+## Batalla
+- **Las unidades cierran filas**: si pierden hombres y no están peleando, cada par de segundos se reorganizan con los que les quedan; el frente se estrecha y ya no quedan huecos abiertos en mitad de la formación.
+- **Las andanadas de arcos caen sobre toda la unidad**: cada flecha apunta a un punto al azar de la formación enemiga, con la dispersión de una lluvia de flechas, en lugar de al centro. Antes, si moría el centro de una línea, los arqueros seguían tirando al hueco sin tocar las alas. Las ballestas siguen apuntando a un soldado. El daño a distancia queda parecido; de cerca, contra líneas anchas, algo mayor.
+
+## IA
+- **El general enemigo acompaña a su ejército** y se queda cerca para que su aura de moral lo cubra.
+- **Y entra en combate cuando va perdiendo**: si su ejército ha caído bastante más que el tuyo, o le queda poco, carga en cuña contra tus tropas que pelean con las suyas. Ya no se queda parado cuando le destruyen el ejército.
+
+## Servidor
+- `/salud` muestra el modo de las batallas en red (`relevo` o `arbitro`).
+
+---
+
 # Rendimiento en red (15 de octubre de 2026)
 
 ## Multijugador

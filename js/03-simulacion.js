@@ -5,6 +5,9 @@ const CABALLERIA_ATASCADA = 0.65;     // daño de un jinete parado en la melé c
 const CONTRAGOLPE_ATROPELLO = 0.8;   // fracción del daño del arrollado que recibe el jinete al arrollarlo (2026-10-13)
 const CARRERILLA_CARGA = 5;    // metros seguidos al galope que necesita un jinete para atropellar (bajado de 10 el 2026-10-09)
 const EMPUJE_MAXIMO_PASO = 0.12;   // m: tope del empuje de separación por paso (sin saltos ni temblor en los montones)
+const CADA_CERRAR_FILAS = 60;           // pasos (2 s) entre comprobaciones para cerrar filas fuera de combate
+const MARGEN_ANDANADA = 1.0;           // m que se suman a la dispersión de una andanada sobre el área de la unidad
+const FACTOR_DISPERSION_ANDANADA = 0.9; // × la dispersión de la tropa en una andanada sobre el área (calibrar_andanada_real.js)
 const MARGEN_DESCARTE = 1 + 1e-7;      // ver el bucle de vecinos de actualizarSoldado (descarte por distancia al cuadrado)
 const HOLGURA_ALIADOS = 1.15;      // los aliados guardan un 15 % más que la suma de radios: menos solapes entre propios
 const ATACANTES_MAXIMOS = 3;       // a partir de aquí un enemigo se considera cubierto y los demás buscan otro hueco
@@ -244,6 +247,7 @@ class Simulacion {
       }
     } else vivos.forEach((i, k) => { this.localX[i] = casillas[k][0]; this.localY[i] = casillas[k][1]; });
     unidad.formacion = Object.assign({ clave }, F);
+    unidad.vivosAlFormar = n;                                   // para cerrar filas cuando caigan más (actualizarUnidad)
     return true;
   }
   // Fase de despliegue: coloca la unidad entera en (x, y) con un rumbo, soldados incluidos, sin que anden hasta allí
@@ -561,6 +565,12 @@ class Simulacion {
     for (const i of u.indices) if (this.vivo(i)) { sx += this.posX[i]; sy += this.posY[i]; vivos++; if (this.estado[i] === ESTADO.LUCHANDO) { luchando++; if (this.objetivo[i] >= 0 && this.unidadDe[this.objetivo[i]] === u.objetivoFijo) luchandoBlanco++; } }
     u.vivos = vivos; u.luchando = luchando;
     if (!vivos) return;
+    /* Cerrar filas (2026-10-16, pedido del usuario): al morir un soldado solo avanza el de detrás de su columna (cubrirHueco);
+       si caía la columna entera, el hueco se quedaba abierto y la unidad con el ancho de cuando estaba completa. Ahora, cada
+       CADA_CERRAR_FILAS pasos, una unidad que ha perdido hombres desde que formó y que no pelea vuelve a formar con los que le
+       quedan (mismos puestos relativos: nadie cruza la unidad); el frente se estrecha y el hueco desaparece. En la melé no:
+       desharía la línea mientras se pelea. */
+    if (!u.huyendo && !luchando && !u.trabada && u.formacion && vivos < (u.vivosAlFormar || u.total) && (this.paso + u.id) % CADA_CERRAR_FILAS === 0) this.formar(u, u.formacion.clave);
     // velocidad de la unidad (suavizada; los saltos del centro al morir soldados se amortiguan): la usan los tiradores
     // para apuntar por delante de un blanco en movimiento
     const nuevoX = sx / vivos, nuevoY = sy / vivos;
@@ -1031,6 +1041,21 @@ class Simulacion {
   }
 
   /* ----- flechas ----- */
+  /* Área que ocupa una unidad para las andanadas: rectángulo de sus soldados vivos en coordenadas de la formación (fondo a lo
+     largo del rumbo, lateral a su izquierda/derecha), respecto a su centro. Se calcula una vez por paso y unidad. */
+  areaDeTiro(u) {
+    if (u.areaTiro && u.areaTiro.paso === this.paso) return u.areaTiro;
+    const cos = Math.cos(u.rumbo), sen = Math.sin(u.rumbo);
+    let lateralMin = Infinity, lateralMax = -Infinity, fondoMin = Infinity, fondoMax = -Infinity;
+    for (const j of u.indices) {
+      if (!this.vivo(j)) continue;
+      const rx = this.posX[j] - u.centroX, ry = this.posY[j] - u.centroY, fondo = rx * cos + ry * sen, lateral = -rx * sen + ry * cos;
+      if (lateral < lateralMin) lateralMin = lateral; if (lateral > lateralMax) lateralMax = lateral;
+      if (fondo < fondoMin) fondoMin = fondo; if (fondo > fondoMax) fondoMax = fondo;
+    }
+    u.areaTiro = lateralMin === Infinity ? null : { paso: this.paso, cos, sen, lateralMin, lateralMax, fondoMin, fondoMax };
+    return u.areaTiro;
+  }
   dispararFlecha(i, objetivo, datos) {
     const k = this.flechaSiguiente; this.flechaSiguiente = (k + 1) % this.maxFlechas;
     const x0 = this.posX[i], y0 = this.posY[i];
@@ -1039,7 +1064,20 @@ class Simulacion {
     // · tiro apuntado (`apuntado`, ballestas): cada tirador elige un soldado concreto (al azar entre los vivos) y la dispersión
     //   es alrededor de él, así que la precisión cuenta de verdad (apuntando al centro, con más precisión los virotes se perdían
     //   en el hueco que dejaban los primeros muertos).
+    // · desde el 2026-10-16 (lo vio el usuario: con el centro de la formación muerto, las flechas seguían cayendo en el hueco y
+    //   de cerca no tocaban las alas) la andanada apunta a un punto al azar dentro del ÁREA que ocupa la formación (rectángulo de
+    //   sus soldados vivos según su rumbo), con la dispersión de lluvia de flechas alrededor: fuego de supresión sobre toda la
+    //   unidad, no tiro a un soldado. Calibrado (calibrar_andanada.js) para acertar contra una unidad completa lo mismo que antes.
+    //   Las máquinas (mangoneles) siguen apuntando al centro.
     let blancoX = objetivo.centroX, blancoY = objetivo.centroY, margen = 1.5, ruido = 2;
+    if (!datos.apuntado && !datos.artilleria) {
+      const area = this.areaDeTiro(objetivo);
+      if (area) {
+        const lateral = this.azar.entre(area.lateralMin, area.lateralMax), fondo = this.azar.entre(area.fondoMin, area.fondoMax);
+        blancoX = objetivo.centroX + fondo * area.cos - lateral * area.sen; blancoY = objetivo.centroY + fondo * area.sen + lateral * area.cos;
+        margen = MARGEN_ANDANADA; ruido = 0;
+      }
+    }
     if (datos.apuntado) {
       margen = 0.8; ruido = 0;
       for (let intento = 0; intento < 4; intento++) {
@@ -1056,7 +1094,7 @@ class Simulacion {
       blancoX += velBlancoX * tiempoVuelo * ANTICIPACION_TIRO; blancoY += velBlancoY * tiempoVuelo * ANTICIPACION_TIRO;
     }
     const d = distancia(x0, y0, blancoX, blancoY);
-    const dispersion = d * datos.dispersion + margen;
+    const dispersion = d * datos.dispersion * (ruido === 0 && !datos.apuntado ? FACTOR_DISPERSION_ANDANADA : 1) + margen;
     const angulo = this.azar.entre(0, Math.PI * 2), r = Math.sqrt(this.azar.numero()) * dispersion;
     const x1 = limitar(blancoX + Math.cos(angulo) * r + (ruido ? this.azar.entre(-ruido, ruido) : 0), 0.5, CAMPO.ancho - 0.5);
     const y1 = limitar(blancoY + Math.sin(angulo) * r + (ruido ? this.azar.entre(-ruido, ruido) : 0), 0.5, CAMPO.alto - 0.5);
