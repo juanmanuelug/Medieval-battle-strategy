@@ -1,8 +1,28 @@
-# Desde la subida del 15 de octubre
+# Terreno con volumen y arreglos (16 de octubre de 2026, tarde)
+
+## Terreno
+
+- **Colinas con relieve**: el suelo se levanta de verdad, con sombreado según la pendiente y curvas de nivel suaves; las tropas suben y bajan las laderas.
+- **Bosques más profundos**: árboles nuevos, más juntos y variados (con nieve cuando nieva), sombras de las copas y suelo de hojarasca. Los árboles que tapan a tus soldados se vuelven semitransparentes.
+- **El río corre**: el agua fluye a lo largo del cauce.
+- **Vados con detalle**: tierra mojada, charcos, guijarros y piedras grandes con espuma alrededor.
+- Todo es visual: el combate no cambia.
+
+## Arreglos
+- **Las flechas en vuelo ya no trepan las colinas**: hacen su parábola de la altura del arquero a la del blanco.
+- **Las flechas clavadas conservan el ángulo con el que llegan**: la punta hundida y la cola hacia quien disparó, en lugar de todas iguales con las plumas arriba.
+- **Las unidades se quedan mirando a donde se les pide**: al mandar una unidad casi a su mismo sitio con otra orientación (sobre todo si estaba de espaldas), a veces acababa mirando al revés o se quedaba girando sin llegar.
+
+## Al desplegar
+- El arreglo de la orientación cambia la simulación: todos los jugadores tienen que recargar la página para jugar en red con la misma versión.
+
+---
+
+# Batalla, IA y flechas (16 de octubre de 2026)
 
 ## Interfaz
 - **Aura del general a la vista**: al seleccionar tu general o pasar el ratón por encima se ve el círculo en el que da moral a tus tropas (en rojo, el del general enemigo). Desaparece si el general cae o huye.
-- **Flechas nuevas**: con punta de acero, astil de madera y plumas blancas (imagen de dominio público de OpenGameArt). Se ven nítidas al acercar la cámara y se engruesan un poco al alejarla para que las andanadas se sigan viendo.
+- **Flechas nuevas**: con punta de acero, astil de madera y plumas blancas (imagen de dominio público de OpenGameArt). Se ven nítidas al acercar la cámara y se engruesan un poco al alejarla para que las andanadas se sigan viendo. Las clavadas, en el suelo o en los soldados, quedan con la punta hundida y las plumas arriba.
 
 ## Batalla
 - **Las unidades cierran filas**: si pierden hombres y no están peleando, cada par de segundos se reorganizan con los que les quedan; el frente se estrecha y ya no quedan huecos abiertos en mitad de la formación.
@@ -14,6 +34,10 @@
 
 ## Servidor
 - `/salud` muestra el modo de las batallas en red (`relevo` o `arbitro`).
+
+## Al desplegar
+- Cambia la simulación (cerrar filas y andanadas): todos los jugadores tienen que recargar la página para jugar en red con la misma versión.
+- Las batallas en curso se pierden al reiniciar el servidor.
 
 ---
 

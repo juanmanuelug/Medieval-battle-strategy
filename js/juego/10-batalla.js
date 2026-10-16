@@ -117,6 +117,7 @@ function iniciarBatalla(opciones) {
   const sangre = new LienzoSangre(CAMPO.ancho, CAMPO.alto, 6);   // 6 px/m: la sangre y los restos se ven menos pixelados al acercar
   if (sim.clima.nieve) sangre.pintarNieve(crearAleatorio(semilla + 17));   // suelo nevado (2026-10-13)
   sangre.pintarTerreno(terreno, { nieve: !!sim.clima.nieve });
+  sangre.pintarRelieve(terreno, { nieve: !!sim.clima.nieve, girada: equipoPropio === 1 });   // sombreado y curvas de nivel (2026-10-16)
   if (sim.clima.barro) sangre.pintarBarro(crearAleatorio(semilla + 11));
   // azar propio para las manchas del suelo: si usaran sim.azar, cada navegador lo gastaría a su ritmo de fotogramas y la
   // simulación dejaría de ser idéntica a la del servidor y a la del rival (batallas en red)

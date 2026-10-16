@@ -21,8 +21,12 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
      del jugador izquierdo. Se proyecta el punto simétrico (ancho − x, alto − y); la profundidad, las direcciones de los
      sprites, las flechas, el suelo y el clic se giran igual. */
   const girada = equipoPropio === 1;
+  /* Relieve (2026-10-16): todo lo que se dibuja sobre el terreno sube con la altura del suelo en ese punto (terreno.alturaEn,
+     solo visual: la simulación no la usa). aPantallaY suma esa altura a la que se le pase (la de un jinete en el aire, una
+     flecha…), así que soldados, sombras, estandartes, alcances, auras y el propio suelo (una malla) siguen las colinas. */
+  const alturaSuelo = opciones.terreno && typeof opciones.terreno.alturaEn === 'function' ? (x, y) => opciones.terreno.alturaEn(x, y) : () => 0;
   const aPantallaX = girada ? (x, y) => ((CAMPO.ancho - x) - (CAMPO.alto - y)) * COS30 * ESCALA : (x, y) => (x - y) * COS30 * ESCALA;
-  const aPantallaY = girada ? (x, y, altura) => (CAMPO.ancho + CAMPO.alto - x - y) * SIN30 * ESCALA - (altura || 0) * ESCALA : (x, y, altura) => (x + y) * SIN30 * ESCALA - (altura || 0) * ESCALA;
+  const aPantallaY = girada ? (x, y, altura) => (CAMPO.ancho + CAMPO.alto - x - y) * SIN30 * ESCALA - ((altura || 0) + alturaSuelo(x, y)) * ESCALA : (x, y, altura) => (x + y) * SIN30 * ESCALA - ((altura || 0) + alturaSuelo(x, y)) * ESCALA;
   const profundidad = girada ? (x, y) => CAMPO.ancho + CAMPO.alto - x - y : (x, y) => x + y;   // orden de dibujo: más abajo en pantalla, delante
   // unidades ocultas (en red, el rival mientras se despliega)
   const oculto = equipo => !!(opciones && opciones.oculto && opciones.oculto(equipo));
@@ -36,19 +40,110 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   const zonaGrafico = new PIXI.Graphics(); zonaGrafico.visible = false;
   function mostrarZona(zona) {
     zonaGrafico.clear(); zonaGrafico.visible = !!zona; if (!zona) return;
-    const esquinas = [[zona.x0, zona.y0], [zona.x1, zona.y0], [zona.x1, zona.y1], [zona.x0, zona.y1]].map(([x, y]) => [aPantallaX(x, y), aPantallaY(x, y)]);
+    // el contorno se subdivide cada 4 m para que siga el relieve (2026-10-16)
+    const vertices = [[zona.x0, zona.y0], [zona.x1, zona.y0], [zona.x1, zona.y1], [zona.x0, zona.y1]], esquinas = [];
+    vertices.forEach(([xa, ya], k) => { const [xb, yb] = vertices[(k + 1) % 4], pasos = Math.max(1, Math.ceil(Math.hypot(xb - xa, yb - ya) / 4)); for (let p = 0; p < pasos; p++) { const x = xa + (xb - xa) * p / pasos, y = ya + (yb - ya) * p / pasos; esquinas.push([aPantallaX(x, y), aPantallaY(x, y)]); } });
     zonaGrafico.lineStyle(3, 0xffd54a, 0.95).beginFill(0xffd54a, 0.16).drawPolygon(esquinas.flat()).endFill();
   }
   const texturaSuelo = PIXI.Texture.from(sangre.canvas);
   let versionSuelo = sangre.version, ultimaSubidaSuelo = -1;
-  const suelo = new PIXI.Sprite(texturaSuelo);
-  const k = ESCALA / sangre.pixelesPorMetro;
-  suelo.transform.setFromMatrix(girada
-    ? new PIXI.Matrix(-COS30 * k, -SIN30 * k, COS30 * k, -SIN30 * k, (CAMPO.ancho - CAMPO.alto) * COS30 * ESCALA, (CAMPO.ancho + CAMPO.alto) * SIN30 * ESCALA)
-    : new PIXI.Matrix(COS30 * k, SIN30 * k, -COS30 * k, SIN30 * k, 0, 0));
+  // suelo con relieve (2026-10-16): malla de PASO_MALLA_SUELO m cuyos vértices se proyectan con su altura; la textura es el mismo
+  // canvas de hierba, terreno y sangre (antes, un sprite plano con una matriz afín)
+  const PASO_MALLA_SUELO = 2;
+  const suelo = (() => {
+    const columnas = Math.ceil(CAMPO.ancho / PASO_MALLA_SUELO) + 1, filas = Math.ceil(CAMPO.alto / PASO_MALLA_SUELO) + 1;
+    const vertices = new Float32Array(columnas * filas * 2), uvs = new Float32Array(columnas * filas * 2), indices = new Uint16Array((columnas - 1) * (filas - 1) * 6);   // 35 581 vértices: caben en 16 bits (WebGL 1 sin extensiones)
+    const anchoTextura = sangre.canvas.width / sangre.pixelesPorMetro, altoTextura = sangre.canvas.height / sangre.pixelesPorMetro;
+    for (let fila = 0; fila < filas; fila++) for (let col = 0; col < columnas; col++) {
+      const x = Math.min(CAMPO.ancho, col * PASO_MALLA_SUELO), y = Math.min(CAMPO.alto, fila * PASO_MALLA_SUELO), k = (fila * columnas + col) * 2;
+      vertices[k] = aPantallaX(x, y); vertices[k + 1] = aPantallaY(x, y);
+      uvs[k] = x / anchoTextura; uvs[k + 1] = y / altoTextura;
+    }
+    let p = 0;
+    for (let fila = 0; fila < filas - 1; fila++) for (let col = 0; col < columnas - 1; col++) {
+      const a = fila * columnas + col, b = a + 1, c = a + columnas, d = c + 1;
+      indices[p++] = a; indices[p++] = b; indices[p++] = c; indices[p++] = b; indices[p++] = d; indices[p++] = c;
+    }
+    return new PIXI.Mesh(new PIXI.MeshGeometry(vertices, uvs, indices), new PIXI.MeshMaterial(texturaSuelo));
+  })();
   const destinosGrafico = new PIXI.Graphics();          // destinos de las unidades propias (Alt sin selección)
   const alcancesGrafico = new PIXI.Graphics();          // alcance de tiro: tiradores propios seleccionados y enemigo bajo el ratón
-  capaSuelo.addChild(suelo); capaSuelo.addChild(zonaGrafico); capaSuelo.addChild(alcancesGrafico); capaSuelo.addChild(destinosGrafico);
+  /* Río que corre (2026-10-16): dos capas de ondas semitransparentes sobre el cauce (el agua de fondo ya está pintada en el
+     suelo), en una malla que sigue el río de punta a punta, a NIVEL_AGUA m sobre el plano; las texturas se repiten a lo largo
+     del cauce y se desplazan a distinta velocidad (las coordenadas de textura se mueven cada fotograma), así el agua fluye. */
+  const capasRio = [];
+  if (opciones.terreno && opciones.terreno.rio) {
+    const rio = opciones.terreno.rio, NIVEL_AGUA = -0.25, PASO = 2, conNieveRio = !!(opciones.clima && opciones.clima.nieve);
+    const texturaOndas = (semilla, claridad, rayas) => {
+      const lado = 128, lienzo = document.createElement('canvas'); lienzo.width = lienzo.height = lado;
+      const c = lienzo.getContext('2d'), azar = crearAleatorio(semilla);
+      c.lineCap = 'round';
+      for (let k = 0; k < rayas; k++) {
+        const y0 = azar.entre(0, lado), largo = azar.entre(18, 60), x0 = azar.entre(0, lado), curva = azar.entre(-4, 4);
+        c.strokeStyle = 'rgba(' + claridad + ',' + azar.entre(0.18, 0.42).toFixed(2) + ')'; c.lineWidth = azar.entre(1.2, 2.6);
+        for (const desplazado of [-lado, 0, lado]) { c.beginPath(); c.moveTo(x0 + desplazado, y0); c.quadraticCurveTo(x0 + largo / 2 + desplazado, y0 + curva, x0 + largo + desplazado, y0); c.stroke(); }
+      }
+      const base = new PIXI.BaseTexture(lienzo, { wrapMode: PIXI.WRAP_MODES.REPEAT, scaleMode: PIXI.SCALE_MODES.LINEAR, mipmap: PIXI.MIPMAP_MODES.ON });
+      return new PIXI.Texture(base);
+    };
+    const filas = Math.ceil((CAMPO.alto + 8) / PASO) + 1, vertices = new Float32Array(filas * 2 * 2), listaIndices = [];
+    for (let f = 0; f < filas; f++) {
+      const y = -4 + f * PASO, cx = rio.centroX(y), media = rio.ancho / 2 + 0.2;
+      for (let lado = 0; lado < 2; lado++) { const x = cx + (lado ? media : -media), k = (f * 2 + lado) * 2; vertices[k] = aPantallaX(x, y); vertices[k + 1] = aPantallaY(x, y, NIVEL_AGUA - alturaSuelo(x, y)); }
+    }
+    // sin ondas sobre los vados: ahí el agua apenas cubre la grava (los vados llevan su propio dibujo)
+    const enVado = y => rio.vados.some(v => Math.abs(y - v) < rio.anchoVado / 2 - 0.8);
+    for (let f = 0; f < filas - 1; f++) { const a = f * 2; if (enVado(-4 + (f + 0.5) * PASO)) continue; listaIndices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    const indices = new Uint16Array(listaIndices);
+    for (const capa of [{ semilla: 5, claridad: conNieveRio ? '235,245,252' : '200,228,245', rayas: 26, metros: 5, velocidad: 1.1, alfa: 0.9 }, { semilla: 9, claridad: '255,255,255', rayas: 12, metros: 3.2, velocidad: 0.65, alfa: 0.55 }]) {
+      const uvs = new Float32Array(filas * 2 * 2), base = new Float32Array(filas);
+      for (let f = 0; f < filas; f++) { const y = -4 + f * PASO; base[f] = y / capa.metros; uvs[(f * 2) * 2] = 0; uvs[(f * 2 + 1) * 2] = rio.ancho / capa.metros; uvs[(f * 2) * 2 + 1] = uvs[(f * 2 + 1) * 2 + 1] = base[f]; }
+      const malla = new PIXI.Mesh(new PIXI.MeshGeometry(vertices.slice(), uvs, indices), new PIXI.MeshMaterial(texturaOndas(capa.semilla, capa.claridad, capa.rayas)));
+      malla.alpha = capa.alfa;
+      capasRio.push({ malla, uvs, base, filas, velocidad: capa.velocidad / capa.metros, fase: 0 });
+    }
+  }
+  /* piedras grandes en los vados (2026-10-16): dibujadas en relieve (contorno, lado en sombra, brillo de mojado), sobre el
+     agua y con una estela de espuma aguas abajo pintada en el suelo; ordenadas en profundidad con los soldados */
+  if (opciones.terreno && opciones.terreno.rio) {
+    const rio = opciones.terreno.rio, RESOLUCION_PIEDRA = 32;
+    const dibujarPiedra = (azar, nieve) => {
+      const S = RESOLUCION_PIEDRA, lienzo = document.createElement('canvas'); lienzo.width = Math.ceil(1.8 * S); lienzo.height = Math.ceil(1.3 * S);
+      const c = lienzo.getContext('2d'), ax = lienzo.width / 2, ay = lienzo.height - 0.2 * S, puntos = [];
+      const lados = 9; for (let k = 0; k < lados; k++) { const a = Math.PI + k / (lados - 1) * Math.PI, r = azar.entre(0.55, 0.8) * S; puntos.push([ax + Math.cos(a) * r, ay + Math.sin(a) * r * azar.entre(0.7, 1.05)]); }
+      const forma = () => { c.beginPath(); c.moveTo(puntos[0][0], ay); for (const [x, y] of puntos) c.lineTo(x, y); c.lineTo(puntos[puntos.length - 1][0], ay); c.closePath(); };
+      c.lineJoin = 'round'; forma(); c.lineWidth = Math.max(2, 0.1 * S); c.strokeStyle = '#1e1a14'; c.stroke();
+      c.fillStyle = nieve ? '#8e9296' : '#7a7468'; c.fill();
+      c.save(); forma(); c.clip(); c.fillStyle = nieve ? '#6e7276' : '#5a554c'; c.fillRect(ax + 0.05 * S, 0, lienzo.width, lienzo.height);      // lado en sombra
+      c.fillStyle = nieve ? '#f0f4f7' : '#a59c8a'; c.beginPath(); c.ellipse(ax - 0.2 * S, ay - 0.45 * S, 0.3 * S, 0.14 * S, -0.3, 0, Math.PI * 2); c.fill();   // cara de arriba
+      c.globalAlpha = 0.7; c.fillStyle = '#eef2f4'; c.beginPath(); c.ellipse(ax - 0.28 * S, ay - 0.5 * S, 0.12 * S, 0.05 * S, -0.3, 0, Math.PI * 2); c.fill();   // brillo de mojado
+      c.restore();
+      const tx = new PIXI.Texture(new PIXI.BaseTexture(lienzo, { scaleMode: PIXI.SCALE_MODES.LINEAR, mipmap: PIXI.MIPMAP_MODES.ON })); tx.defaultAnchor.set(0.5, ay / lienzo.height); return tx;
+    };
+    const azarPiedras = crearAleatorio(321), conNievePiedras = !!(opciones.clima && opciones.clima.nieve);
+    const texturasPiedra = [0, 1, 2, 3].map(() => dibujarPiedra(azarPiedras, conNievePiedras));
+    const c = sangre.contexto, ppm = sangre.pixelesPorMetro;
+    for (const v of rio.vados) {
+      for (let k = 0; k < 9; k++) {
+        const y = v + azarPiedras.entre(-0.45, 0.45) * rio.anchoVado, x = rio.centroX(y) + azarPiedras.entre(-0.45, 0.45) * rio.ancho, escala = azarPiedras.entre(0.45, 1.0);
+        // espuma: estela clara aguas abajo (la corriente va hacia +y) y un anillo alrededor
+        c.globalAlpha = 0.16; c.fillStyle = '#e8f0f2'; c.beginPath(); c.ellipse(x * ppm, (y + 0.7 * escala) * ppm, 0.28 * escala * ppm, 0.8 * escala * ppm, 0, 0, Math.PI * 2); c.fill();
+        c.globalAlpha = 0.3; c.strokeStyle = '#f2f6f7'; c.lineWidth = Math.max(1, 0.07 * ppm); c.beginPath(); c.ellipse(x * ppm, y * ppm, 0.62 * escala * ppm, 0.45 * escala * ppm, 0, 0, Math.PI * 2); c.stroke(); c.globalAlpha = 1;
+        const s = new PIXI.Sprite(texturasPiedra[azarPiedras.entero(0, texturasPiedra.length - 1)]);
+        s.scale.set(escala * ESCALA / RESOLUCION_PIEDRA); s.position.set(aPantallaX(x, y), aPantallaY(x, y, -0.25 - alturaSuelo(x, y) + 0.05)); s.zIndex = profundidad(x, y);
+        capaEscena.addChild(s);
+      }
+    }
+    sangre.version++;
+  }
+  function animarRio(dt) {
+    for (const capa of capasRio) {
+      capa.fase -= dt * capa.velocidad; if (capa.fase < -1000) capa.fase += 1000;
+      for (let f = 0; f < capa.filas; f++) capa.uvs[(f * 2) * 2 + 1] = capa.uvs[(f * 2 + 1) * 2 + 1] = capa.base[f] + capa.fase;
+      capa.malla.geometry.getBuffer('aTextureCoord').update();
+    }
+  }
+  capaSuelo.addChild(suelo); for (const capa of capasRio) capaSuelo.addChild(capa.malla); capaSuelo.addChild(zonaGrafico); capaSuelo.addChild(alcancesGrafico); capaSuelo.addChild(destinosGrafico);
   // clima: tinte del suelo y lluvia en pantalla
   const clima = opciones.clima || { lluvia: false, barro: false };
   suelo.tint = clima.lluvia && clima.barro ? 0x9c9a88 : clima.barro ? 0xb4a888 : clima.lluvia ? 0xb8c2cc : 0xffffff;
@@ -119,31 +214,93 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   }
   const texturaBanderaBlanca = (() => { const g = new PIXI.Graphics(); g.lineStyle(2, 0x3b2a18).moveTo(0, 0).lineTo(0, -4.5 * ESCALA); g.lineStyle(0).beginFill(0xf4f0e6).drawRect(1, -4.5 * ESCALA, 1.8 * ESCALA, 2.2 * ESCALA).endFill(); return app.renderer.generateTexture(g, { resolution: RESOLUCION_BANDERA, scaleMode: PIXI.SCALE_MODES.LINEAR }); })();
 
-  /* ----- decoración del terreno: árboles fuera del campo, arbustos y rocas en los bordes (solo estética) ----- */
+  /* ----- decoración del terreno: árboles, arbustos y rocas (solo estética) -----
+     Desde el 2026-10-16 (fase 1 del terreno con volumen): árboles dibujados por código (js/arboles.js) en varias variantes,
+     bosques más densos (uno cada ~DENSIDAD_BOSQUE m², separados al menos SEPARACION_ARBOLES m), sombra de cada copa pintada en
+     el suelo, y los árboles que tapan a un soldado se vuelven semitransparentes. Todo sube con el relieve (aPantallaY). */
   const azarDeco = crearAleatorio(42);
+  const RESOLUCION_ARBOL = 32, DENSIDAD_BOSQUE = 19, SEPARACION_ARBOLES = 2.0, ALFA_ARBOL_TAPANDO = 0.32;
+  const conNieve = !!(opciones.clima && opciones.clima.nieve);
+  const texturaDesdeDibujo = dibujo => { const tx = new PIXI.Texture(new PIXI.BaseTexture(dibujo.canvas, { scaleMode: PIXI.SCALE_MODES.LINEAR, mipmap: PIXI.MIPMAP_MODES.ON })); tx.defaultAnchor.set(dibujo.anclaX / dibujo.canvas.width, dibujo.anclaY / dibujo.canvas.height); return tx; };
+  const hayArboles = typeof dibujarArbol === 'function';
+  const variantesArbol = hayArboles ? [
+    ...[0, 1, 2].map(() => texturaDesdeDibujo(dibujarArbol({ forma: 'frondoso', S: RESOLUCION_ARBOL, azar: azarDeco, nieve: conNieve }))),
+    texturaDesdeDibujo(dibujarArbol({ forma: 'frondoso', S: RESOLUCION_ARBOL, azar: azarDeco, nieve: conNieve, otono: true })),
+    ...[0, 1].map(() => texturaDesdeDibujo(dibujarArbol({ forma: 'pino', S: RESOLUCION_ARBOL, azar: azarDeco, nieve: conNieve }))),
+  ] : [];
+  const variantesArbusto = hayArboles ? [0, 1, 2].map(() => texturaDesdeDibujo(dibujarArbusto({ S: RESOLUCION_ARBOL, azar: azarDeco, nieve: conNieve }))) : [];
   const texturasDeco = {
-    arbol: (() => { const g = new PIXI.Graphics(); const S = ESCALA; g.beginFill(0x3b2a18).drawRect(-0.2 * S, -1.6 * S, 0.4 * S, 1.6 * S).endFill(); g.beginFill(0x2f5a22).drawEllipse(0, -2.6 * S, 1.6 * S, 1.3 * S).endFill(); g.beginFill(0x3f7a2c).drawEllipse(-0.3 * S, -3.0 * S, 1.1 * S, 0.9 * S).endFill(); return app.renderer.generateTexture(g); })(),
-    arbusto: (() => { const g = new PIXI.Graphics(); const S = ESCALA; g.beginFill(0x33612a).drawEllipse(0, -0.4 * S, 0.9 * S, 0.5 * S).endFill(); g.beginFill(0x447a33).drawEllipse(-0.2 * S, -0.6 * S, 0.6 * S, 0.35 * S).endFill(); return app.renderer.generateTexture(g); })(),
     roca: (() => { const g = new PIXI.Graphics(); const S = ESCALA; g.beginFill(0x6e6a62).drawPolygon([-0.7 * S, 0, -0.5 * S, -0.5 * S, 0.1 * S, -0.7 * S, 0.7 * S, -0.3 * S, 0.5 * S, 0]).endFill(); g.beginFill(0x8a857b).drawPolygon([-0.4 * S, -0.45 * S, 0.05 * S, -0.6 * S, 0.3 * S, -0.35 * S]).endFill(); return app.renderer.generateTexture(g); })(),
   };
-  const decoraciones = [];
-  const ponerDeco = (tipo, x, y, escala) => { const s = new PIXI.Sprite(texturasDeco[tipo]); s.anchor.set(0.5, 1); s.scale.set(escala); s.position.set(aPantallaX(x, y), aPantallaY(x, y)); s.zIndex = profundidad(x, y); capaEscena.addChild(s); decoraciones.push(s); };
-  for (let i = 0; i < 180; i++) {
-    // anillo de bosque alrededor del campo
-    const lado = azarDeco.entero(0, 3), prof = azarDeco.entre(4, 26);
+  const decoraciones = [], arbolesBosque = [];
+  const ponerDeco = (tipo, x, y, escala) => { const s = new PIXI.Sprite(texturasDeco[tipo]); s.anchor.set(0.5, 1); s.scale.set(escala); s.position.set(aPantallaX(x, y), aPantallaY(x, y)); s.zIndex = profundidad(x, y); capaEscena.addChild(s); decoraciones.push(s); return s; };
+  // sombra de la copa en el suelo (canvas de hierba y sangre): hacia el lado contrario a la luz, que viene de la izquierda
+  const sombraCopa = (x, y, radio) => { const c = sangre.contexto, ppm = sangre.pixelesPorMetro, desplazamiento = (girada ? -1 : 1) * radio * 0.55; c.globalAlpha = 0.24; c.fillStyle = '#121c0c'; c.beginPath(); c.ellipse((x + desplazamiento) * ppm, (y + desplazamiento * 0.35) * ppm, radio * 1.05 * ppm, radio * 0.8 * ppm, 0, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1; };
+  const ponerArbol = (x, y, escala, enBosque) => {
+    if (!hayArboles) return null;
+    // variantes: 0-2 frondosos, 3 de otoño (uno de cada doce), 4-5 pinos
+    const sorteo = azarDeco.numero(), textura = variantesArbol[sorteo < 1 / 12 ? 3 : sorteo < 0.62 ? azarDeco.entero(0, 2) : azarDeco.entero(4, 5)];
+    const s = new PIXI.Sprite(textura); s.scale.set(escala * ESCALA / RESOLUCION_ARBOL); s.position.set(aPantallaX(x, y), aPantallaY(x, y)); s.zIndex = profundidad(x, y);
+    capaEscena.addChild(s); decoraciones.push(s);
+    sombraCopa(x, y, 1.6 * escala);
+    if (enBosque) arbolesBosque.push({ s, x, y, d: profundidad(x, y), alfa: 1 });
+    return s;
+  };
+  const ponerArbusto = (x, y, escala) => { if (!hayArboles) return; const s = new PIXI.Sprite(variantesArbusto[azarDeco.entero(0, variantesArbusto.length - 1)]); s.scale.set(escala * ESCALA / RESOLUCION_ARBOL); s.position.set(aPantallaX(x, y), aPantallaY(x, y)); s.zIndex = profundidad(x, y); capaEscena.addChild(s); decoraciones.push(s); };
+  // anillo de bosque alrededor del campo
+  for (let i = 0; i < 260; i++) {
+    const lado = azarDeco.entero(0, 3), prof = azarDeco.entre(4, 30);
     const x = lado === 0 ? -prof : lado === 1 ? CAMPO.ancho + prof : azarDeco.entre(-20, CAMPO.ancho + 20);
     const y = lado === 2 ? -prof : lado === 3 ? CAMPO.alto + prof : azarDeco.entre(-20, CAMPO.alto + 20);
-    ponerDeco('arbol', x, y, azarDeco.entre(0.8, 1.4));
+    ponerArbol(x, y, azarDeco.entre(0.85, 1.3), false);
   }
-  // árboles dentro de los bosques del terreno (si el juego lo pasa), en cantidad proporcional a su área
+  // bosques del terreno: árboles repartidos sin amontonarse (rejilla de 3 m para comprobar la separación) y algún arbusto
   if (opciones.terreno) {
+    const ocupado = new Map(), celdaDe = (x, y) => Math.floor(x / 3) + ',' + Math.floor(y / 3);
+    const libre = (x, y) => { const cx = Math.floor(x / 3), cy = Math.floor(y / 3); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [px, py] of ocupado.get((cx + a) + ',' + (cy + b)) || []) if ((px - x) ** 2 + (py - y) ** 2 < SEPARACION_ARBOLES ** 2) return false; return true; };
     for (const m of opciones.terreno.manchas) {
       if (m.tipo !== 1) continue;
-      const cuantos = Math.round(m.r * m.r * 0.035);
-      for (let k = 0; k < cuantos; k++) { const a = azarDeco.entre(-Math.PI, Math.PI), r = Math.sqrt(azarDeco.numero()) * opciones.terreno.radioEn(m, a) * 0.95; ponerDeco('arbol', m.x + Math.cos(a) * r, m.y + Math.sin(a) * r, azarDeco.entre(0.7, 1.2)); }
+      const objetivo = Math.round(Math.PI * m.r * m.r / DENSIDAD_BOSQUE);
+      let puestos = 0;
+      for (let intento = 0; intento < objetivo * 6 && puestos < objetivo; intento++) {
+        const a = azarDeco.entre(-Math.PI, Math.PI), r = Math.sqrt(azarDeco.numero()) * opciones.terreno.radioEn(m, a) * 0.95, x = m.x + Math.cos(a) * r, y = m.y + Math.sin(a) * r;
+        if (!libre(x, y)) continue;
+        const clave = celdaDe(x, y); if (!ocupado.has(clave)) ocupado.set(clave, []); ocupado.get(clave).push([x, y]);
+        ponerArbol(x, y, azarDeco.entre(0.75, 1.15), true); puestos++;
+      }
+      for (let k = 0; k < Math.round(objetivo * 0.35); k++) { const a = azarDeco.entre(-Math.PI, Math.PI), r = Math.sqrt(azarDeco.numero()) * opciones.terreno.radioEn(m, a), x = m.x + Math.cos(a) * r, y = m.y + Math.sin(a) * r; if (libre(x, y)) ponerArbusto(x, y, azarDeco.entre(0.8, 1.2)); }
     }
   }
-  for (let i = 0; i < 24; i++) { const borde = azarDeco.entero(0, 3); const x = borde < 2 ? (borde ? CAMPO.ancho - azarDeco.entre(1, 6) : azarDeco.entre(1, 6)) : azarDeco.entre(2, CAMPO.ancho - 2); const y = borde >= 2 ? (borde === 3 ? CAMPO.alto - azarDeco.entre(1, 6) : azarDeco.entre(1, 6)) : azarDeco.entre(2, CAMPO.alto - 2); ponerDeco(azarDeco.numero() < 0.65 ? 'arbusto' : 'roca', x, y, azarDeco.entre(0.7, 1.2)); }
+  sangre.version++;                                                       // las sombras de las copas, al suelo
+  for (let i = 0; i < 24; i++) { const borde = azarDeco.entero(0, 3); const x = borde < 2 ? (borde ? CAMPO.ancho - azarDeco.entre(1, 6) : azarDeco.entre(1, 6)) : azarDeco.entre(2, CAMPO.ancho - 2); const y = borde >= 2 ? (borde === 3 ? CAMPO.alto - azarDeco.entre(1, 6) : azarDeco.entre(1, 6)) : azarDeco.entre(2, CAMPO.alto - 2); if (azarDeco.numero() < 0.65) ponerArbusto(x, y, azarDeco.entre(0.7, 1.2)); else ponerDeco('roca', x, y, azarDeco.entre(0.7, 1.2)); }
+  /* árboles que tapan a un soldado (que está detrás, hasta unos metros más arriba en pantalla): semitransparentes, para no
+     perder de vista a nadie dentro de un bosque. Se mira cada pocos fotogramas con la rejilla de la simulación */
+  // rejilla propia de los soldados (celdas de 4 m), rehecha en cada comprobación: la de la simulación no se actualiza mientras se
+  // despliega (no hay pasos) y ahí también hay que ver a las tropas dentro de los bosques
+  const CELDA_ARBOLES = 4, columnasArboles = Math.ceil(CAMPO.ancho / CELDA_ARBOLES) + 2, filasArboles = Math.ceil(CAMPO.alto / CELDA_ARBOLES) + 2;
+  const cabezasArboles = new Int32Array(columnasArboles * filasArboles), siguienteArboles = new Int32Array(sim.cantidad);
+  let fotogramaArboles = 0;
+  function transparentarArboles() {
+    if (!arbolesBosque.length || (fotogramaArboles++ % 3)) return;
+    cabezasArboles.fill(-1);
+    for (let i = 0; i < sim.cantidad; i++) {
+      if (!sim.vivo(i)) continue;
+      const c = limitar(Math.floor(sim.posX[i] / CELDA_ARBOLES), 0, columnasArboles - 1) + limitar(Math.floor(sim.posY[i] / CELDA_ARBOLES), 0, filasArboles - 1) * columnasArboles;
+      siguienteArboles[i] = cabezasArboles[c]; cabezasArboles[c] = i;
+    }
+    const atras = girada ? 1.8 : -1.8, RADIO = 3.2;
+    for (const arbol of arbolesBosque) {
+      const bx = arbol.x + atras, by = arbol.y + atras;
+      const c0 = Math.floor((bx - RADIO) / CELDA_ARBOLES), c1 = Math.floor((bx + RADIO) / CELDA_ARBOLES), f0 = Math.floor((by - RADIO) / CELDA_ARBOLES), f1 = Math.floor((by + RADIO) / CELDA_ARBOLES);
+      let tapa = false;
+      for (let f = Math.max(0, f0); f <= Math.min(filasArboles - 1, f1) && !tapa; f++) for (let col = Math.max(0, c0); col <= Math.min(columnasArboles - 1, c1) && !tapa; col++) {
+        for (let j = cabezasArboles[f * columnasArboles + col]; j !== -1 && !tapa; j = siguienteArboles[j]) { const dx = sim.posX[j] - bx, dy = sim.posY[j] - by; if (dx * dx + dy * dy < RADIO * RADIO && profundidad(sim.posX[j], sim.posY[j]) < arbol.d + 0.6) tapa = true; }
+      }
+      const objetivo = tapa ? ALFA_ARBOL_TAPANDO : 1;
+      if (arbol.alfa !== objetivo) { arbol.alfa += (objetivo - arbol.alfa) * 0.5; if (Math.abs(arbol.alfa - objetivo) < 0.03) arbol.alfa = objetivo; arbol.s.alpha = arbol.alfa; }
+    }
+  }
+
 
   // dirección en pantalla a partir del rumbo en el mundo
   function direccionPantalla(rumbo) {
@@ -262,8 +419,12 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   function pantallaAMundo(clientX, clientY) {
     const rect = vista.getBoundingClientRect();
     const lx = (clientX - rect.left - mundo.x) / mundo.scale.x, ly = (clientY - rect.top - mundo.y) / mundo.scale.y;
-    const A = lx / (COS30 * ESCALA), B = ly / (SIN30 * ESCALA);
-    return girada ? [CAMPO.ancho - (A + B) / 2, CAMPO.alto - (B - A) / 2] : [(A + B) / 2, (B - A) / 2];
+    // sin relieve: inversión directa; con relieve, el punto del suelo bajo el ratón está más arriba en pantalla cuanto más alto
+    // es: se itera sumando la altura del punto hallado (converge en pocas vueltas con pendientes suaves)
+    const invertir = alto => { const A = lx / (COS30 * ESCALA), B = (ly + alto * ESCALA) / (SIN30 * ESCALA); return girada ? [CAMPO.ancho - (A + B) / 2, CAMPO.alto - (B - A) / 2] : [(A + B) / 2, (B - A) / 2]; };
+    let punto = invertir(0);
+    for (let vuelta = 0; vuelta < 8; vuelta++) { const alto = alturaSuelo(punto[0], punto[1]), siguiente = invertir(alto); const cambio = Math.hypot(siguiente[0] - punto[0], siguiente[1] - punto[1]); punto = [punto[0] * 0.3 + siguiente[0] * 0.7, punto[1] * 0.3 + siguiente[1] * 0.7]; if (cambio < 0.05) break; }
+    return punto;
   }
   function mundoAPantalla(x, y) { const rect = vista.getBoundingClientRect(); return [rect.left + mundo.x + aPantallaX(x, y) * mundo.scale.x, rect.top + mundo.y + aPantallaY(x, y) * mundo.scale.y]; }
   /* Unidad del equipo cuyo soldado (su cuerpo dibujado, no solo sus pies) o cuyo estandarte está bajo el puntero.
@@ -369,7 +530,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     if (teclas.arrowup || (wasd && teclas.w)) mundo.y += v; if (teclas.arrowdown || (wasd && teclas.s)) mundo.y -= v;
     if (teclas.arrowleft || (wasd && teclas.a)) mundo.x += v; if (teclas.arrowright || (wasd && teclas.d)) mundo.x -= v;
   }
-  window.controlCamaraIso = { mundo, encuadrar, aPantallaX, aPantallaY };   // gancho para las pruebas sin cabeza (mover la cámara)
+  window.controlCamaraIso = { mundo, encuadrar, aPantallaX, aPantallaY, pantallaAMundo, mundoAPantalla, flechas };   // gancho para las pruebas sin cabeza (mover la cámara)
 
   /* ----- destinos de las unidades propias: con Alt pulsado y nada seleccionado ----- */
   // mover: línea punteada hasta la huella de destino (con el frente marcado según el rumbo final); atacar, avanzar o cargar:
@@ -504,7 +665,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     const dt = tiempoAnterior ? Math.max(0, tiempoRender - tiempoAnterior) : 0; tiempoAnterior = tiempoRender;
     // la textura del suelo se sube a la GPU como mucho ocho veces por segundo (con las gotas cambia casi cada fotograma)
     if (sangre.version !== versionSuelo && tiempoRender - ultimaSubidaSuelo > 0.12) { texturaSuelo.update(); versionSuelo = sangre.version; ultimaSubidaSuelo = tiempoRender; }
-    animarParticulas(dt); animarLluvia(dt);
+    animarParticulas(dt); animarLluvia(dt); transparentarArboles(); animarRio(dt);
     const a = alpha, b = 1 - alpha;
     let luchando = 0, galopando = 0;
     for (let i = 0; i < n; i++) {
@@ -615,8 +776,13 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
       if (estado === 1) {
         volando++;
         sim.flechaPosicion(f, tiempoRender, posFlecha);
-        const largo = Math.hypot(dx, dy) || 1, pendiente = 4 * sim.flechaApice[f] * (1 - 2 * posFlecha[3]) / largo;
-        s.position.set(aPantallaX(posFlecha[0], posFlecha[1]), aPantallaY(posFlecha[0], posFlecha[1], posFlecha[2]));
+        // en vuelo la flecha no sigue el suelo que sobrevuela (2026-10-16: con el relieve trepaba las colinas y volvía a bajar):
+        // su parábola va de la altura del suelo del tirador a la del punto de caída; aPantallaY suma el suelo bajo la flecha,
+        // así que se le resta. La inclinación incluye esa diferencia de alturas
+        const alturaSalida = alturaSuelo(sim.flechaX0[f], sim.flechaY0[f]), alturaLlegada = alturaSuelo(sim.flechaX1[f], sim.flechaY1[f]);
+        const largo = Math.hypot(dx, dy) || 1, pendiente = (4 * sim.flechaApice[f] * (1 - 2 * posFlecha[3]) + (alturaLlegada - alturaSalida)) / largo;
+        const alturaRecta = alturaSalida + (alturaLlegada - alturaSalida) * posFlecha[3];
+        s.position.set(aPantallaX(posFlecha[0], posFlecha[1]), aPantallaY(posFlecha[0], posFlecha[1], posFlecha[2] + alturaRecta - alturaSuelo(posFlecha[0], posFlecha[1])));
         s.rotation = anguloPantalla - Math.atan(pendiente) * 0.8; s.alpha = 1; s.zIndex = profundidad(posFlecha[0], posFlecha[1]) + 2;
         if (!piedra && s.anchor.x !== 0) s.anchor.set(0, 0.5);
       } else {
@@ -625,7 +791,15 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
         // clavada: apoyada por la punta (un poco hundida) y con las plumas arriba, inclinada como antes (2026-10-16: con la imagen
         // se veía que la flecha antigua se clavaba por la cola)
         s.position.set(aPantallaX(x, y), aPantallaY(x, y, altura)); s.alpha = 0.9; s.zIndex = profundidad(x, y) + 0.5;
-        if (piedra) s.rotation = -1.1; else { if (s.anchor.x !== ANCLA_FLECHA_CLAVADA) s.anchor.set(ANCLA_FLECHA_CLAVADA, 0.5); s.rotation = Math.PI - 1.1; }
+        // con la inclinación de su último instante de vuelo (2026-10-16, pedido del usuario: antes todas quedaban igual, con las
+        // plumas hacia arriba): dirección desde el tirador y pendiente de bajada de la parábola, la misma fórmula que en el aire;
+        // apoyada por la punta, así la cola queda hacia el que disparó
+        if (piedra) s.rotation = -1.1;
+        else {
+          if (s.anchor.x !== ANCLA_FLECHA_CLAVADA) s.anchor.set(ANCLA_FLECHA_CLAVADA, 0.5);
+          const largo = Math.hypot(dx, dy) || 1, pendienteFinal = (-4 * sim.flechaApice[f] + alturaSuelo(sim.flechaX1[f], sim.flechaY1[f]) - alturaSuelo(sim.flechaX0[f], sim.flechaY0[f])) / largo;
+          s.rotation = anguloPantalla - Math.atan(pendienteFinal) * 0.8;
+        }
       }
     }
     // estandartes: parpadeo blanco si la unidad huye; bote si está seleccionada

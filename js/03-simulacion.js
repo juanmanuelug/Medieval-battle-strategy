@@ -668,7 +668,18 @@ class Simulacion {
     } else if (u.orden === 'mover') {
       // al paso: 0,9 de la velocidad base (jinetes al trote); a la carrera: velocidad plena (jinetes al galope)
       destinoX = u.objetivoX; destinoY = u.objetivoY; velocidad = (u.marcha === 'correr' ? datos.velocidad * (datos.montado ? 1 : 1.4) : (datos.montado ? 3.5 : datos.velocidad * 0.9)) * (F.velocidad || 1); detener = 1.0;
-      if (distancia(u.origenX, u.origenY, destinoX, destinoY) <= detener) { u.orden = 'formar'; if (u.rumboFinal !== null) { if (Math.abs(this.diferenciaAngulo(u.rumboFinal, u.rumbo)) > GIRO_MEDIA_VUELTA && this.puedeMediaVuelta(u)) this.mediaVuelta(u); u.rumbo = u.rumboFinal; u.rumboFinal = null; } }
+      if (distancia(u.origenX, u.origenY, destinoX, destinoY) <= detener) {
+        // llegada (arreglado el 2026-10-16, lo vio el usuario: a veces no se quedaba mirando a donde se le pedía): si el rumbo
+        // pedido exige media vuelta, se da y la formación se coloca en el destino (la media vuelta pasa su referencia a la
+        // última fila); y en este paso ya no se marcha ni se gira hacia el destino: antes, con la referencia desplazada, el
+        // destino quedaba a la espalda, la unidad volvía a dar media vuelta y acababa mirando al revés de lo pedido
+        u.orden = 'formar';
+        if (u.rumboFinal !== null) {
+          if (Math.abs(this.diferenciaAngulo(u.rumboFinal, u.rumbo)) > GIRO_MEDIA_VUELTA && this.puedeMediaVuelta(u)) { this.mediaVuelta(u); u.origenX = destinoX; u.origenY = destinoY; }
+          u.rumbo = u.rumboFinal; u.rumboFinal = null;
+        }
+        destinoX = destinoY = null;
+      }
     } else if ((u.orden === 'avanzar' || u.orden === 'cargar' || u.orden === 'atacar') && objetivo) {
       // el destino se lleva más allá del centro enemigo según el fondo de la propia formación: así las filas de atrás
       // (una cuña, una columna) también entran en contacto en vez de quedarse paradas delante del enemigo
@@ -714,8 +725,13 @@ class Simulacion {
       const reculando = u.orden === 'huir' && u.retirada;
       // solo se orienta hacia el destino si tiene adónde moverse: con el destino en su propio sitio (formación detenida en el
       // contacto) atan2(0, 0) daba 0° y la unidad giraba en pleno combate hasta dar la espalda al enemigo (2026-10-13)
-      if (!reculando && Math.hypot(dx, dy) > Math.max(detener, 0.5)) this.girarHacia(u, rumboDeseado, dt);
-      const rumboMovimiento = reculando ? rumboDeseado : u.rumbo;
+      // movimiento corto (2026-10-16): con el destino más cerca que el fondo de la formación, darse la vuelta para ir hacia él
+      // no sirve (la media vuelta lleva la referencia a la última fila y el destino vuelve a quedar detrás: se quedaba girando
+      // sin llegar nunca); la formación se desliza hasta allí sin girarse y al llegar se orienta
+      let deslizar = false;
+      if (u.orden === 'mover' && d < 14) { let fondoMin = 0; for (const i of u.indices) if (this.localX[i] < fondoMin) fondoMin = this.localX[i]; deslizar = d < 1.5 - fondoMin; }
+      if (!reculando && !deslizar && Math.hypot(dx, dy) > Math.max(detener, 0.5)) this.girarHacia(u, rumboDeseado, dt);
+      const rumboMovimiento = reculando || deslizar ? rumboDeseado : u.rumbo;
       // fatiga y terreno frenan a la formación; el bosque, mucho
       velocidad *= (1 - 0.3 * u.fatiga) * (this.terreno ? FRENO_TERRENO[this.terreno.tipoEn(u.origenX, u.origenY)] : 1) * (datos.montado ? this.clima.velocidadMontado : this.clima.velocidad);
       // solo fatiga correr, cargar o huir; la marcha al paso no cansa

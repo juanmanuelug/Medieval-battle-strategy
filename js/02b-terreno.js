@@ -86,4 +86,36 @@ class Terreno {
     const col = limitar(Math.round(x / this.celda), 0, this.columnas - 1), fila = limitar(Math.round(y / this.celda), 0, this.filas - 1);
     return this.celdas[fila * this.columnas + col];
   }
+  /* Relieve (2026-10-16, fase 1 del terreno con volumen): alturas en metros SOLO PARA EL DIBUJO; la simulación no las usa (sigue
+     con los tipos de celda), así que no cambian las batallas ni el multijugador. Cada colina es una cúpula suave (smoothstep
+     desde un poco fuera de su borde) de ALTURA_COLINA_BASE + r × ALTURA_COLINA_POR_RADIO m; donde se solapan manda la más
+     alta; el cauce del río se hunde PROFUNDIDAD_RIO m con orillas en rampa. Se calcula la primera vez que se pide, en la
+     misma rejilla de 2 m que los tipos, y alturaEn interpola. */
+  prepararRelieve() {
+    if (this.alturas) return;
+    const ALTURA_COLINA_BASE = 2.5, ALTURA_COLINA_POR_RADIO = 0.13, BORDE_COLINA = 1.15, PROFUNDIDAD_RIO = 0.7, ORILLA = 2.5;
+    this.alturas = new Float32Array(this.columnas * this.filas);
+    const colinas = this.manchas.filter(m => m.tipo === TERRENO.COLINA).map(m => ({ m, altura: ALTURA_COLINA_BASE + m.r * ALTURA_COLINA_POR_RADIO, alcance: m.r * 1.25 * BORDE_COLINA + 1 }));
+    for (let fila = 0; fila < this.filas; fila++) for (let col = 0; col < this.columnas; col++) {
+      const x = col * this.celda, y = fila * this.celda;
+      let h = 0;
+      for (const { m, altura, alcance } of colinas) {
+        const dx = x - m.x, dy = y - m.y; if (Math.abs(dx) > alcance || Math.abs(dy) > alcance) continue;
+        const d = Math.hypot(dx, dy), radio = this.radioEn(m, Math.atan2(dy, dx)) * BORDE_COLINA;
+        const s = 1 - d / radio; if (s <= 0) continue;
+        const v = altura * s * s * (3 - 2 * s); if (v > h) h = v;
+      }
+      if (this.rio) {
+        const fuera = Math.abs(x - this.rio.centroX(y)) - this.rio.ancho / 2;
+        if (fuera < ORILLA) h = Math.min(h, fuera <= 0 ? -PROFUNDIDAD_RIO : -PROFUNDIDAD_RIO * (1 - fuera / ORILLA));
+      }
+      this.alturas[fila * this.columnas + col] = h;
+    }
+  }
+  alturaEn(x, y) {
+    if (!this.alturas) this.prepararRelieve();
+    const fx = limitar(x / this.celda, 0, this.columnas - 1.001), fy = limitar(y / this.celda, 0, this.filas - 1.001);
+    const c0 = Math.floor(fx), f0 = Math.floor(fy), tx = fx - c0, ty = fy - f0, i = f0 * this.columnas + c0, a = this.alturas;
+    return (a[i] * (1 - tx) + a[i + 1] * tx) * (1 - ty) + (a[i + this.columnas] * (1 - tx) + a[i + this.columnas + 1] * tx) * ty;
+  }
 }

@@ -54,8 +54,20 @@ class LienzoSangre {
     const trazar = (m, factor) => { c.beginPath(); for (let k = 0; k <= 48; k++) { const a = -Math.PI + k / 48 * 2 * Math.PI; const r = terreno.radioEn(m, a) * factor * ppm; const px = m.x * ppm + Math.cos(a) * r, py = m.y * ppm + Math.sin(a) * r; if (k === 0) c.moveTo(px, py); else c.lineTo(px, py); } c.closePath(); };
     for (const m of terreno.manchas) {
       if (m.tipo === 2) {
-        for (const [factor, color] of (nieve ? [[1, '#eef2f6'], [0.72, '#f4f7fa'], [0.45, '#fafcfd']] : [[1, '#6f8c3a'], [0.72, '#7a9842'], [0.45, '#86a34a']])) { trazar(m, factor); c.fillStyle = color; c.fill(); c.strokeStyle = nieve ? '#b8c4d0' : '#5a7330'; c.lineWidth = 1.5; c.stroke(); }
-      } else { trazar(m, 1); c.fillStyle = nieve ? '#4a5e48' : '#3e5a28'; c.fill(); }
+        // desde el relieve (2026-10-16) la forma la da pintarRelieve (sombreado y curvas de nivel reales): aquí solo un tono de
+        // hierba algo más clara y seca, que se funde con el llano (antes, tres anillos con borde que parecían terrazas)
+        c.save(); c.filter = 'blur(' + Math.round(2.5 * ppm) + 'px)'; trazar(m, 0.95); c.fillStyle = nieve ? '#f2f5f8' : '#72903c'; c.globalAlpha = 0.85; c.fill(); c.restore();
+      } else {
+        // suelo de bosque (2026-10-16): borde difuminado y hojarasca; las sombras de las copas las pone el renderizador
+        c.save(); c.filter = 'blur(' + Math.round(1.2 * ppm) + 'px)'; trazar(m, 1.02); c.fillStyle = nieve ? '#4a5e48' : '#3b5626'; c.fill(); c.restore();
+        const azar = crearAleatorio(Math.round(m.x * 31 + m.y * 17)), area = Math.PI * m.r * m.r;
+        for (let k = 0; k < area * 0.6; k++) {
+          const a = azar.entre(-Math.PI, Math.PI), r = Math.sqrt(azar.numero()) * terreno.radioEn(m, a) * 0.95;
+          c.globalAlpha = 0.35; c.fillStyle = nieve ? (azar.numero() < 0.5 ? '#dfe6ec' : '#6a7a62') : (azar.numero() < 0.4 ? '#5a4a26' : azar.numero() < 0.6 ? '#2c4019' : '#4b6a2c');
+          c.fillRect((m.x + Math.cos(a) * r) * ppm, (m.y + Math.sin(a) * r) * ppm, (0.15 + azar.numero() * 0.3) * ppm, (0.1 + azar.numero() * 0.2) * ppm);
+        }
+        c.globalAlpha = 1;
+      }
     }
     // río (2026-10-13): franja de agua con orillas y vados de grava; con nieve, el agua se ve más fría
     if (terreno.rio) {
@@ -63,11 +75,67 @@ class LienzoSangre {
       franja(1.2, nieve ? '#9aa6ae' : '#7a6a42');           // orillas
       franja(0, nieve ? '#5f86a8' : '#3f6f9a');             // agua
       franja(-rio.ancho * 0.3, nieve ? '#7aa0be' : '#4f84ad');
+      /* vados (2026-10-16, pedido del usuario: «más detalle, piedras y color de tierra mojada»): tierra mojada de borde
+         difuminado, zonas más oscuras y encharcadas a lo largo de la corriente, charcos que reflejan el cielo y muchos guijarros
+         con su brillo; las piedras grandes, con espuma, las pone el renderizador encima */
       for (const v of rio.vados) {
-        c.beginPath(); for (let y = v - rio.anchoVado / 2; y <= v + rio.anchoVado / 2; y += 1) c.lineTo((rio.centroX(y) - rio.ancho / 2 - 0.5) * ppm, y * ppm); for (let y = v + rio.anchoVado / 2; y >= v - rio.anchoVado / 2; y -= 1) c.lineTo((rio.centroX(y) + rio.ancho / 2 + 0.5) * ppm, y * ppm); c.closePath();
-        c.fillStyle = '#a89a72'; c.globalAlpha = 0.85; c.fill(); c.globalAlpha = 1;
+        const contorno = (sobra, recorte) => { c.beginPath(); for (let y = v - rio.anchoVado / 2 + recorte; y <= v + rio.anchoVado / 2 - recorte; y += 0.5) c.lineTo((rio.centroX(y) - rio.ancho / 2 - sobra) * ppm, y * ppm); for (let y = v + rio.anchoVado / 2 - recorte; y >= v - rio.anchoVado / 2 + recorte; y -= 0.5) c.lineTo((rio.centroX(y) + rio.ancho / 2 + sobra) * ppm, y * ppm); c.closePath(); };
+        const azar = crearAleatorio(Math.round(v * 97) + 5), aleatorioEn = () => { const y = v + azar.entre(-0.5, 0.5) * rio.anchoVado * 0.92, x = rio.centroX(y) + azar.entre(-0.5, 0.5) * (rio.ancho + 0.6); return [x, y]; };
+        c.save(); c.filter = 'blur(' + Math.round(0.6 * ppm) + 'px)';
+        contorno(0.6, 0); c.fillStyle = nieve ? '#7c7a72' : '#6a5a40'; c.globalAlpha = 0.95; c.fill();                 // tierra mojada
+        contorno(0.1, 1.2); c.fillStyle = nieve ? '#8f8c82' : '#7d6a4a'; c.globalAlpha = 0.6; c.fill();                 // centro algo más seco
+        c.restore();
+        // vetas oscuras y encharcadas a lo largo de la corriente
+        for (let k = 0; k < 9; k++) { const [x, y] = aleatorioEn(); c.globalAlpha = 0.35; c.fillStyle = nieve ? '#5c6670' : '#4a3d2a'; c.beginPath(); c.ellipse(x * ppm, y * ppm, azar.entre(0.3, 0.7) * ppm, azar.entre(1.2, 2.6) * ppm, 0, 0, Math.PI * 2); c.fill(); }
+        // charcos: agua quieta que refleja el cielo
+        for (let k = 0; k < 6; k++) { const [x, y] = aleatorioEn(); const rx = azar.entre(0.5, 1.3), ry = azar.entre(0.35, 0.9); c.globalAlpha = 0.55; c.fillStyle = nieve ? '#9cb6c8' : '#5d7f98'; c.beginPath(); c.ellipse(x * ppm, y * ppm, rx * ppm, ry * ppm, azar.entre(0, Math.PI), 0, Math.PI * 2); c.fill(); c.globalAlpha = 0.35; c.fillStyle = '#c8dce8'; c.beginPath(); c.ellipse((x - rx * 0.3) * ppm, (y - ry * 0.3) * ppm, rx * 0.35 * ppm, ry * 0.25 * ppm, 0, 0, Math.PI * 2); c.fill(); }
+        // guijarros: piedrecitas grises y pardas con contorno oscuro y un brillo
+        const colores = nieve ? ['#8a8c90', '#a2a4a8', '#6e7074'] : ['#8a8478', '#9c9282', '#6f6a60', '#a59a84', '#7a705c'];
+        for (let k = 0; k < Math.round(rio.anchoVado * rio.ancho * 2.2); k++) {
+          const [x, y] = aleatorioEn(), radio = azar.entre(0.07, 0.22), giro = azar.entre(0, Math.PI);
+          c.globalAlpha = 0.9; c.fillStyle = '#3a3226'; c.beginPath(); c.ellipse(x * ppm, y * ppm, (radio + 0.03) * ppm, (radio * 0.75 + 0.03) * ppm, giro, 0, Math.PI * 2); c.fill();
+          c.fillStyle = colores[azar.entero(0, colores.length - 1)]; c.beginPath(); c.ellipse(x * ppm, y * ppm, radio * ppm, radio * 0.75 * ppm, giro, 0, Math.PI * 2); c.fill();
+          c.globalAlpha = 0.6; c.fillStyle = '#e4e0d4'; c.beginPath(); c.ellipse((x - radio * 0.3) * ppm, (y - radio * 0.3) * ppm, radio * 0.3 * ppm, radio * 0.2 * ppm, giro, 0, Math.PI * 2); c.fill();
+        }
+        c.globalAlpha = 1;
       }
     }
+    this.version++;
+  }
+  /* Relieve (2026-10-16): sombreado según la pendiente (luz de arriba a la izquierda de la pantalla; con la vista girada del
+     jugador de la derecha, desde el otro lado para que se vea igual) y curvas de nivel cada EQUIDISTANCIA m, a partir de
+     terreno.alturaEn. Se calcula a RESOLUCION px/m en un lienzo aparte y se pinta encima del terreno, suavizado. */
+  pintarRelieve(terreno, opciones) {
+    if (!terreno || typeof terreno.alturaEn !== 'function') return;
+    const RESOLUCION = 3, EQUIDISTANCIA = 1.5, GROSOR_CURVA = 0.3, nieve = !!(opciones && opciones.nieve), girada = !!(opciones && opciones.girada);
+    const ancho = Math.ceil(CAMPO.ancho * RESOLUCION), alto = Math.ceil(CAMPO.alto * RESOLUCION);
+    const alturas = new Float32Array(ancho * alto);
+    let hayRelieve = false;
+    for (let py = 0; py < alto; py++) for (let px = 0; px < ancho; px++) { const h = terreno.alturaEn((px + 0.5) / RESOLUCION, (py + 0.5) / RESOLUCION); alturas[py * ancho + px] = h; if (h > 0.05) hayRelieve = true; }
+    if (!hayRelieve) return;
+    // luz: hacia la izquierda y arriba de la pantalla (en el mundo, −x algo −y), y desde lo alto
+    const signo = girada ? -1 : 1, lx = -0.62 * signo, ly = -0.2 * signo, lz = 0.76, largoLuz = Math.hypot(lx, ly, lz);
+    const lienzo = document.createElement('canvas'); lienzo.width = ancho; lienzo.height = alto;
+    const contexto = lienzo.getContext('2d'), imagen = contexto.createImageData(ancho, alto), datos = imagen.data;
+    const claro = nieve ? [255, 255, 255] : [255, 244, 196], oscuro = nieve ? [70, 90, 115] : [24, 34, 12], linea = nieve ? [120, 140, 165] : [40, 58, 22];
+    for (let py = 1; py < alto - 1; py++) for (let px = 1; px < ancho - 1; px++) {
+      const i = py * ancho + px, h = alturas[i];
+      const gx = (alturas[i + 1] - alturas[i - 1]) * RESOLUCION / 2, gy = (alturas[i + ancho] - alturas[i - ancho]) * RESOLUCION / 2;
+      const largo = Math.hypot(gx, gy, 1), luz = (-gx * lx - gy * ly + lz) / (largo * largoLuz) - lz / largoLuz;
+      const k = i * 4;
+      let r = claro[0], g = claro[1], b = claro[2], a = Math.min(95, luz * 330);
+      if (luz < 0) { r = oscuro[0]; g = oscuro[1]; b = oscuro[2]; a = Math.min(165, -luz * 480); }
+      // curva de nivel suave: opacidad según la distancia (en metros, por la pendiente) a la cota más cercana múltiplo de
+      // EQUIDISTANCIA; así sale una línea fina y difuminada en vez de un escalón de píxeles
+      if (h > 0.2) {
+        const fraccion = h / EQUIDISTANCIA - Math.floor(h / EQUIDISTANCIA), pendiente = Math.max(0.02, Math.hypot(gx, gy));
+        const metros = Math.min(fraccion, 1 - fraccion) * EQUIDISTANCIA / pendiente, intensidad = Math.max(0, 1 - metros / GROSOR_CURVA);
+        if (intensidad > 0) { const mezcla = intensidad * 0.55; r = r * (1 - mezcla) + linea[0] * mezcla; g = g * (1 - mezcla) + linea[1] * mezcla; b = b * (1 - mezcla) + linea[2] * mezcla; a = Math.max(a, intensidad * 55); }
+      }
+      datos[k] = r; datos[k + 1] = g; datos[k + 2] = b; datos[k + 3] = a;
+    }
+    contexto.putImageData(imagen, 0, 0);
+    const c = this.contexto; c.save(); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'; c.drawImage(lienzo, 0, 0, this.canvas.width, this.canvas.height); c.restore();
     this.version++;
   }
   // barro: charcos marrones repartidos por el campo (clima «barro» o «tormenta»)
