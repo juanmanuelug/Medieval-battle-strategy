@@ -38,7 +38,7 @@ const encuadrar = (page, x, y, zoom) => page.eval(`(()=>{const c=window.controlC
     await page.eval("document.getElementById('sel-actitud').value='ofensiva';document.getElementById('sel-actitud').dispatchEvent(new Event('change'));1");
     await clic(page, '#btn-batalla'); await esperar(400);
     await page.eval("var s=document.getElementById('sel-rama-ia');s.value='cruzado';s.dispatchEvent(new Event('change'));var k=document.getElementById('sel-clima');k.value='despejado';k.dispatchEvent(new Event('change'));var m=document.getElementById('sel-mapa');m.value='mixto';m.dispatchEvent(new Event('change'));1"); await esperar(200);
-    for (const [t, n] of [['infanteriaPesada', 1], ['templarios', 1], ['arqueros', 1], ['lanceros', 1], ['caballeriaPesada', 1]]) await page.eval(`document.querySelector('.btn-anadir-ia[data-tipo=${t}][data-nivel="${n}"]').click();1`);
+    for (const [t, n] of [['infanteriaPesada', 1], ['templarios', 3], ['arqueros', 1], ['lanceros', 1], ['caballeriaPesada', 1]]) await page.eval(`document.querySelector('.btn-anadir-ia[data-tipo=${t}][data-nivel="${n}"]').click();1`);
     await clic(page, '#btn-personalizada-batalla'); await esperar(4500);
     await clic(page, '#btn-discurso-cerrar'); await esperar(300);
     await page.eval("batalla.seleccionar([batalla.unidadesJugador[1]]);1"); await esperar(600);
@@ -80,10 +80,11 @@ const encuadrar = (page, x, y, zoom) => page.eval(`(()=>{const c=window.controlC
     await page.eval("document.getElementById('in-nombre-reino').value='Castilla';document.getElementById('in-nombre-rey').value='Alfonso';document.getElementById('form-reino').requestSubmit();1"); await esperar(700);
     await clic(page, '#btn-menu-personalizada'); await esperar(300);
     await clic(page, '[data-rama=cristiano]'); await esperar(1200);
-    for (const t of ['lanceros', 'infanteriaPesada', 'infanteriaLigera', 'arqueros', 'ballesteros', 'caballeriaPesada', 'mangoneles']) await page.eval(`(()=>{const b=document.querySelector('.btn-comprar[data-tipo=${t}][data-nivel="1"]');b.disabled=false;b.click();return 1})()`);
+    // (los mangoneles solo se venden a nivel 2, hombres de armas, desde el 2026-10-15)
+    for (const t of ['lanceros', 'infanteriaPesada', 'infanteriaLigera', 'arqueros', 'ballesteros', 'caballeriaPesada', 'mangoneles']) await page.eval(`(()=>{const b=document.querySelector('.btn-comprar[data-tipo=${t}][data-nivel="${t === 'mangoneles' ? 2 : 1}"]');b.disabled=false;b.click();return 1})()`);
     await clic(page, '#btn-batalla'); await esperar(400);
     await page.eval("var s=document.getElementById('sel-rama-ia');s.value='musulman';s.dispatchEvent(new Event('change'));var k=document.getElementById('sel-clima');k.value='despejado';k.dispatchEvent(new Event('change'));var m=document.getElementById('sel-mapa');m.value='abierto';m.dispatchEvent(new Event('change'));1"); await esperar(200);
-    await page.eval("document.querySelector('.btn-anadir-ia[data-tipo=arquerosACaballo][data-nivel=\"1\"]').click();1");
+    await page.eval("document.querySelector('.btn-anadir-ia[data-tipo=arquerosACaballo][data-nivel=\"3\"]').click();1");
     await clic(page, '#btn-personalizada-batalla'); await esperar(4500);
     await clic(page, '#btn-discurso-cerrar'); await clic(page, '#btn-b-comenzar'); await page.eval("batalla.fijarPausa(true);1");
     // en fila, separadas, mirando a la cámara
@@ -91,6 +92,36 @@ const encuadrar = (page, x, y, zoom) => page.eval(`(()=>{const c=window.controlC
     const fila = JSON.parse(await page.eval("JSON.stringify((()=>{const u=batalla.unidadesJugador.filter(u=>!u.esGeneral);return [u.reduce((s,v)=>s+v.origenX,0)/u.length,u.reduce((s,v)=>s+v.origenY,0)/u.length]})())"));
     await encuadrar(page, fila[0], fila[1] + 2, 1.05); await esperar(800);
     await capturar(page, '9-tropas');
+  }, { size: ANCHO + 'x' + ALTO, gpu: true, idioma: IDIOMA });
+  // 10. el terreno (2026-10-18): una colina con relieve, la infantería y los arqueros enemigos plantados en lo alto y la
+  // caballería propia seleccionada en el llano, con el ratón sobre el enemigo: el recuadro dice lo que da el terreno
+  await withPage(async page => {
+    await page.goto('file:///' + RAIZ.replace(/\\/g, '/') + '/juego.html', 2500);
+    await page.eval("window.confirm=()=>true;localStorage.clear();localStorage.setItem('batallas.tutorialVisto.v1','1');localStorage.setItem('batallas.idioma.v1','" + IDIOMA + "');1");
+    await clic(page, '#btn-inicio-nuevo'); await esperar(300);
+    await page.eval("document.getElementById('in-nombre-reino').value='Castilla';document.getElementById('in-nombre-rey').value='Alfonso';document.getElementById('form-reino').requestSubmit();1"); await esperar(700);
+    await clic(page, '#btn-menu-personalizada'); await esperar(300);
+    await clic(page, '[data-rama=cristiano]'); await esperar(1200);
+    for (const [t, n] of [['caballeriaPesada', 1], ['infanteriaPesada', 1], ['arqueros', 1]]) await page.eval(`document.querySelector('.btn-comprar[data-tipo=${t}][data-nivel="${n}"]').click();1`);
+    await clic(page, '#btn-batalla'); await esperar(400);
+    await page.eval("var s=document.getElementById('sel-rama-ia');s.value='musulman';s.dispatchEvent(new Event('change'));var k=document.getElementById('sel-clima');k.value='despejado';k.dispatchEvent(new Event('change'));var m=document.getElementById('sel-mapa');if(m){m.value='colinas';m.dispatchEvent(new Event('change'));}1"); await esperar(200);
+    for (const [t, n] of [['infanteriaPesada', 1], ['arqueros', 1]]) await page.eval(`document.querySelector('.btn-anadir-ia[data-tipo=${t}][data-nivel="${n}"]').click();1`);
+    await clic(page, '#btn-personalizada-batalla'); await esperar(4500);
+    await clic(page, '#btn-discurso-cerrar'); await clic(page, '#btn-b-comenzar'); await page.eval("batalla.fijarPausa(true);1");
+    // la colina más grande del centro del campo; el enemigo en lo alto mirando al oeste y lo propio en el llano al oeste
+    const colina = JSON.parse(await page.eval("JSON.stringify((()=>{const t=batalla.sim.terreno;let mejor=null;for(const m of t.manchas)if(m.tipo===2&&m.x>130&&m.x<310&&m.y>70&&m.y<250&&(!mejor||m.r>mejor.r))mejor=m;return {x:mejor.x,y:mejor.y,r:mejor.r}})())"));
+    await page.eval(`(()=>{const s=batalla.sim,c=${JSON.stringify(colina)},enemigos=batalla.unidadesIA.filter(u=>!u.esGeneral),propias=batalla.unidadesJugador.filter(u=>!u.esGeneral);
+      const centrar=u=>{let sx=0,sy=0;for(const i of u.indices){sx+=s.posX[i];sy+=s.posY[i];}u.centroX=sx/u.indices.length;u.centroY=sy/u.indices.length;};
+      enemigos.forEach((u,k)=>{s.recolocarUnidad(u,c.x-c.r*0.32+(u.stats.alcanceTiro?7:0),c.y-11+k*22,Math.PI);centrar(u);});
+      propias.forEach((u,k)=>{s.recolocarUnidad(u,c.x-c.r*1.75-(u.stats.alcanceTiro?10:0),c.y-24+k*24,0);centrar(u);});
+      const general=batalla.unidadesJugador.find(u=>u.esGeneral);if(general){s.recolocarUnidad(general,c.x-c.r*2.4,c.y,0);centrar(general);}
+      const generalIA=batalla.unidadesIA.find(u=>u.esGeneral);if(generalIA){s.recolocarUnidad(generalIA,c.x+c.r*1.2,c.y,Math.PI);centrar(generalIA);}
+      batalla.seleccionar([propias.find(u=>u.stats.montado)]);return 1})()`);
+    await encuadrar(page, colina.x - colina.r * 0.75, colina.y, 1.15); await esperar(800);
+    // el ratón sobre la infantería enemiga de lo alto
+    await page.eval(`(()=>{const c=window.controlCamaraIso,u=batalla.unidadesIA.find(u=>!u.esGeneral&&!u.stats.alcanceTiro),[px,py]=c.mundoAPantalla(u.centroX,u.centroY);document.querySelector('#escenario canvas').dispatchEvent(new PointerEvent('pointermove',{clientX:px,clientY:py-6,bubbles:true}));return 1})()`);
+    await esperar(700);
+    await capturar(page, '10-terreno');
   }, { size: ANCHO + 'x' + ALTO, gpu: true, idioma: IDIOMA });
   console.log('capturas en', SALIDA);
 })();

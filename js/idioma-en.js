@@ -4,6 +4,14 @@
    sustitución puede ser una cadena ($1…) o una función (para traducir dentro, con traducirTexto).
    Al añadir un texto al juego, añadir aquí su traducción (la prueba de cobertura lista lo que falte). */
 const TEXTOS_EN = {
+  // ---- pista de altura (fase 2 del terreno) ----
+  'Fuera de alcance: {d} m de {a}': 'Out of range: {d} m of {a}', 'A tiro: {d} m de {a}': 'In range: {d} m of {a}',
+  'Tapado: el terreno no deja verlo': 'Blocked: the ground hides it from view', 'Tapado: las flechas chocarían con la colina': 'Blocked: the arrows would hit the hill',
+  'Desde arriba: +{n} % de alcance': 'From above: +{n}% range', 'Desde abajo: −{n} % de alcance': 'From below: −{n}% range',
+  'Cuesta abajo: +{n} % en el cuerpo a cuerpo': 'Downhill: +{n}% in melee', 'Cuesta arriba: −{n} % en el cuerpo a cuerpo': 'Uphill: −{n}% in melee',
+  'Carga cuesta abajo: +{n} %': 'Downhill charge: +{n}%', 'Carga cuesta arriba: −{n} %': 'Uphill charge: −{n}%',
+  'El terreno': 'The terrain',
+  'Gana las alturas: se golpea más fuerte cuesta abajo, la caballería carga mejor bajando y peor subiendo, y desde arriba se dispara más lejos. Subir frena y cansa. Las colinas tapan: las ballestas solo tiran a quien ven y las flechas que chocan con una ladera se quedan en ella. Los bosques frenan, impiden cargar y protegen de las flechas; el agua frena muchísimo y los vados son el paso. Con tropas seleccionadas, pasa el ratón por un enemigo para ver qué te da el terreno contra él.': 'Take the high ground: blows land harder downhill, cavalry charges better going down and worse going up, and you shoot further from above. Climbing slows and tires. Hills block: crossbows only shoot at what they can see, and arrows that hit a slope stay in it. Forests slow you down, stop charges and protect from arrows; water slows you down a lot and fords are the way across. With troops selected, hover over an enemy to see what the ground gives you against it.',
   // ---- inicio, reino y menú ----
   'Batallas medievales': 'Medieval Battles',
   'Funda tu reino, recluta un ejército y dirígelo en batallas masivas.': 'Found your kingdom, raise an army and lead it in massive battles.',
@@ -125,8 +133,8 @@ const TEXTOS_EN = {
   'Valle': 'Valley', 'Dos cordilleras a lo largo de los bordes y un valle llano en medio.': 'Two ridges along the edges and a flat valley in between.',
   'Río con vados': 'River with fords', 'Un río cruza el campo entre los dos ejércitos: el agua frena muchísimo y no deja cargar; los vados son el paso.': 'A river crosses the field between the two armies: the water slows a lot and prevents charges; the fords are the way across.',
   'Fácil': 'Easy', 'Normal': 'Normal', 'Difícil': 'Hard', 'Brutal': 'Brutal',
-  'La IA gasta un 70 % de tu oro y recluta tropas algo peores que las tuyas.': 'The AI spends 70 % of your gold and recruits somewhat worse troops than yours.', 'La IA gasta tanto como tú, con tropas de calidad parecida.': 'The AI spends as much as you, with troops of similar quality.',
-  'La IA gasta un 30 % más y recluta tropas algo mejores.': 'The AI spends 30 % more and recruits somewhat better troops.', 'La IA gasta un 70 % más y recluta un nivel por encima del tuyo.': 'The AI spends 70 % more and recruits one level above yours.',
+  'La IA gasta un 70 % de tu oro y recluta tropas algo peores que las tuyas. Reacciona tarde, sus tiradores se distraen y su caballería a veces carga cuesta arriba.': 'The AI spends 70 % of your gold and recruits somewhat worse troops than yours. It reacts late, its archers get distracted and its cavalry sometimes charges uphill.', 'La IA gasta tanto como tú, con tropas de calidad parecida.': 'The AI spends as much as you, with troops of similar quality.',
+  'La IA gasta un 30 % más y recluta tropas algo mejores. Flanquea, forma muro ante tus cargas y concentra el fuego de sus tiradores.': 'The AI spends 30 % more and recruits somewhat better troops. It flanks, forms a shield wall against your charges and focuses its archers’ fire.', 'La IA gasta un 70 % más y recluta un nivel por encima del tuyo. Juega como en difícil: flanquea, forma muro ante tus cargas y concentra el fuego.': 'The AI spends 70 % more and recruits one level above yours. It plays like Hard: it flanks, forms a shield wall against your charges and focuses its fire.',
   'Ofensiva': 'Offensive', 'Defensiva': 'Defensive', 'El enemigo avanza con todo su ejército a por el tuyo.': 'The enemy advances with its whole army against yours.',
   'El enemigo se planta (en una colina si tiene una cerca) y espera tu ataque; contraataca lo que se le acerca. Si le acribillas desde lejos o no atacas en cuatro minutos, pierde la paciencia y ataca.': 'The enemy stands its ground (on a hill if there is one nearby) and waits for your attack; it counter-attacks whatever comes close. If you riddle it from afar or do not attack within four minutes, it loses patience and attacks.',
   // ---- ramas ----
@@ -226,6 +234,7 @@ const PATRONES_EN = [
   [/^· el enemigo espera tu ataque$/, '· the enemy awaits your attack'],
   [/^· el enemigo no aguanta más tus andanadas y pasa al ataque$/, '· the enemy can take no more of your volleys and attacks'],
   [/^· el enemigo se cansa de esperar y pasa al ataque$/, '· the enemy grows tired of waiting and attacks'],
+  [/^· el enemigo se ve vencedor y pasa al ataque$/, '· the enemy smells victory and attacks'],
   [/^· ¡desincronizado del servidor!$/, '· out of sync with the server!'],
   [/^(Tus soldados|Soldados enemigos) en el campo \/ al empezar$/, (m, q) => `${q === 'Tus soldados' ? 'Your soldiers' : 'Enemy soldiers'} on the field / at the start`],
   [/^(\d+) en pie(?:, (\d+) en retirada)?(?:, (\d+) huyendo)?$/, (m, a, r, h) => `${a} standing${r ? `, ${r} retreating` : ''}${h ? `, ${h} fleeing` : ''}`],

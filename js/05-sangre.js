@@ -102,41 +102,147 @@ class LienzoSangre {
     }
     this.version++;
   }
-  /* Relieve (2026-10-16): sombreado según la pendiente (luz de arriba a la izquierda de la pantalla; con la vista girada del
-     jugador de la derecha, desde el otro lado para que se vea igual) y curvas de nivel cada EQUIDISTANCIA m, a partir de
-     terreno.alturaEn. Se calcula a RESOLUCION px/m en un lienzo aparte y se pinta encima del terreno, suavizado. */
+  /* Relieve (2026-10-16; con más detalle el mismo día, pedido del usuario: «parece un dibujo muy simple y en mapas nevados es
+     difícil ver el relieve»). Solo dibujo: se pinta una vez sobre el suelo, a partir de terreno.alturaEn, en un lienzo aparte a
+     RESOLUCION px/m que se escala con suavizado. Capas, de abajo arriba, mezcladas en cada píxel:
+     1. color según la altura (cimas de hierba más seca y amarilla) y la pendiente (tierra en las laderas fuertes; con nieve,
+        roca gris azulada, porque en lo empinado la nieve no cuaja), a manchas según un ruido;
+     2. sombreado por la luz (arriba a la izquierda de la pantalla; con la vista girada, desde el otro lado) sobre una
+        superficie con MICRORRELIEVE (ruido suave en dos escalas, más fuerte cuanto más alta la colina: las laderas dejan de
+        parecer una cúpula lisa), oscurecimiento en el pie de las laderas (curvatura cóncava) y algo de luz en las crestas;
+        con nieve, sombras azuladas y más fuertes, que es lo que deja ver el relieve sobre el blanco;
+     3. curvas de nivel finas cada EQUIDISTANCIA m y una maestra más marcada cada CADA_MAESTRA;
+     y después, encima, rocas y pedregal en las laderas fuertes y en lo alto (pintarRocas). */
   pintarRelieve(terreno, opciones) {
     if (!terreno || typeof terreno.alturaEn !== 'function') return;
-    const RESOLUCION = 3, EQUIDISTANCIA = 1.5, GROSOR_CURVA = 0.3, nieve = !!(opciones && opciones.nieve), girada = !!(opciones && opciones.girada);
+    const RESOLUCION = 3, EQUIDISTANCIA = 1.5, CADA_MAESTRA = 3, GROSOR_CURVA = 0.28, MICRORRELIEVE = 0.22;
+    const nieve = !!(opciones && opciones.nieve), girada = !!(opciones && opciones.girada);
     const ancho = Math.ceil(CAMPO.ancho * RESOLUCION), alto = Math.ceil(CAMPO.alto * RESOLUCION);
     const alturas = new Float32Array(ancho * alto);
-    let hayRelieve = false;
-    for (let py = 0; py < alto; py++) for (let px = 0; px < ancho; px++) { const h = terreno.alturaEn((px + 0.5) / RESOLUCION, (py + 0.5) / RESOLUCION); alturas[py * ancho + px] = h; if (h > 0.05) hayRelieve = true; }
+    let hayRelieve = false, alturaMaxima = 0;
+    for (let py = 0; py < alto; py++) for (let px = 0; px < ancho; px++) { const h = terreno.alturaEn((px + 0.5) / RESOLUCION, (py + 0.5) / RESOLUCION); alturas[py * ancho + px] = h; if (h > 0.05) hayRelieve = true; if (h > alturaMaxima) alturaMaxima = h; }
     if (!hayRelieve) return;
-    // luz: hacia la izquierda y arriba de la pantalla (en el mundo, −x algo −y), y desde lo alto
+    /* campo suavizado (dos pasadas de caja de RADIO_SUAVIZADO px por eje, casi gaussiano): alturaEn interpola en celdas de 2 m y
+       sus derivadas (pendiente, curvatura, sombreado) marcan el borde de cada celda; derivadas del suavizado, sin cuadrícula */
+    const RADIO_SUAVIZADO = 4, suave = new Float32Array(alturas), temporal = new Float32Array(ancho * alto);
+    const pasada = (origen, destino, paso, largo, cuantas) => {
+      for (let linea = 0; linea < cuantas; linea++) {
+        const base = paso === 1 ? linea * ancho : linea, saltoLinea = paso; let suma = 0, n = 0;
+        for (let k = -RADIO_SUAVIZADO; k <= RADIO_SUAVIZADO; k++) if (k >= 0 && k < largo) { suma += origen[base + k * saltoLinea]; n++; }
+        for (let k = 0; k < largo; k++) {
+          destino[base + k * saltoLinea] = suma / n;
+          const sale = k - RADIO_SUAVIZADO, entra = k + RADIO_SUAVIZADO + 1;
+          if (sale >= 0) { suma -= origen[base + sale * saltoLinea]; n--; }
+          if (entra < largo) { suma += origen[base + entra * saltoLinea]; n++; }
+        }
+      }
+    };
+    for (let vez = 0; vez < 2; vez++) { pasada(suave, temporal, 1, ancho, alto); pasada(temporal, suave, ancho, alto, ancho); }
+    // ruido de valor suave (rejilla de valores al azar interpolada con smoothstep), en metros del mundo
+    const ruido = (semilla, lado) => {
+      const azar = crearAleatorio(semilla), columnas = Math.ceil(CAMPO.ancho / lado) + 2, filas = Math.ceil(CAMPO.alto / lado) + 2, valores = new Float32Array(columnas * filas);
+      for (let k = 0; k < valores.length; k++) valores[k] = azar.entre(-1, 1);
+      return (x, y) => {
+        const fx = x / lado, fy = y / lado, c0 = Math.floor(fx), f0 = Math.floor(fy); let tx = fx - c0, ty = fy - f0;
+        tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+        const i = f0 * columnas + c0;
+        return (valores[i] * (1 - tx) + valores[i + 1] * tx) * (1 - ty) + (valores[i + columnas] * (1 - tx) + valores[i + columnas + 1] * tx) * ty;
+      };
+    };
+    const ruidoGrande = ruido(71, 9), ruidoFino = ruido(72, 3.2), ruidoManchas = ruido(73, 4.5);
+    // superficie con microrrelieve para el sombreado (las curvas de nivel y el color siguen la altura real)
+    const detalle = new Float32Array(ancho * alto), manchas = new Float32Array(ancho * alto);
+    for (let py = 0; py < alto; py++) for (let px = 0; px < ancho; px++) {
+      const i = py * ancho + px, h = alturas[i], x = (px + 0.5) / RESOLUCION, y = (py + 0.5) / RESOLUCION;
+      manchas[i] = ruidoManchas(x, y);
+      if (h <= 0.05) { detalle[i] = suave[i]; continue; }
+      const peso = Math.min(1, h / 1.5);
+      detalle[i] = suave[i] + MICRORRELIEVE * peso * peso * (0.65 * ruidoGrande(x, y) + 0.35 * ruidoFino(x, y));
+    }
     const signo = girada ? -1 : 1, lx = -0.62 * signo, ly = -0.2 * signo, lz = 0.76, largoLuz = Math.hypot(lx, ly, lz);
     const lienzo = document.createElement('canvas'); lienzo.width = ancho; lienzo.height = alto;
     const contexto = lienzo.getContext('2d'), imagen = contexto.createImageData(ancho, alto), datos = imagen.data;
-    const claro = nieve ? [255, 255, 255] : [255, 244, 196], oscuro = nieve ? [70, 90, 115] : [24, 34, 12], linea = nieve ? [120, 140, 165] : [40, 58, 22];
-    for (let py = 1; py < alto - 1; py++) for (let px = 1; px < ancho - 1; px++) {
+    const P = nieve
+      ? { claro: [255, 252, 240], maxClaro: 70, oscuro: [52, 72, 104], maxOscuro: 205, fuerzaSombra: 700, cima: [255, 255, 255], maxCima: 0.25, ladera: [118, 128, 140], maxLadera: 0.72, pie: [70, 92, 125], maxPie: 0.32, linea: [96, 116, 146], fuerzaLinea: 0.5 }
+      : { claro: [255, 246, 200], maxClaro: 110, oscuro: [20, 30, 8], maxOscuro: 185, fuerzaSombra: 720, cima: [176, 170, 86], maxCima: 0.34, ladera: [112, 92, 56], maxLadera: 0.5, pie: [24, 38, 14], maxPie: 0.28, linea: [40, 56, 22], fuerzaLinea: 0.32 };
+    // mezcla «encima» de una capa (color, opacidad 0-1) sobre lo acumulado en r, g, b, a (a en 0-1)
+    let r = 0, g = 0, b = 0, a = 0;
+    const encima = (color, opacidad) => {
+      if (opacidad <= 0) return;
+      const nueva = opacidad + a * (1 - opacidad);
+      r = (color[0] * opacidad + r * a * (1 - opacidad)) / nueva; g = (color[1] * opacidad + g * a * (1 - opacidad)) / nueva; b = (color[2] * opacidad + b * a * (1 - opacidad)) / nueva; a = nueva;
+    };
+    const limite = (v, minimo, maximo) => v < minimo ? minimo : v > maximo ? maximo : v;
+    for (let py = 2; py < alto - 2; py++) for (let px = 2; px < ancho - 2; px++) {
       const i = py * ancho + px, h = alturas[i];
-      const gx = (alturas[i + 1] - alturas[i - 1]) * RESOLUCION / 2, gy = (alturas[i + ancho] - alturas[i - ancho]) * RESOLUCION / 2;
-      const largo = Math.hypot(gx, gy, 1), luz = (-gx * lx - gy * ly + lz) / (largo * largoLuz) - lz / largoLuz;
-      const k = i * 4;
-      let r = claro[0], g = claro[1], b = claro[2], a = Math.min(95, luz * 330);
-      if (luz < 0) { r = oscuro[0]; g = oscuro[1]; b = oscuro[2]; a = Math.min(165, -luz * 480); }
-      // curva de nivel suave: opacidad según la distancia (en metros, por la pendiente) a la cota más cercana múltiplo de
-      // EQUIDISTANCIA; así sale una línea fina y difuminada en vez de un escalón de píxeles
-      if (h > 0.2) {
-        const fraccion = h / EQUIDISTANCIA - Math.floor(h / EQUIDISTANCIA), pendiente = Math.max(0.02, Math.hypot(gx, gy));
-        const metros = Math.min(fraccion, 1 - fraccion) * EQUIDISTANCIA / pendiente, intensidad = Math.max(0, 1 - metros / GROSOR_CURVA);
-        if (intensidad > 0) { const mezcla = intensidad * 0.55; r = r * (1 - mezcla) + linea[0] * mezcla; g = g * (1 - mezcla) + linea[1] * mezcla; b = b * (1 - mezcla) + linea[2] * mezcla; a = Math.max(a, intensidad * 55); }
+      r = g = b = a = 0;
+      // pendiente y curvatura del campo suavizado (con pasos de 2 px)
+      const gxReal = (suave[i + 2] - suave[i - 2]) * RESOLUCION / 4, gyReal = (suave[i + 2 * ancho] - suave[i - 2 * ancho]) * RESOLUCION / 4;
+      const pendiente = Math.hypot(gxReal, gyReal);
+      const curvatura = (suave[i + 2] + suave[i - 2] + suave[i + 2 * ancho] + suave[i - 2 * ancho] - 4 * suave[i]) * RESOLUCION * RESOLUCION / 4;
+      if (h > 0.05 || pendiente > 0.01) {
+        // 1. color por altura y por pendiente, a manchas
+        encima(P.cima, P.maxCima * limite(h / Math.max(4, alturaMaxima * 0.85), 0, 1) * limite(0.75 + manchas[i] * 0.5, 0, 1));
+        encima(P.ladera, P.maxLadera * limite((pendiente - 0.1) / 0.14, 0, 1) * limite(0.45 + manchas[i] * 1.1, 0, 1));
+        // pie de la ladera (cóncavo): algo más oscuro; cresta (convexa): se aclara en el sombreado
+        if (curvatura > 0) encima(P.pie, P.maxPie * limite(curvatura * 6, 0, 1));
       }
-      datos[k] = r; datos[k + 1] = g; datos[k + 2] = b; datos[k + 3] = a;
+      // 2. sombreado sobre la superficie con microrrelieve
+      const gx = (detalle[i + 1] - detalle[i - 1]) * RESOLUCION / 2, gy = (detalle[i + ancho] - detalle[i - ancho]) * RESOLUCION / 2;
+      const luz = (-gx * lx - gy * ly + lz) / (Math.hypot(gx, gy, 1) * largoLuz) - lz / largoLuz + (curvatura < 0 ? limite(-curvatura * 0.8, 0, 0.05) : 0);
+      if (luz > 0) encima(P.claro, Math.min(P.maxClaro, luz * 450) / 255);
+      else encima(P.oscuro, Math.min(P.maxOscuro, -luz * P.fuerzaSombra) / 255);
+      // 3. curvas de nivel: opacidad según la distancia (en metros, por la pendiente) a la cota más cercana; la maestra, más gruesa
+      if (h > 0.2) {
+        const cotas = h / EQUIDISTANCIA, cercana = Math.round(cotas), maestra = cercana % CADA_MAESTRA === 0;
+        const metros = Math.abs(cotas - cercana) * EQUIDISTANCIA / Math.max(0.02, pendiente);
+        const intensidad = Math.max(0, 1 - metros / (GROSOR_CURVA * (maestra ? 1.7 : 1)));
+        if (intensidad > 0 && cercana > 0) encima(P.linea, intensidad * P.fuerzaLinea * (maestra ? 0.5 : 0.3));
+      }
+      const k = i * 4; datos[k] = r; datos[k + 1] = g; datos[k + 2] = b; datos[k + 3] = a * 255;
     }
     contexto.putImageData(imagen, 0, 0);
     const c = this.contexto; c.save(); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'; c.drawImage(lienzo, 0, 0, this.canvas.width, this.canvas.height); c.restore();
+    this.pintarRocas(terreno, { nieve, lx, ly });
     this.version++;
+  }
+  /* Rocas y pedregal (2026-10-16): piedras sueltas donde la ladera es fuerte y en lo alto de las colinas grandes, con la sombra
+     hacia abajo de la pendiente, el lado de la luz más claro y, con nieve, un casquete blanco; debajo de algunas, un reguero de
+     pedregal cuesta abajo. Ni en el bosque ni en el agua. */
+  pintarRocas(terreno, o) {
+    const c = this.contexto, ppm = this.pixelesPorMetro, azar = crearAleatorio(4711), nieve = o.nieve;
+    const colores = nieve ? ['#5e6874', '#6c7682', '#545e6a'] : ['#7a7264', '#867e6e', '#6a6254', '#8e8572'];
+    const candidatos = Math.round(CAMPO.ancho * CAMPO.alto / 30);
+    for (let k = 0; k < candidatos; k++) {
+      const x = azar.entre(2, CAMPO.ancho - 2), y = azar.entre(2, CAMPO.alto - 2), suerte = azar.numero(), tamano = azar.entre(0.35, 0.85), giro = azar.entre(0, Math.PI);
+      const h = terreno.alturaEn(x, y); if (h < 0.8) continue;
+      const tipo = terreno.tipoEn(x, y); if (tipo === TERRENO.BOSQUE || tipo === TERRENO.AGUA || tipo === TERRENO.VADO) continue;
+      const px = terreno.pendienteEn ? terreno.pendienteEn(x, y, 1, 0) : 0, py = terreno.pendienteEn ? terreno.pendienteEn(x, y, 0, 1) : 0, pendiente = Math.hypot(px, py);
+      const probabilidad = Math.min(1, Math.max(0, (pendiente - 0.15) / 0.1)) * 0.25 + (h > 5.5 ? 0.03 : 0);
+      if (suerte > probabilidad) continue;
+      const bajada = pendiente > 0.001 ? [-px / pendiente, -py / pendiente] : [0, 1];     // hacia dónde baja la ladera
+      const radio = tamano * (h > 5 && suerte < 0.05 ? 1.8 : 1);
+      // reguero de pedregal cuesta abajo
+      if (suerte < probabilidad * 0.35) {
+        c.globalAlpha = nieve ? 0.35 : 0.3; c.fillStyle = nieve ? '#8892a0' : '#7a6c50';
+        for (let p = 0; p < 7; p++) { const d = radio + azar.entre(0.2, 2.2), lado = azar.entre(-0.5, 0.5); c.beginPath(); c.ellipse((x + bajada[0] * d - bajada[1] * lado) * ppm, (y + bajada[1] * d + bajada[0] * lado) * ppm, azar.entre(0.06, 0.14) * ppm, azar.entre(0.05, 0.1) * ppm, 0, 0, Math.PI * 2); c.fill(); }
+      }
+      // sombra hacia abajo de la pendiente
+      c.globalAlpha = nieve ? 0.4 : 0.45; c.fillStyle = nieve ? '#3c5070' : '#1e2410';
+      c.beginPath(); c.ellipse((x + bajada[0] * radio * 0.45) * ppm, (y + bajada[1] * radio * 0.45) * ppm, radio * 1.05 * ppm, radio * 0.75 * ppm, giro, 0, Math.PI * 2); c.fill();
+      // la piedra: polígono irregular con contorno, lado de la luz más claro y, con nieve, casquete blanco
+      const puntos = [], lados = 5 + (k % 3);
+      for (let q = 0; q < lados; q++) { const angulo = giro + q / lados * Math.PI * 2 + azar.entre(-0.25, 0.25), distanciaCentro = radio * azar.entre(0.6, 1.15); puntos.push([x + Math.cos(angulo) * distanciaCentro, y + Math.sin(angulo) * distanciaCentro * 0.8]); }
+      const trazo = () => { c.beginPath(); puntos.forEach(([qx, qy], q) => q ? c.lineTo(qx * ppm, qy * ppm) : c.moveTo(qx * ppm, qy * ppm)); c.closePath(); };
+      c.globalAlpha = 1; trazo(); c.fillStyle = colores[k % colores.length]; c.fill(); c.lineWidth = Math.max(1, 0.06 * ppm); c.strokeStyle = nieve ? '#4a5666' : '#3a3428'; c.stroke();
+      c.save(); trazo(); c.clip();
+      // cara a la luz algo más clara (media piedra, con borde recto) y la de la sombra más oscura: volumen sin brillo
+      c.globalAlpha = 0.35; c.fillStyle = nieve ? '#a4adb8' : '#aca38c'; c.beginPath(); c.moveTo((x + o.ly * radio * 2) * ppm, (y - o.lx * radio * 2) * ppm); c.lineTo((x - o.ly * radio * 2) * ppm, (y + o.lx * radio * 2) * ppm); c.lineTo((x + o.lx * radio * 3 - o.ly * radio * 2) * ppm, (y + o.ly * radio * 3 + o.lx * radio * 2) * ppm); c.lineTo((x + o.lx * radio * 3 + o.ly * radio * 2) * ppm, (y + o.ly * radio * 3 - o.lx * radio * 2) * ppm); c.closePath(); c.fill();
+      c.globalAlpha = 0.25; c.fillStyle = '#20242a'; c.beginPath(); c.moveTo((x + o.ly * radio * 2) * ppm, (y - o.lx * radio * 2) * ppm); c.lineTo((x - o.ly * radio * 2) * ppm, (y + o.lx * radio * 2) * ppm); c.lineTo((x - o.lx * radio * 3 - o.ly * radio * 2) * ppm, (y - o.ly * radio * 3 + o.lx * radio * 2) * ppm); c.lineTo((x - o.lx * radio * 3 + o.ly * radio * 2) * ppm, (y - o.ly * radio * 3 - o.lx * radio * 2) * ppm); c.closePath(); c.fill();
+      if (nieve) { c.globalAlpha = 0.9; c.fillStyle = '#eef2f6'; c.beginPath(); c.ellipse((x + o.lx * radio * 0.3) * ppm, (y + o.ly * radio * 0.3 - radio * 0.3) * ppm, radio * 0.6 * ppm, radio * 0.3 * ppm, giro * 0.3, 0, Math.PI * 2); c.fill(); }
+      c.restore();
+    }
+    c.globalAlpha = 1;
   }
   // barro: charcos marrones repartidos por el campo (clima «barro» o «tormenta»)
   pintarBarro(azar) {

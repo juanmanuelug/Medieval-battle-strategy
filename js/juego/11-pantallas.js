@@ -294,7 +294,7 @@ function actualizarHudBatalla(sim, seleccion, equipoPropio) {
   elemento('#hud-reloj').textContent = Math.floor(segundos / 60) + ':' + String(segundos % 60).padStart(2, '0');
   // aviso cuando la IA defensiva espera o pierde la paciencia y pasa al ataque (en la línea de información)
   const actitud = batalla && !batalla.enRed && batalla.actitudIA ? batalla.actitudIA() : null;
-  const avisoActitud = actitud && actitud.motivo ? `el enemigo ${actitud.motivo === 'bajas' ? 'no aguanta más tus andanadas' : 'se cansa de esperar'} y pasa al ataque` : actitud && actitud.actual === 'defensiva' ? 'el enemigo espera tu ataque' : '';
+  const avisoActitud = actitud && actitud.motivo ? `el enemigo ${actitud.motivo === 'bajas' ? 'no aguanta más tus andanadas' : actitud.motivo === 'ventaja' ? 'se ve vencedor' : 'se cansa de esperar'} y pasa al ataque` : actitud && actitud.actual === 'defensiva' ? 'el enemigo espera tu ataque' : '';
   const huecoAviso = elemento('#hud-aviso-actitud');
   if (huecoAviso) { huecoAviso.textContent = avisoActitud ? ' · ' + avisoActitud : ''; huecoAviso.className = actitud && actitud.motivo ? 'aviso-actitud' : 'nota'; }
   // control de tiempo: el botón activo dice el estado (pausa, normal o ×2)

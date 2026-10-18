@@ -1,3 +1,35 @@
+# La altura cuenta en el combate (18 de octubre de 2026)
+
+## Terreno
+- **Ganar las alturas da ventaja**: se golpea más fuerte cuesta abajo y peor cuesta arriba, según lo empinada que sea la ladera (hasta +20 % / −15 %). Antes era un +15 % fijo por estar en cualquier celda de colina.
+- **Subir cuesta**: cuesta arriba se marcha hasta un 25 % más despacio y se cansa más; cuesta abajo, algo más rápido.
+- **Cargas**: la caballería carga hasta un 30 % mejor bajando y un 30 % peor subiendo, según la subida o bajada de los últimos 12 m de carrera (así cuenta subir la ladera aunque el enemigo espere en lo alto, casi en llano).
+- **La caballería enemiga elige mejor a quién cargar**: busca las tropas que no están en alto, sobre todo las más débiles cuerpo a cuerpo (tiradores, infantería ligera, unidades diezmadas), y evita a los lanceros de frente. Si todo tu ejército está en una colina, carga para apoyar a sus tropas trabadas, coge por la espalda a quien está peleando o, si no, va a por la unidad más débil. Si hay otra unidad en medio, la rodea por fuera en vez de estrellarse contra ella.
+- **Alcance según la altura**: desde arriba se dispara más lejos y desde abajo menos (±3 % por metro de desnivel, hasta ±20 %).
+- **Línea de visión**: las colinas tapan. Las ballestas solo tiran a quien ven; los arcos y los mangoneles tiran en parábola por encima, pero las flechas que chocan con una ladera se quedan clavadas en ella. Si el blanco está tapado y se les ordena atacar, los tiradores se acercan hasta verlo.
+- **Aviso en pantalla**: con tropas seleccionadas, al pasar el ratón por un enemigo se ve qué te da el terreno contra él (cuerpo a cuerpo, carga, alcance o si está tapado).
+- Nueva página «El terreno» en el tutorial.
+- **Colinas con más detalle**: las cimas tienen hierba más seca, asoma la tierra en las laderas fuertes, la superficie tiene pequeñas ondulaciones y hay rocas y pedregal. Las sombras son más marcadas y las curvas de nivel más finas. Con nieve, sombras azuladas y roca al descubierto en lo empinado, para que el relieve se vea sobre el blanco.
+
+## La dificultad también cambia cómo juega la IA
+- **Difícil y Brutal**: la infantería enemiga libre flanquea a tus unidades que ya pelean con las suyas (rodea y entra por el costado o la espalda); sus unidades forman muro de escudos (o cuadro) cuando ven venir una carga tuya y lo deshacen al pasar; y sus tiradores concentran el fuego en el blanco donde más bajas sacan.
+- **Fácil**: la IA reacciona más tarde (decide cada 3 s), sus tiradores se distraen cambiando de blanco y su caballería a veces carga cuesta arriba aunque tenga blancos mejores.
+- **Normal** juega como hasta ahora.
+- En cualquier dificultad, la IA defensiva sale a rematar cuando tiene el triple de soldados en pie que tú (antes podía quedarse esperando para siempre a unos pocos supervivientes).
+
+## Arreglos
+- **Las batallas ya no se alargan con unidades en retirada que no pueden volver**: una unidad veterana que se retira formada solo cuenta como en pie si puede rehacerse (moral suficiente y sin enemigos encima). Si la persiguen de cerca, o su moral no da para rehacerse, el bando que solo tiene eso está derrotado.
+- **Tutorial con capturas nuevas** (con el terreno con volumen), también en inglés, y captura para la página «El terreno».
+- **Soldados que se quedaban mirando de lado**: en el muro de escudos, al recolocarse, algunos soldados acababan mirando hacia donde se ajustaban y no al frente pedido. Ahora el que solo se recoloca en su puesto se mueve de lado mirando al frente. Comprobado con todas las tropas y formaciones, en llano y en ladera.
+
+## Equilibrio
+- **Los lanceros paran cualquier carga que no les llegue por la espalda**: da igual que estén parados, en marcha o peleando; la caballería se estrella, pierde la carga y se lleva el golpe. Antes solo la paraban si estaban quietos. Por la espalda (o huyendo) los arrolla como a cualquier otra infantería.
+
+## Al desplegar
+- Cambia la simulación: todos los jugadores tienen que recargar la página para jugar en red con la misma versión.
+
+---
+
 # Terreno con volumen y arreglos (16 de octubre de 2026, tarde)
 
 ## Terreno

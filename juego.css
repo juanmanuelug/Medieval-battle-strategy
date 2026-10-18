@@ -297,3 +297,10 @@ body.batalla-red #btn-b-rapido { display: none; }      /* en red se puede pedir 
 #control-sonido button{background:transparent;border:0;padding:0 7px;font-size:13px;line-height:22px;cursor:pointer;color:var(--muted,#b8a98f)}
 #control-sonido input[type=range]{width:0;opacity:0;margin:0;transition:width .15s,opacity .15s;accent-color:var(--gold);cursor:pointer}
 #control-sonido:hover input[type=range],#control-sonido:focus-within input[type=range]{width:80px;opacity:1;margin-right:8px}
+
+/* pista de altura junto al cursor (fase 2 del terreno, 2026-10-16) */
+.pista-altura { position: fixed; z-index: 60; pointer-events: none; background: rgba(22, 17, 11, 0.9); color: #efe4cc; border: 1px solid #8a6d3b; border-radius: 6px; padding: 5px 9px; font-size: 13px; line-height: 1.35; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); }
+.pista-altura[hidden] { display: none; }
+.pista-altura b { display: block; font-weight: 600; color: #f6d98c; margin-bottom: 1px; }
+.pista-altura .bien { color: #a6dc7e; }
+.pista-altura .mal { color: #f39272; }

@@ -600,15 +600,66 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   }
 
   /* ----- alcance de tiro (2026-10-11; cono desde el 2026-10-13) -----
-     Cono (o círculo, para los que disparan en movimiento) en el suelo con el alcance real de cada unidad a distancia: el de sus datos, ×1,15 si está en una colina y por el
-     clima (como en la simulación). Se ven los de los tiradores PROPIOS SELECCIONADOS (azul) y el del tirador ENEMIGO bajo el
+     Cono (o círculo, para los que disparan en movimiento) en el suelo con el alcance real de cada unidad a distancia: el de sus datos, por su altura (cada metro sobre el llano, +3 %) y
+     por el clima (como en la simulación, que además lo calcula respecto a la altura de cada blanco). Se ven los de los tiradores PROPIOS SELECCIONADOS (azul) y el del tirador ENEMIGO bajo el
      ratón (rojo). Los que se han quedado sin munición no tienen alcance. */
-  let enemigoBajoRaton = null, generalBajoRaton = null, ultimaBusquedaRaton = 0;
+  let enemigoBajoRaton = null, generalBajoRaton = null, ultimaBusquedaRaton = 0, enemigoParaPista = null;
+  /* ----- pista de altura (2026-10-16, fase 2 del terreno) -----
+     Con unidades propias seleccionadas y el ratón sobre un enemigo, un recuadro junto al cursor dice qué le hace el terreno a la
+     primera de ellas contra él: ventaja o desventaja en el cuerpo a cuerpo y en la carga según la pendiente, y para los
+     tiradores, el alcance a ese blanco y si la colina lo tapa. Usa las mismas fórmulas que la simulación, sin tocar su estado. */
+  const pistaAltura = document.createElement('div'); pistaAltura.className = 'pista-altura'; pistaAltura.hidden = true; document.body.appendChild(pistaAltura);
+  let pistaClave = '', pistaConTexto = false;
+  function textoPistaAltura(propia, enemigo) {
+    const dx = enemigo.centroX - propia.centroX, dy = enemigo.centroY - propia.centroY, d = Math.hypot(dx, dy) || 1;
+    // donde se chocaría: el soldado enemigo más cercano (no el centro: en una unidad plantada en lo alto queda detrás de la cima)
+    const frente = sim.soldadoMasCercano(enemigo, propia.centroX, propia.centroY);
+    const contactoX = frente >= 0 ? sim.posX[frente] : enemigo.centroX, contactoY = frente >= 0 ? sim.posY[frente] : enemigo.centroY;
+    const dc = Math.hypot(contactoX - propia.centroX, contactoY - propia.centroY) || 1, dirX = (contactoX - propia.centroX) / dc, dirY = (contactoY - propia.centroY) / dc;
+    // cuerpo a cuerpo: la pendiente allí, en la dirección del ataque (positiva: el enemigo queda arriba)
+    const pendiente = sim.pendienteEn(contactoX, contactoY, dirX, dirY);
+    const lineas = [], porcentaje = f => Math.round(Math.abs(f - 1) * 100), clase = f => f >= 1 ? 'bien' : 'mal';
+    const datos = propia.stats;
+    if (datos.alcanceTiro && !propia.sinMunicion) {
+      const alcance = sim.alcanceTiroDe(propia, enemigo), metros = Math.round(d);
+      if (d > alcance) lineas.push(['mal', tr('Fuera de alcance: {d} m de {a}', { d: metros, a: Math.round(alcance) })]);
+      else if (!sim.calcularLineaDeTiro(propia, enemigo)) lineas.push(['mal', datos.apuntado ? tr('Tapado: el terreno no deja verlo') : tr('Tapado: las flechas chocarían con la colina')]);
+      else lineas.push(['bien', tr('A tiro: {d} m de {a}', { d: metros, a: Math.round(alcance) })]);
+      const extra = Math.round((alcance / ((datos.alcanceTiro || 1) * ((sim.clima && sim.clima.alcanceTiro) || 1)) - 1) * 100);
+      if (Math.abs(extra) >= 3) lineas.push([extra > 0 ? 'bien' : 'mal', extra > 0 ? tr('Desde arriba: +{n} % de alcance', { n: extra }) : tr('Desde abajo: −{n} % de alcance', { n: -extra })]);
+    } else {
+      const mele = sim.factorAlturaMele(-pendiente);
+      if (porcentaje(mele) >= 2) lineas.push([clase(mele), mele > 1 ? tr('Cuesta abajo: +{n} % en el cuerpo a cuerpo', { n: porcentaje(mele) }) : tr('Cuesta arriba: −{n} % en el cuerpo a cuerpo', { n: porcentaje(mele) })]);
+      if (datos.montado) {
+        const carga = sim.factorCarga(sim.pendienteDeCarga(contactoX, contactoY, dirX, dirY));   // como en la simulación
+        if (porcentaje(carga) >= 2) lineas.push([clase(carga), carga > 1 ? tr('Carga cuesta abajo: +{n} %', { n: porcentaje(carga) }) : tr('Carga cuesta arriba: −{n} %', { n: porcentaje(carga) })]);
+      }
+    }
+    return lineas;
+  }
+  function actualizarPistaAltura(seleccion, enemigo) {
+    const propias = seleccion.filter(u => u.equipo === equipoPropio && u.vivos > 0 && !u.huyendo);
+    const propia = propias.find(u => !u.esGeneral) || propias[0];
+    if (!propia || !enemigo || enemigo.vivos <= 0 || control.arrastrando || control.ratonX === undefined) { pistaAltura.hidden = true; pistaClave = ''; return; }
+    const ahora = performance.now(), clave = propia.id + '/' + enemigo.id + '/' + Math.floor(ahora / 250);
+    if (clave !== pistaClave) {
+      pistaClave = clave;
+      const lineas = textoPistaAltura(propia, enemigo);
+      pistaConTexto = lineas.length > 0;
+      if (!pistaConTexto) { pistaAltura.hidden = true; return; }
+      pistaAltura.innerHTML = '<b></b>' + lineas.map(() => '<div></div>').join('');
+      pistaAltura.firstChild.textContent = propia.nombre;
+      lineas.forEach(([tipo, texto], k) => { const fila = pistaAltura.children[k + 1]; fila.className = tipo; fila.textContent = texto; });
+    }
+    if (!pistaConTexto) return;
+    pistaAltura.hidden = false;
+    pistaAltura.style.left = Math.min(window.innerWidth - pistaAltura.offsetWidth - 8, control.ratonX + 18) + 'px';
+    pistaAltura.style.top = Math.min(window.innerHeight - pistaAltura.offsetHeight - 8, control.ratonY + 20) + 'px';
+  }
   function alcanceDe(u) {
     const base = u.stats.alcanceTiro || 0;
     if (!base || u.vivos === 0) return 0;
-    const enColina = sim.terreno && sim.terreno.tipoEn(u.centroX, u.centroY) === 2;
-    return base * (enColina ? 1.15 : 1) * ((sim.clima && sim.clima.alcanceTiro) || 1);
+    return sim.alcanceTiroDe(u);           // desde el 2026-10-16 (fase 2) según su altura sobre el llano, como en la simulación
   }
   function dibujarAlcances() {
     const g = alcancesGrafico; g.clear();
@@ -649,12 +700,14 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
       const dentro = control.ratonX >= rect.left && control.ratonX <= rect.right && control.ratonY >= rect.top && control.ratonY <= rect.bottom;
       const bajo = dentro ? unidadBajoPuntero(1 - equipoPropio, control.ratonX, control.ratonY) : null;
       enemigoBajoRaton = bajo && (bajo.stats.alcanceTiro || bajo.esGeneral) ? bajo : null;
+      enemigoParaPista = bajo;
       // el general propio bajo el ratón también enseña su aura (sin tener que seleccionarlo)
       const propio = dentro && !bajo ? unidadBajoPuntero(equipoPropio, control.ratonX, control.ratonY) : null;
       generalBajoRaton = propio && propio.esGeneral ? propio : null;
     }
     if (enemigoBajoRaton && enemigoBajoRaton.vivos > 0) { if (enemigoBajoRaton.esGeneral) aura(enemigoBajoRaton, 0xe0503c); else circulo(enemigoBajoRaton, 0xe0503c, 0.08); }
     if (generalBajoRaton && !seleccionActual.includes(generalBajoRaton)) aura(generalBajoRaton, 0x5aa0ff);
+    actualizarPistaAltura(seleccionActual, enemigoParaPista);
   }
 
   /* ----- dibujo ----- */
@@ -833,7 +886,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   function centrarEn(x, y) { const w = contenedor.clientWidth, h = contenedor.clientHeight, escala = mundo.scale.x; mundo.position.set(w / 2 - aPantallaX(x, y) * escala, h / 2 - aPantallaY(x, y) * escala); }
   // centro actual de la vista en metros y sus esquinas (para el minimapa)
   function vista_() { const w = contenedor.clientWidth, h = contenedor.clientHeight; const [cx, cy] = pantallaAMundo(vista.getBoundingClientRect().left + w / 2, vista.getBoundingClientRect().top + h / 2); const esquinas = [[0, 0], [w, 0], [0, h], [w, h]].map(([px, py]) => pantallaAMundo(vista.getBoundingClientRect().left + px, vista.getBoundingClientRect().top + py)); return { cx, cy, esquinas, zoom: mundo.scale.x }; }
-  function destruir() { window.removeEventListener('resize', encuadrar); app.destroy(true, { children: true, texture: true, baseTexture: true }); }
+  function destruir() { pistaAltura.remove(); window.removeEventListener('resize', encuadrar); app.destroy(true, { children: true, texture: true, baseTexture: true }); }
   // retrato para las tarjetas: el mismo dibujo del soldado (de frente, quieto) volcado a un canvas
   function retrato(equipo, tipo, rama, nivel, general) {
     try { const sprite = new PIXI.Sprite(texturaSoldado(equipo, tipo, 2, 'quieto', rama, nivel, general)); const lienzo = recortarLienzo(app.renderer.extract.canvas(sprite)); sprite.destroy(); return lienzo; }
