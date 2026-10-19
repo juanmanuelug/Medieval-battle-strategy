@@ -22,6 +22,7 @@
 - **Las batallas empiezan antes**: generar el mapa pasa de 0,1-0,5 s a unos 30-50 ms, y pintar el relieve es hasta la mitad de rápido. En el servidor, montar una partida en red pasa de 0,2-0,4 s a menos de 0,05 s de cálculo (en Render, con su poca CPU, de varios segundos con el servidor parado a menos de medio). Los mapas salen exactamente iguales que antes.
 
 ## Seguridad en red
+- **Los riscos tapan lo que tienen detrás**: los soldados y árboles que pasaban detrás de un risco alto salían pintados encima de la roca, como si se subieran.
 - **Despliegue de la caballería corregido**: la caballería ligera, los caballeros y los arqueros a caballo salían en la línea de infantería en vez de en las alas, y los ballesteros con la infantería en vez de con los arqueros. Ahora todo lo montado va a las alas.
 - **Servidor más robusto**: un mensaje enorme ya no puede tumbar el servidor (antes sí), se limita cuántos mensajes por segundo puede mandar cada jugador (a quien inunda se le corta la conexión) y, al volver a una batalla tras una desconexión, el estado lo calcula el servidor en vez de pedírselo al rival.
 - **Ya no se puede colar una partida manipulada**: si la simulación de un jugador se desvía, el servidor reproduce la batalla desde un punto de control fiable y corrige al que se ha desviado, sea quien sea (antes se copiaba siempre la del primer jugador al otro). Quien se desvía tres veces pierde.

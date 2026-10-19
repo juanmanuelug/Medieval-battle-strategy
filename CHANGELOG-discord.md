@@ -18,6 +18,7 @@
 • Las batallas empiezan antes: el mapa se genera unas 5-10 veces más rápido (en red también, en el servidor).
 
 **Seguridad en red**
+• Los riscos ya tapan a las tropas y árboles que tienen detrás (antes parecía que se subían a la roca).
 • Despliegue corregido: toda la caballería (ligera, caballeros, arqueros a caballo) empieza en las alas, y los ballesteros con los arqueros.
 • Servidor más robusto: ya no se le puede tumbar con un mensaje enorme ni inundarlo, y al volver tras una desconexión el estado lo da el servidor.
 • Ni con una partida manipulada: si la de un jugador se desvía, el servidor comprueba quién tiene razón y corrige al otro; a la tercera, pierde.

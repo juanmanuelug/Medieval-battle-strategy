@@ -146,9 +146,37 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     }
   }
   capaSuelo.addChild(suelo); for (const capa of capasRio) capaSuelo.addChild(capa.malla); capaSuelo.addChild(zonaGrafico); capaSuelo.addChild(alcancesGrafico); capaSuelo.addChild(destinosGrafico);
+  /* Riscos que tapan (2026-10-19, lo vio el usuario: la infantería que pasaba detrás de un risco salía pintada encima, como
+     subida a la roca). El suelo es una malla por debajo de todo; un risco de 10 m sube en pantalla por encima de lo que tiene
+     detrás. Los triángulos de la malla sobre la roca (y su pie) se copian a la escena en franjas de profundidad de
+     PASO_MALLA_SUELO, ordenadas con los soldados, los árboles y los estandartes: lo que está detrás queda tapado. Misma textura y
+     mismos vértices que el suelo, así que se ven igual (sangre y huellas incluidas). */
+  const mallasRoca = [];
+  if (opciones.terreno && opciones.terreno.riscos && opciones.terreno.riscos.length) {
+    const terreno = opciones.terreno, columnas = Math.ceil(CAMPO.ancho / PASO_MALLA_SUELO) + 1, filas = Math.ceil(CAMPO.alto / PASO_MALLA_SUELO) + 1;
+    const anchoTextura = sangre.canvas.width / sangre.pixelesPorMetro, altoTextura = sangre.canvas.height / sangre.pixelesPorMetro;
+    const puntoDe = (col, fila) => [Math.min(CAMPO.ancho, col * PASO_MALLA_SUELO), Math.min(CAMPO.alto, fila * PASO_MALLA_SUELO)];
+    const sobreRoca = new Uint8Array(columnas * filas);
+    for (let fila = 0; fila < filas; fila++) for (let col = 0; col < columnas; col++) { const [x, y] = puntoDe(col, fila); sobreRoca[fila * columnas + col] = terreno.profundidadRisco(x, y) > -1 ? 1 : 0; }
+    const franjas = new Map();          // índice de franja → { vertices, uvs, indices, cuantos }
+    for (let fila = 0; fila < filas - 1; fila++) for (let col = 0; col < columnas - 1; col++) {
+      const esquinas = [[col, fila], [col + 1, fila], [col, fila + 1], [col + 1, fila + 1]];
+      if (!esquinas.some(([c, f]) => sobreRoca[f * columnas + c])) continue;
+      const [xa, ya] = puntoDe(col, fila), [xd, yd] = puntoDe(col + 1, fila + 1);
+      const clave = Math.floor(profundidad((xa + xd) / 2, (ya + yd) / 2) / PASO_MALLA_SUELO);
+      let franja = franjas.get(clave); if (!franja) { franja = { vertices: [], uvs: [], indices: [], cuantos: 0 }; franjas.set(clave, franja); }
+      for (const [c, f] of esquinas) { const [x, y] = puntoDe(c, f); franja.vertices.push(aPantallaX(x, y), aPantallaY(x, y)); franja.uvs.push(x / anchoTextura, y / altoTextura); }
+      const a = franja.cuantos; franja.indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); franja.cuantos += 4;
+    }
+    for (const [clave, franja] of franjas) {
+      const malla = new PIXI.Mesh(new PIXI.MeshGeometry(new Float32Array(franja.vertices), new Float32Array(franja.uvs), new Uint16Array(franja.indices)), new PIXI.MeshMaterial(texturaSuelo));
+      malla.zIndex = clave * PASO_MALLA_SUELO; capaEscena.addChild(malla); mallasRoca.push(malla);
+    }
+  }
   // clima: tinte del suelo y lluvia en pantalla
   const clima = opciones.clima || { lluvia: false, barro: false };
   suelo.tint = clima.lluvia && clima.barro ? 0x9c9a88 : clima.barro ? 0xb4a888 : clima.lluvia ? 0xb8c2cc : 0xffffff;
+  for (const malla of mallasRoca) malla.tint = suelo.tint;          // los riscos que tapan, con el mismo tinte que el suelo
   const capaLluvia = new PIXI.Graphics(); app.stage.addChild(capaLluvia);
   const gotasLluvia = clima.lluvia ? Array.from({ length: 260 }, () => ({ x: Math.random(), y: Math.random(), largo: 10 + Math.random() * 14, velocidad: 0.9 + Math.random() * 0.6 })) : [];
   const coposNieve = clima.nieve ? Array.from({ length: 220 }, () => ({ x: Math.random(), y: Math.random(), radio: 1 + Math.random() * 1.8, velocidad: 0.08 + Math.random() * 0.1, fase: Math.random() * 6 })) : [];
