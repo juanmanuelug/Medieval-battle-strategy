@@ -17,7 +17,7 @@
      el botón de pausa o P; al rival le sale un aviso para aceptarla o seguir) y botón «Rendirse». */
 const CLAVE_SERVIDOR = 'batallas.servidor.v1';
 const CLAVE_RECONEXION = 'batallas.reconexion.v1';
-const ESPERA_RECONEXION = 60;          // s (los mismos que espera el servidor)
+const ESPERA_RECONEXION = 60;          // s, si el servidor no dice los suyos (ficha.esperaReconexion)
 const VIGENCIA_CLAVE = 15 * 60 * 1000; // una clave de reconexión de hace más de 15 min ya no sirve
 const guardarReconexion = (servidor, clave) => { try { localStorage.setItem(CLAVE_RECONEXION, JSON.stringify({ servidor, clave, hora: Date.now() })); } catch (e) {} };
 const borrarReconexion = () => { try { localStorage.removeItem(CLAVE_RECONEXION); } catch (e) {} };
@@ -61,7 +61,7 @@ class ClienteLobby {
 
 const lobby = new ClienteLobby();
 // preparación (paso 2): borrador del ejército propio, si ya está confirmado, el lado y la ficha final de la batalla
-const preparacion = { rama: null, ejercito: [], confirmado: false, equipo: null, clima: null, presupuesto: 12000, ficha: null };
+const preparacion = { rama: null, ejercito: [], confirmado: false, equipo: null, clima: null, presupuesto: ORO_INICIAL, ficha: null };
 let inicioBusqueda = 0, relojBusqueda = null;
 // Si el juego se ha abierto desde el propio servidor (http://IP:8787/), el lobby está en esa misma dirección y es lo que se
 // propone; abierto como archivo local, la última dirección usada o ws://localhost:8787
@@ -129,7 +129,7 @@ function pintarPreparacion() {
   html('#mj-rama-nota', textoEsc(RAMAS[rama].descripcion));
   elemento('#mj-oro').textContent = gastado.toLocaleString('es-ES') + ' de ' + preparacion.presupuesto.toLocaleString('es-ES') + ' de oro gastado · quedan ' + restante.toLocaleString('es-ES');
   elemento('#mj-barra-oro').style.width = Math.min(100, 100 * gastado / preparacion.presupuesto).toFixed(1) + '%';
-  const llenoDeUnidades = preparacion.ejercito.length >= 20;
+  const llenoDeUnidades = preparacion.ejercito.length >= MAX_UNIDADES_EJERCITO;
   html('#mj-tropas', tiposDisponibles(rama).map(tipo => { const datos = TIPOS[TIPO[tipo]]; return `<div class="tropa"><span class="retrato-tropa" data-tipo="${tipo}" data-rama="${rama}" data-nivel="1"></span><div class="tropa-nombre"><strong>${textoEsc(datos.nombre)}</strong><span>${soldadosDeUnidad(rama, tipo)} soldados por unidad</span>${maximoDeTropa(tipo) < Infinity ? `<span class="tropa-limite">Máximo ${maximoDeTropa(tipo)} por ejército</span>` : ''}</div><div class="niveles">${NIVELES.map((n, i) => { if (!nivelesDeTropa(tipo).includes(i)) return ''; const precio = precioUnidad(rama, tipo, i); return `<button class="btn-comprar btn-mj-comprar" data-tipo="${tipo}" data-nivel="${i}" ${preparacion.confirmado || precio > restante || llenoDeUnidades || !puedeAnadirTropa(preparacion.ejercito, tipo) ? 'disabled' : ''} title="${textoEsc(n.nombre)}">${galones(i)}${textoEsc(n.nombre)}<br><small>${precio.toLocaleString('es-ES')}</small></button>`; }).join('')}</div></div>`; }).join(''));
   const colores = RAMAS[rama].colores.map(c => parseInt(c.slice(1), 16));
   pintarRetratos(elemento('#mj-tropas'), colores[0], colores[1]);
@@ -191,6 +191,7 @@ lobby.al('estado', entregarTurno);
 lobby.al('desincronia', m => { if (batalla && batalla.enRed) batalla.desincronia(m.n); });
 // servidor en modo relevo: quiere el estado de este navegador para pasárselo al rival (desincronía o reconexión)
 lobby.al('pedirEstado', m => { if (batalla && batalla.enRed) batalla.pedirEstado(m.n); });
+lobby.al('pedirVerificacion', m => { if (batalla && batalla.enRed) batalla.pedirVerificacion(m.n); });
 // aviso de que el rival ya ha terminado de desplegar
 function mostrarRivalListo(listos) {
   if (!batalla || !batalla.enRed || !batalla.enDespliegue()) return;
@@ -267,7 +268,7 @@ let reconexion = null, ultimaReanudacion = 0;
 function intentarReconectar() {
   if (reconexion) return;
   congelarRelojDespliegue();
-  reconexion = { hasta: Date.now() + ESPERA_RECONEXION * 1000, temporizador: null };
+  reconexion = { hasta: Date.now() + ((preparacion.ficha && preparacion.ficha.esperaReconexion) || ESPERA_RECONEXION) * 1000, temporizador: null };
   const rendirseAlCorte = texto => {
     reconexion = null; avisoRed('');
     if (batalla && batalla.enRed) { batalla.detener(); batalla = null; document.body.classList.remove('batalla-red'); }
@@ -324,6 +325,7 @@ async function empezarBatallaRed(ficha, reanudacion) {
       rendirse: () => lobby.enviar({ tipo: 'rendirse' }),
       resumen: (n, h) => lobby.enviar({ tipo: 'resumen', n, h }),
       enviarEstado: (n, estado) => lobby.enviar({ tipo: 'estadoCompleto', n, estado }),
+      enviarVerificacion: (n, estado) => lobby.enviar({ tipo: 'estadoVerificacion', n, estado }),
       resultado: (n, ganador) => lobby.enviar({ tipo: 'resultado', n, ganador }),
       pedirPausa: () => lobby.enviar({ tipo: 'pedirPausa' }),
       reanudarPausa: () => lobby.enviar({ tipo: 'reanudarPausa' }),
@@ -364,10 +366,13 @@ function terminarBatallaRed(resultado, jugadores, colores) {
   const explicacion = motivo === 'rendicion' ? (resultado.victoria ? rival.nombre + ' se ha rendido.' : 'Te has rendido.')
     : motivo === 'abandono' ? (resultado.victoria ? rival.nombre + ' ha abandonado la batalla.' : 'Has abandonado la batalla.')
     : motivo === 'error' ? 'La batalla se ha anulado por un error del servidor.'
+    : motivo === 'disputa' ? 'La batalla se ha anulado: no se pudo comprobar el resultado.'
+    : motivo === 'trampa' ? (resultado.victoria ? rival.nombre + ' ha anunciado dos veces un resultado falso.' : 'Has anunciado dos veces un resultado falso.')
+    : motivo === 'desvio' ? (resultado.victoria ? 'La partida de ' + rival.nombre + ' se ha desviado de la del servidor varias veces.' : 'Tu partida se ha desviado de la del servidor varias veces.')
     : resultado.victoria ? 'El ejército de ' + rival.nombre + ' ha sido destruido o ha huido del campo.' : 'Tu ejército ha sido destruido o ha huido.';
   const propias = resultado.unidades.filter(u => u.equipo === propio), enemigas = resultado.unidades.filter(u => u.equipo !== propio);
   const mvp = propias.slice().sort((a, b) => b.bajasCausadas - a.bajasCausadas)[0], filaUnidad = filaUnidadResultado(mvp);
-  html('#resultado', `<h2>${motivo === 'error' ? 'Batalla anulada' : resultado.victoria ? '¡Victoria!' : 'Derrota'}</h2><p>${textoEsc(explicacion)}</p>
+  html('#resultado', `<h2>${motivo === 'error' || motivo === 'disputa' ? 'Batalla anulada' : resultado.victoria ? '¡Victoria!' : 'Derrota'}</h2><p>${textoEsc(explicacion)}</p>
     <table><tr><th></th><th>${textoEsc(yo.nombre)}</th><th>${textoEsc(rival.nombre)}</th></tr><tr><td>Soldados</td><td>${resultado.soldadosPropios}</td><td>${resultado.soldadosEnemigos}</td></tr><tr><td>Bajas</td><td>${resultado.bajasPropias}</td><td>${resultado.bajasEnemigas}</td></tr><tr><td>Huidos</td><td>${resultado.huidasPropias}</td><td>${resultado.huidasEnemigas}</td></tr></table>
     ${mvp && mvp.bajasCausadas ? `<p class="mvp">Unidad destacada: ${textoEsc(mvp.nombre)}, ${mvp.bajasCausadas} bajas causadas.</p>` : ''}
     <h3>Mapa de la batalla</h3><canvas id="mapa-batalla" width="660" height="480"></canvas><p class="nota">Puntos: muertos de cada bando (claros los tuyos, rojos los de ${textoEsc(rival.nombre)}). Marca final de cada unidad: punto si quedó en pie, aspa si fue aniquilada, flecha si huyó; ★ la guardia del general.</p>

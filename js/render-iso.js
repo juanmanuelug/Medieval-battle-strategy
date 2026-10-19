@@ -25,6 +25,8 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
      solo visual: la simulación no la usa). aPantallaY suma esa altura a la que se le pase (la de un jinete en el aire, una
      flecha…), así que soldados, sombras, estandartes, alcances, auras y el propio suelo (una malla) siguen las colinas. */
   const alturaSuelo = opciones.terreno && typeof opciones.terreno.alturaEn === 'function' ? (x, y) => opciones.terreno.alturaEn(x, y) : () => 0;
+  // altura máxima del relieve (más un margen), para empezar desde ahí el rayo de pantallaAMundo
+  const alturaMaximaMapa = (() => { if (!opciones.terreno || typeof opciones.terreno.alturaEn !== 'function') return 0; opciones.terreno.alturaEn(0, 0); let maximo = 0; for (const h of opciones.terreno.alturas || []) if (h > maximo) maximo = h; return maximo + 0.5; })();
   const aPantallaX = girada ? (x, y) => ((CAMPO.ancho - x) - (CAMPO.alto - y)) * COS30 * ESCALA : (x, y) => (x - y) * COS30 * ESCALA;
   const aPantallaY = girada ? (x, y, altura) => (CAMPO.ancho + CAMPO.alto - x - y) * SIN30 * ESCALA - ((altura || 0) + alturaSuelo(x, y)) * ESCALA : (x, y, altura) => (x + y) * SIN30 * ESCALA - ((altura || 0) + alturaSuelo(x, y)) * ESCALA;
   const profundidad = girada ? (x, y) => CAMPO.ancho + CAMPO.alto - x - y : (x, y) => x + y;   // orden de dibujo: más abajo en pantalla, delante
@@ -259,20 +261,20 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     const ocupado = new Map(), celdaDe = (x, y) => Math.floor(x / 3) + ',' + Math.floor(y / 3);
     const libre = (x, y) => { const cx = Math.floor(x / 3), cy = Math.floor(y / 3); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const [px, py] of ocupado.get((cx + a) + ',' + (cy + b)) || []) if ((px - x) ** 2 + (py - y) ** 2 < SEPARACION_ARBOLES ** 2) return false; return true; };
     for (const m of opciones.terreno.manchas) {
-      if (m.tipo !== 1) continue;
+      if (m.tipo !== TERRENO.BOSQUE) continue;
       const objetivo = Math.round(Math.PI * m.r * m.r / DENSIDAD_BOSQUE);
       let puestos = 0;
       for (let intento = 0; intento < objetivo * 6 && puestos < objetivo; intento++) {
         const a = azarDeco.entre(-Math.PI, Math.PI), r = Math.sqrt(azarDeco.numero()) * opciones.terreno.radioEn(m, a) * 0.95, x = m.x + Math.cos(a) * r, y = m.y + Math.sin(a) * r;
-        if (!libre(x, y)) continue;
+        if (!libre(x, y) || opciones.terreno.tipoEn(x, y) !== TERRENO.BOSQUE) continue;      // ni sobre la roca ni en el agua
         const clave = celdaDe(x, y); if (!ocupado.has(clave)) ocupado.set(clave, []); ocupado.get(clave).push([x, y]);
         ponerArbol(x, y, azarDeco.entre(0.75, 1.15), true); puestos++;
       }
-      for (let k = 0; k < Math.round(objetivo * 0.35); k++) { const a = azarDeco.entre(-Math.PI, Math.PI), r = Math.sqrt(azarDeco.numero()) * opciones.terreno.radioEn(m, a), x = m.x + Math.cos(a) * r, y = m.y + Math.sin(a) * r; if (libre(x, y)) ponerArbusto(x, y, azarDeco.entre(0.8, 1.2)); }
+      for (let k = 0; k < Math.round(objetivo * 0.35); k++) { const a = azarDeco.entre(-Math.PI, Math.PI), r = Math.sqrt(azarDeco.numero()) * opciones.terreno.radioEn(m, a), x = m.x + Math.cos(a) * r, y = m.y + Math.sin(a) * r; if (libre(x, y) && opciones.terreno.tipoEn(x, y) === TERRENO.BOSQUE) ponerArbusto(x, y, azarDeco.entre(0.8, 1.2)); }
     }
   }
   sangre.version++;                                                       // las sombras de las copas, al suelo
-  for (let i = 0; i < 24; i++) { const borde = azarDeco.entero(0, 3); const x = borde < 2 ? (borde ? CAMPO.ancho - azarDeco.entre(1, 6) : azarDeco.entre(1, 6)) : azarDeco.entre(2, CAMPO.ancho - 2); const y = borde >= 2 ? (borde === 3 ? CAMPO.alto - azarDeco.entre(1, 6) : azarDeco.entre(1, 6)) : azarDeco.entre(2, CAMPO.alto - 2); if (azarDeco.numero() < 0.65) ponerArbusto(x, y, azarDeco.entre(0.7, 1.2)); else ponerDeco('roca', x, y, azarDeco.entre(0.7, 1.2)); }
+  for (let i = 0; i < 24; i++) { const borde = azarDeco.entero(0, 3); const x = borde < 2 ? (borde ? CAMPO.ancho - azarDeco.entre(1, 6) : azarDeco.entre(1, 6)) : azarDeco.entre(2, CAMPO.ancho - 2); const y = borde >= 2 ? (borde === 3 ? CAMPO.alto - azarDeco.entre(1, 6) : azarDeco.entre(1, 6)) : azarDeco.entre(2, CAMPO.alto - 2); const tipoAqui = opciones.terreno ? opciones.terreno.tipoEn(x, y) : 0; if (tipoAqui !== TERRENO.LLANO && tipoAqui !== TERRENO.COLINA) { azarDeco.numero(); azarDeco.entre(0.7, 1.2); continue; }   /* ni en el agua ni sobre la roca */ if (azarDeco.numero() < 0.65) ponerArbusto(x, y, azarDeco.entre(0.7, 1.2)); else ponerDeco('roca', x, y, azarDeco.entre(0.7, 1.2)); }
   /* árboles que tapan a un soldado (que está detrás, hasta unos metros más arriba en pantalla): semitransparentes, para no
      perder de vista a nadie dentro de un bosque. Se mira cada pocos fotogramas con la rejilla de la simulación */
   // rejilla propia de los soldados (celdas de 4 m), rehecha en cada comprobación: la de la simulación no se actualiza mientras se
@@ -419,12 +421,21 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   function pantallaAMundo(clientX, clientY) {
     const rect = vista.getBoundingClientRect();
     const lx = (clientX - rect.left - mundo.x) / mundo.scale.x, ly = (clientY - rect.top - mundo.y) / mundo.scale.y;
-    // sin relieve: inversión directa; con relieve, el punto del suelo bajo el ratón está más arriba en pantalla cuanto más alto
-    // es: se itera sumando la altura del punto hallado (converge en pocas vueltas con pendientes suaves)
+    // sin relieve: inversión directa. Con relieve, el rayo de la vista se recorre desde arriba (la altura máxima del mapa) hacia
+    // abajo hasta tocar la superficie, y se afina por bisección. (2026-10-19, fase C: antes se iteraba sumando la altura del punto
+    // hallado, que converge en pendientes suaves pero en la pared de un risco saltaba al suelo de su pie, 10 m más allá)
     const invertir = alto => { const A = lx / (COS30 * ESCALA), B = (ly + alto * ESCALA) / (SIN30 * ESCALA); return girada ? [CAMPO.ancho - (A + B) / 2, CAMPO.alto - (B - A) / 2] : [(A + B) / 2, (B - A) / 2]; };
-    let punto = invertir(0);
-    for (let vuelta = 0; vuelta < 8; vuelta++) { const alto = alturaSuelo(punto[0], punto[1]), siguiente = invertir(alto); const cambio = Math.hypot(siguiente[0] - punto[0], siguiente[1] - punto[1]); punto = [punto[0] * 0.3 + siguiente[0] * 0.7, punto[1] * 0.3 + siguiente[1] * 0.7]; if (cambio < 0.05) break; }
-    return punto;
+    if (alturaMaximaMapa <= 0.05) return invertir(0);
+    const PASO_RAYO = 0.2;
+    for (let alto = alturaMaximaMapa; alto >= -2.5; alto -= PASO_RAYO) {
+      const punto = invertir(alto);
+      if (alturaSuelo(punto[0], punto[1]) >= alto) {
+        let arriba = alto + PASO_RAYO, abajo = alto;
+        for (let vuelta = 0; vuelta < 5; vuelta++) { const medio = (arriba + abajo) / 2, p = invertir(medio); if (alturaSuelo(p[0], p[1]) >= medio) abajo = medio; else arriba = medio; }
+        return invertir(abajo);
+      }
+    }
+    return invertir(0);
   }
   function mundoAPantalla(x, y) { const rect = vista.getBoundingClientRect(); return [rect.left + mundo.x + aPantallaX(x, y) * mundo.scale.x, rect.top + mundo.y + aPantallaY(x, y) * mundo.scale.y]; }
   /* Unidad del equipo cuyo soldado (su cuerpo dibujado, no solo sus pies) o cuyo estandarte está bajo el puntero.
@@ -538,7 +549,6 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   function dibujarDestinos() {
     const g = destinosGrafico; g.clear();
     const seleccionActual = opciones.seleccion ? opciones.seleccion() : [];
-    if (!teclas.alt || seleccionActual.length) return;
     const ancho = 1 / mundo.scale.x;                                   // grosor constante en pantalla
     const P = (x, y) => [aPantallaX(x, y), aPantallaY(x, y)];
     const lineaPunteada = (x0, y0, x1, y1, color) => {
@@ -546,6 +556,25 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
       g.lineStyle(2.2 * ancho, color, 0.9);
       for (let d = 0; d < largo; d += paso * 2) { const t0 = d / largo, t1 = Math.min(1, (d + paso) / largo); g.moveTo(a0 + (a1 - a0) * t0, b0 + (b1 - b0) * t0).lineTo(a0 + (a1 - a0) * t1, b0 + (b1 - b0) * t1); }
     };
+    /* ruta (fase C de los pasos, 2026-10-19): si la unidad rodea algo que no se pisa, la línea sigue los puntos de su ruta (los que
+       le quedan) hasta el destino; si no, recta */
+    const lineaRuta = (u, x1, y1, color) => {
+      const ruta = u.ruta && u.ruta.puntos ? u.ruta.puntos.slice(u.ruta.indice, -1) : [];
+      let x0 = u.origenX, y0 = u.origenY;
+      for (const [x, y] of ruta.concat([[x1, y1]])) { lineaPunteada(x0, y0, x, y, color); x0 = x; y0 = y; }
+      return ruta.length ? ruta[ruta.length - 1] : [u.origenX, u.origenY];
+    };
+    // las seleccionadas que van rodeando, siempre (sin Alt): por dónde van a pasar
+    if (!teclas.alt) {
+      for (const u of seleccionActual) {
+        if (u.equipo !== equipoPropio || u.vivos === 0 || u.huyendo || !u.ruta || !u.ruta.puntos || u.ruta.indice >= u.ruta.puntos.length - 1) continue;
+        const objetivo = u.objetivoUnidad >= 0 ? sim.unidades[u.objetivoUnidad] : null;
+        if (u.orden === 'mover') lineaRuta(u, u.objetivoX, u.objetivoY, u.marcha === 'correr' ? 0xf4d06a : 0x9ee07a);
+        else if (objetivo && objetivo.vivos > 0 && (u.orden === 'avanzar' || u.orden === 'atacar' || u.orden === 'cargar')) lineaRuta(u, objetivo.centroX, objetivo.centroY, 0xe0604a);
+      }
+      return;
+    }
+    if (seleccionActual.length) return;
     const punta = (x0, y0, x1, y1, color) => {
       const [a0, b0] = P(x0, y0), [a1, b1] = P(x1, y1), angulo = Math.atan2(b1 - b0, a1 - a0), l = 12 * ancho;
       g.lineStyle(0).beginFill(color, 0.95).drawPolygon([a1, b1, a1 - l * Math.cos(angulo - 0.45), b1 - l * Math.sin(angulo - 0.45), a1 - l * Math.cos(angulo + 0.45), b1 - l * Math.sin(angulo + 0.45)]).endFill();
@@ -558,7 +587,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
         if (Math.hypot(dx, dy) < 1.5) continue;
         const rumbo = u.rumboFinal !== null && u.rumboFinal !== undefined ? u.rumboFinal : Math.atan2(dy, dx);
         const color = u.marcha === 'correr' ? 0xf4d06a : 0x9ee07a;
-        lineaPunteada(u.origenX, u.origenY, u.objetivoX, u.objetivoY, color);
+        lineaRuta(u, u.objetivoX, u.objetivoY, color);
         // huella en el destino: el origen de la unidad es el centro de su frente; la formación queda detrás
         const dim = sim.dimensionesUnidad(u), cos = Math.cos(rumbo), sen = Math.sin(rumbo);
         const lx = -sen * dim.ancho / 2, ly = cos * dim.ancho / 2, fx = -cos * dim.fondo, fy = -sen * dim.fondo;
@@ -568,8 +597,8 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
         g.lineStyle(3.5 * ancho, 0xf4f0a0, 1).moveTo(esquinas[0][0], esquinas[0][1]).lineTo(esquinas[1][0], esquinas[1][1]);   // frente
       } else if (objetivo && objetivo.vivos > 0 && (u.orden === 'avanzar' || u.orden === 'atacar' || u.orden === 'cargar')) {
         const color = 0xe0604a;
-        lineaPunteada(u.origenX, u.origenY, objetivo.centroX, objetivo.centroY, color);
-        punta(u.origenX, u.origenY, objetivo.centroX, objetivo.centroY, color);
+        const [desdeX, desdeY] = lineaRuta(u, objetivo.centroX, objetivo.centroY, color);
+        punta(desdeX, desdeY, objetivo.centroX, objetivo.centroY, color);
       } else if (objetivo && objetivo.vivos > 0 && u.orden === 'disparar') {
         lineaPunteada(u.centroX, u.centroY, objetivo.centroX, objetivo.centroY, 0xf0a030);
       }
@@ -684,7 +713,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
        con el general en pie y sin huir) */
     const aura = (u, color) => {
       if (!u || !u.esGeneral || u.vivos <= 0 || u.huyendo || oculto(u.equipo)) return;
-      const radio = ((sim.auraPorEquipo && sim.auraPorEquipo[u.equipo]) || { radio: 35 }).radio;
+      const radio = ((sim.auraPorEquipo && sim.auraPorEquipo[u.equipo]) || AURA_GENERAL).radio;
       const puntos = [];
       for (let k = 0; k < 96; k++) { const a = k / 96 * Math.PI * 2, x = u.centroX + Math.cos(a) * radio, y = u.centroY + Math.sin(a) * radio; puntos.push(aPantallaX(x, y), aPantallaY(x, y)); }
       g.lineStyle(2.4 * grosor, color, 0.95).beginFill(color, 0.07).drawPolygon(puntos).endFill();
@@ -797,7 +826,12 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     for (const u of seleccion) {
       for (const i of u.indices) if (sim.vivo(i)) sombras[i].tint = 0xffd54a;
       marcas.lineStyle(2, 0xffd54a, 0.9).drawEllipse(aPantallaX(u.origenX, u.origenY), aPantallaY(u.origenX, u.origenY), 0.9 * ESCALA, 0.45 * ESCALA);
-      if (u.orden === 'mover') { const mx = aPantallaX(u.objetivoX, u.objetivoY), my = aPantallaY(u.objetivoX, u.objetivoY); marcas.lineStyle(1.5, 0x9ee07a, 0.9).moveTo(aPantallaX(u.origenX, u.origenY), aPantallaY(u.origenX, u.origenY)).lineTo(mx, my).drawEllipse(mx, my, 0.7 * ESCALA, 0.35 * ESCALA); }
+      if (u.orden === 'mover') {
+        const mx = aPantallaX(u.objetivoX, u.objetivoY), my = aPantallaY(u.objetivoX, u.objetivoY), porRuta = u.ruta && u.ruta.puntos && u.ruta.indice < u.ruta.puntos.length - 1;
+        marcas.lineStyle(1.5, 0x9ee07a, 0.9);
+        if (!porRuta) marcas.moveTo(aPantallaX(u.origenX, u.origenY), aPantallaY(u.origenX, u.origenY)).lineTo(mx, my);   // con ruta, la dibuja dibujarDestinos
+        marcas.drawEllipse(mx, my, 0.7 * ESCALA, 0.35 * ESCALA);
+      }
       if (u.objetivoFijo >= 0) { const o = sim.unidades[u.objetivoFijo]; marcas.lineStyle(2, 0xff4a3a, 0.9).drawEllipse(aPantallaX(o.centroX, o.centroY), aPantallaY(o.centroX, o.centroY), 1.1 * ESCALA, 0.55 * ESCALA); }
     }
     dibujarOrdenesEnCamino(marcas, tiempoRender);

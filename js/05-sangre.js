@@ -53,7 +53,7 @@ class LienzoSangre {
     const c = this.contexto, ppm = this.pixelesPorMetro, nieve = !!(opciones && opciones.nieve);
     const trazar = (m, factor) => { c.beginPath(); for (let k = 0; k <= 48; k++) { const a = -Math.PI + k / 48 * 2 * Math.PI; const r = terreno.radioEn(m, a) * factor * ppm; const px = m.x * ppm + Math.cos(a) * r, py = m.y * ppm + Math.sin(a) * r; if (k === 0) c.moveTo(px, py); else c.lineTo(px, py); } c.closePath(); };
     for (const m of terreno.manchas) {
-      if (m.tipo === 2) {
+      if (m.tipo === TERRENO.COLINA) {
         // desde el relieve (2026-10-16) la forma la da pintarRelieve (sombreado y curvas de nivel reales): aquí solo un tono de
         // hierba algo más clara y seca, que se funde con el llano (antes, tres anillos con borde que parecían terrazas)
         c.save(); c.filter = 'blur(' + Math.round(2.5 * ppm) + 'px)'; trazar(m, 0.95); c.fillStyle = nieve ? '#f2f5f8' : '#72903c'; c.globalAlpha = 0.85; c.fill(); c.restore();
@@ -75,6 +75,8 @@ class LienzoSangre {
       franja(1.2, nieve ? '#9aa6ae' : '#7a6a42');           // orillas
       franja(0, nieve ? '#5f86a8' : '#3f6f9a');             // agua
       franja(-rio.ancho * 0.3, nieve ? '#7aa0be' : '#4f84ad');
+      // río profundo (fase A de los pasos): el centro del cauce, oscuro, para que se vea que no se cruza (los vados se pintan encima)
+      if (rio.profundo) { franja(-rio.ancho * 0.18, nieve ? '#3d5f7e' : '#1f4a70'); franja(-rio.ancho * 0.34, nieve ? '#2f4f6c' : '#173a5a'); }
       /* vados (2026-10-16, pedido del usuario: «más detalle, piedras y color de tierra mojada»): tierra mojada de borde
          difuminado, zonas más oscuras y encharcadas a lo largo de la corriente, charcos que reflejan el cielo y muchos guijarros
          con su brillo; las piedras grandes, con espuma, las pone el renderizador encima */
@@ -151,10 +153,10 @@ class LienzoSangre {
     };
     const ruidoGrande = ruido(71, 9), ruidoFino = ruido(72, 3.2), ruidoManchas = ruido(73, 4.5);
     // superficie con microrrelieve para el sombreado (las curvas de nivel y el color siguen la altura real)
-    const detalle = new Float32Array(ancho * alto), manchas = new Float32Array(ancho * alto);
+    // (2026-10-19, mapa rápido) el ruido de las manchas se calcula en el bucle principal, solo en los píxeles que se pintan
+    const detalle = new Float32Array(ancho * alto);
     for (let py = 0; py < alto; py++) for (let px = 0; px < ancho; px++) {
       const i = py * ancho + px, h = alturas[i], x = (px + 0.5) / RESOLUCION, y = (py + 0.5) / RESOLUCION;
-      manchas[i] = ruidoManchas(x, y);
       if (h <= 0.05) { detalle[i] = suave[i]; continue; }
       const peso = Math.min(1, h / 1.5);
       detalle[i] = suave[i] + MICRORRELIEVE * peso * peso * (0.65 * ruidoGrande(x, y) + 0.35 * ruidoFino(x, y));
@@ -163,8 +165,8 @@ class LienzoSangre {
     const lienzo = document.createElement('canvas'); lienzo.width = ancho; lienzo.height = alto;
     const contexto = lienzo.getContext('2d'), imagen = contexto.createImageData(ancho, alto), datos = imagen.data;
     const P = nieve
-      ? { claro: [255, 252, 240], maxClaro: 70, oscuro: [52, 72, 104], maxOscuro: 205, fuerzaSombra: 700, cima: [255, 255, 255], maxCima: 0.25, ladera: [118, 128, 140], maxLadera: 0.72, pie: [70, 92, 125], maxPie: 0.32, linea: [96, 116, 146], fuerzaLinea: 0.5 }
-      : { claro: [255, 246, 200], maxClaro: 110, oscuro: [20, 30, 8], maxOscuro: 185, fuerzaSombra: 720, cima: [176, 170, 86], maxCima: 0.34, ladera: [112, 92, 56], maxLadera: 0.5, pie: [24, 38, 14], maxPie: 0.28, linea: [40, 56, 22], fuerzaLinea: 0.32 };
+      ? { roca: [128, 134, 142], veta: [86, 92, 102], pieRoca: [60, 70, 86], claro: [255, 252, 240], maxClaro: 70, oscuro: [52, 72, 104], maxOscuro: 205, fuerzaSombra: 700, cima: [255, 255, 255], maxCima: 0.25, ladera: [118, 128, 140], maxLadera: 0.72, pie: [70, 92, 125], maxPie: 0.32, linea: [96, 116, 146], fuerzaLinea: 0.5 }
+      : { roca: [150, 140, 122], veta: [96, 88, 74], pieRoca: [42, 40, 30], claro: [255, 246, 200], maxClaro: 110, oscuro: [20, 30, 8], maxOscuro: 185, fuerzaSombra: 720, cima: [176, 170, 86], maxCima: 0.34, ladera: [112, 92, 56], maxLadera: 0.5, pie: [24, 38, 14], maxPie: 0.28, linea: [40, 56, 22], fuerzaLinea: 0.32 };
     // mezcla «encima» de una capa (color, opacidad 0-1) sobre lo acumulado en r, g, b, a (a en 0-1)
     let r = 0, g = 0, b = 0, a = 0;
     const encima = (color, opacidad) => {
@@ -172,28 +174,47 @@ class LienzoSangre {
       const nueva = opacidad + a * (1 - opacidad);
       r = (color[0] * opacidad + r * a * (1 - opacidad)) / nueva; g = (color[1] * opacidad + g * a * (1 - opacidad)) / nueva; b = (color[2] * opacidad + b * a * (1 - opacidad)) / nueva; a = nueva;
     };
-    const limite = (v, minimo, maximo) => v < minimo ? minimo : v > maximo ? maximo : v;
+    // (2026-10-19, mapa rápido) celdas de roca y sus vecinas: fuera de ellas, un píxel totalmente llano no lleva nada
+    const C = terreno.columnas, F = terreno.filas, cercaDeRoca = new Uint8Array(C * F);
+    if (terreno.riscos && terreno.riscos.length) for (let k = 0; k < C * F; k++) if (terreno.celdas[k] === TERRENO.RISCO) { cercaDeRoca[k] = 1; if (k % C > 0) cercaDeRoca[k - 1] = 1; if (k % C < C - 1) cercaDeRoca[k + 1] = 1; if (k >= C) cercaDeRoca[k - C] = 1; if (k < C * F - C) cercaDeRoca[k + C] = 1; }
     for (let py = 2; py < alto - 2; py++) for (let px = 2; px < ancho - 2; px++) {
       const i = py * ancho + px, h = alturas[i];
       r = g = b = a = 0;
+      // píxel llano sin relieve en lo que miran las derivadas y lejos de la roca: sale transparente (se deja a 0, como saldría)
+      const celdaX = Math.round((px + 0.5) / RESOLUCION / terreno.celda), celdaY = Math.round((py + 0.5) / RESOLUCION / terreno.celda);
+      const celdaK = limitar(celdaY, 0, terreno.filas - 1) * terreno.columnas + limitar(celdaX, 0, terreno.columnas - 1);
+      if (h === 0 && suave[i] === 0 && suave[i + 2] === 0 && suave[i - 2] === 0 && suave[i + 2 * ancho] === 0 && suave[i - 2 * ancho] === 0 && detalle[i + 1] === 0 && detalle[i - 1] === 0 && detalle[i + ancho] === 0 && detalle[i - ancho] === 0 && !cercaDeRoca[celdaK]) continue;
+      const mancha = ruidoManchas((px + 0.5) / RESOLUCION, (py + 0.5) / RESOLUCION);
       // pendiente y curvatura del campo suavizado (con pasos de 2 px)
       const gxReal = (suave[i + 2] - suave[i - 2]) * RESOLUCION / 4, gyReal = (suave[i + 2 * ancho] - suave[i - 2 * ancho]) * RESOLUCION / 4;
       const pendiente = Math.hypot(gxReal, gyReal);
       const curvatura = (suave[i + 2] + suave[i - 2] + suave[i + 2 * ancho] + suave[i - 2 * ancho] - 4 * suave[i]) * RESOLUCION * RESOLUCION / 4;
       if (h > 0.05 || pendiente > 0.01) {
         // 1. color por altura y por pendiente, a manchas
-        encima(P.cima, P.maxCima * limite(h / Math.max(4, alturaMaxima * 0.85), 0, 1) * limite(0.75 + manchas[i] * 0.5, 0, 1));
-        encima(P.ladera, P.maxLadera * limite((pendiente - 0.1) / 0.14, 0, 1) * limite(0.45 + manchas[i] * 1.1, 0, 1));
+        encima(P.cima, P.maxCima * limitar(h / Math.max(4, alturaMaxima * 0.85), 0, 1) * limitar(0.75 + mancha * 0.5, 0, 1));
+        encima(P.ladera, P.maxLadera * limitar((pendiente - 0.1) / 0.14, 0, 1) * limitar(0.45 + mancha * 1.1, 0, 1));
         // pie de la ladera (cóncavo): algo más oscuro; cresta (convexa): se aclara en el sombreado
-        if (curvatura > 0) encima(P.pie, P.maxPie * limite(curvatura * 6, 0, 1));
+        if (curvatura > 0) encima(P.pie, P.maxPie * limitar(curvatura * 6, 0, 1));
+      }
+      // riscos (fase B de los pasos): roca con vetas por estratos (según la altura), nieve solo en lo alto y llano, y una franja
+      // oscura al pie para que se lea dónde empieza la pared
+      const enRoca = terreno.celdas[celdaK] === TERRENO.RISCO;
+      if (enRoca) {
+        encima(P.roca, 0.93);
+        if ((h / 1.1) % 1 < 0.2) encima(P.veta, 0.6 * limitar(0.6 + mancha * 0.8, 0, 1));   // estratos
+        if (Math.abs(mancha) < 0.04) encima(P.veta, 0.7);                                    // grietas
+        if (nieve && pendiente < 0.7) encima([246, 248, 251], 0.8);
+      } else if (terreno.riscos && terreno.riscos.length && celdaX > 0 && celdaY > 0 && celdaX < terreno.columnas - 1 && celdaY < terreno.filas - 1) {
+        const C = terreno.columnas;
+        if (terreno.celdas[celdaK + 1] === TERRENO.RISCO || terreno.celdas[celdaK - 1] === TERRENO.RISCO || terreno.celdas[celdaK + C] === TERRENO.RISCO || terreno.celdas[celdaK - C] === TERRENO.RISCO) encima(P.pieRoca, 0.22);
       }
       // 2. sombreado sobre la superficie con microrrelieve
       const gx = (detalle[i + 1] - detalle[i - 1]) * RESOLUCION / 2, gy = (detalle[i + ancho] - detalle[i - ancho]) * RESOLUCION / 2;
-      const luz = (-gx * lx - gy * ly + lz) / (Math.hypot(gx, gy, 1) * largoLuz) - lz / largoLuz + (curvatura < 0 ? limite(-curvatura * 0.8, 0, 0.05) : 0);
+      const luz = (-gx * lx - gy * ly + lz) / (Math.hypot(gx, gy, 1) * largoLuz) - lz / largoLuz + (curvatura < 0 ? limitar(-curvatura * 0.8, 0, 0.05) : 0);
       if (luz > 0) encima(P.claro, Math.min(P.maxClaro, luz * 450) / 255);
-      else encima(P.oscuro, Math.min(P.maxOscuro, -luz * P.fuerzaSombra) / 255);
+      else encima(P.oscuro, Math.min(P.maxOscuro, -luz * P.fuerzaSombra) / 255 * (enRoca ? 0.6 : 1));   // en la roca, la sombra más suave (si no, la pared salía negra)
       // 3. curvas de nivel: opacidad según la distancia (en metros, por la pendiente) a la cota más cercana; la maestra, más gruesa
-      if (h > 0.2) {
+      if (h > 0.2 && !enRoca) {                    // (en la roca, las curvas se amontonarían)
         const cotas = h / EQUIDISTANCIA, cercana = Math.round(cotas), maestra = cercana % CADA_MAESTRA === 0;
         const metros = Math.abs(cotas - cercana) * EQUIDISTANCIA / Math.max(0.02, pendiente);
         const intensidad = Math.max(0, 1 - metros / (GROSOR_CURVA * (maestra ? 1.7 : 1)));
@@ -215,10 +236,13 @@ class LienzoSangre {
     const candidatos = Math.round(CAMPO.ancho * CAMPO.alto / 30);
     for (let k = 0; k < candidatos; k++) {
       const x = azar.entre(2, CAMPO.ancho - 2), y = azar.entre(2, CAMPO.alto - 2), suerte = azar.numero(), tamano = azar.entre(0.35, 0.85), giro = azar.entre(0, Math.PI);
-      const h = terreno.alturaEn(x, y); if (h < 0.8) continue;
-      const tipo = terreno.tipoEn(x, y); if (tipo === TERRENO.BOSQUE || tipo === TERRENO.AGUA || tipo === TERRENO.VADO) continue;
+      const h = terreno.alturaEn(x, y);
+      const tipo = terreno.tipoEn(x, y); if (tipo === TERRENO.BOSQUE || tipo === TERRENO.AGUA || tipo === TERRENO.VADO || tipo === TERRENO.PROFUNDA || tipo === TERRENO.RISCO) continue;
+      // al pie de los riscos (fase B), pedregal: piedras caídas a menos de 3,5 m de la roca
+      const alPieDeRoca = terreno.profundidadRisco && terreno.riscos && terreno.riscos.length ? terreno.profundidadRisco(x, y) > -3.5 : false;
+      if (h < 0.8 && !alPieDeRoca) continue;
       const px = terreno.pendienteEn ? terreno.pendienteEn(x, y, 1, 0) : 0, py = terreno.pendienteEn ? terreno.pendienteEn(x, y, 0, 1) : 0, pendiente = Math.hypot(px, py);
-      const probabilidad = Math.min(1, Math.max(0, (pendiente - 0.15) / 0.1)) * 0.25 + (h > 5.5 ? 0.03 : 0);
+      const probabilidad = Math.min(1, Math.max(0, (pendiente - 0.15) / 0.1)) * 0.25 + (h > 5.5 ? 0.03 : 0) + (alPieDeRoca ? 0.6 : 0);
       if (suerte > probabilidad) continue;
       const bajada = pendiente > 0.001 ? [-px / pendiente, -py / pendiente] : [0, 1];     // hacia dónde baja la ladera
       const radio = tamano * (h > 5 && suerte < 0.05 ? 1.8 : 1);

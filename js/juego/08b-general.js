@@ -38,7 +38,7 @@ function rasgosActivos(reino) {
 function efectosGeneral(reino) {
   const suma = { moralPropia: 0, moralEnemiga: 0, auraRadio: 0, guardiaDano: 0 };
   for (const r of rasgosActivos(reino)) { const e = RASGOS_GENERAL[r.clave].efectos(r.nivel); for (const k in e) suma[k] += e[k]; }
-  return { multMoralPropia: 1 + suma.moralPropia / 100, multMoralEnemiga: 1 + suma.moralEnemiga / 100, auraRadio: 35 + suma.auraRadio, auraMoral: 1.5, multGuardiaDano: 1 + suma.guardiaDano, resumen: suma };
+  return { multMoralPropia: 1 + suma.moralPropia / 100, multMoralEnemiga: 1 + suma.moralEnemiga / 100, auraRadio: AURA_GENERAL.radio + suma.auraRadio, auraMoral: AURA_GENERAL.moral, multGuardiaDano: 1 + suma.guardiaDano, resumen: suma };
 }
 /* Registra el resultado de una batalla en los contadores. `resultado.general` = { cargo, trabada, enemigoAbatido }.
    Devuelve los rasgos que han subido de nivel: [{ clave, nombre, nivel, negativo }]. */

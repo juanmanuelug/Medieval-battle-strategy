@@ -13,7 +13,6 @@ const vm = require('vm');
 
 const RAIZ_JUEGO = path.resolve(__dirname, '..');
 const SCRIPTS = ['js/00-aleatorio-y-utilidades.js', 'js/01-datos-unidades.js', 'js/02-rejilla-espacial.js', 'js/02b-terreno.js', 'js/03-simulacion.js', 'js/04-ordenes.js', 'js/04b-estado.js', 'js/juego/07-ramas-y-niveles.js', 'js/juego/09-ejercito.js'];
-const MAX_UNIDADES = 20;
 
 function crearMotor() {
   const contexto = { console, performance: { now: () => Date.now() }, Math, window: {}, localStorage: { getItem: () => null, setItem() {} } };
@@ -24,6 +23,7 @@ function crearMotor() {
   vm.runInContext(fuenteBatalla.slice(fuenteBatalla.indexOf('function colocarEjercito'), fuenteBatalla.indexOf('function iniciarBatalla')), contexto, { filename: 'colocarEjercito' });
   const ejecutar = codigo => vm.runInContext(codigo, contexto);
   const RAMAS = ejecutar('RAMAS'), NIVELES = ejecutar('NIVELES');
+  const MAX_UNIDADES = ejecutar('MAX_UNIDADES_EJERCITO');
   const tiposDisponibles = ejecutar('tiposDisponibles'), costeEjercito = ejecutar('costeEjercito'), incumpleLimitesEjercito = ejecutar('incumpleLimitesEjercito');
 
   // Ejército de un jugador: rama existente, lista de { tipo, nivel } con tropas de esa rama, niveles válidos, sin pasarse del
@@ -49,7 +49,8 @@ function crearMotor() {
   /* Batalla en red (paso 3): la simulación del servidor, montada con la misma función que los navegadores
      (montarSimulacionRed). El servidor aplica cada orden aquí antes de repartirla: si no vale (unidad ajena, muerta, valores
      raros), no se reparte. */
-  const montarSimulacionRed = ejecutar('montarSimulacionRed'), aplicarOrden = ejecutar('aplicarOrden'), resumenEstado = ejecutar('resumenEstado'), ganadorBatalla = ejecutar('ganadorBatalla'), serializarEstado = ejecutar('serializarEstado');
+  const finDeBatalla = ejecutar('finDeBatalla');
+  const montarSimulacionRed = ejecutar('montarSimulacionRed'), aplicarOrden = ejecutar('aplicarOrden'), resumenEstado = ejecutar('resumenEstado'), ganadorBatalla = ejecutar('ganadorBatalla'), serializarEstado = ejecutar('serializarEstado'), restaurarEstado = ejecutar('restaurarEstado');
   function crearBatallaRed(ficha) {
     const { sim } = montarSimulacionRed(ficha);
     return {
@@ -60,10 +61,13 @@ function crearMotor() {
       serializar: () => serializarEstado(sim),
       tiempo: () => sim.tiempo,
       algunoDerrotado: () => sim.equipoDerrotado(0) || sim.equipoDerrotado(1),
+      finDeBatalla: finEn => finDeBatalla(sim, finEn),   // la misma regla de final que los navegadores (10-batalla.js)
       ganador: () => ganadorBatalla(sim),
+      // (seguridad S1, 2026-10-19) carga el estado que ha mandado un navegador; false si no es un estado válido
+      restaurar: estado => { try { restaurarEstado(sim, estado); sim.recontar(); return true; } catch (e) { return false; } },   // las estadísticas, recalculadas aquí (no se cree las del estado)
     };
   }
   return { contexto, ejecutar, validarEjercito, elegirClima, elegirMapa, crearBatallaRed, RAMAS, MAX_UNIDADES };
 }
 
-module.exports = { crearMotor, MAX_UNIDADES };
+module.exports = { crearMotor };

@@ -1,3 +1,37 @@
+# Riscos, pasos de montaña y río profundo (19 de octubre de 2026)
+
+## Mapas nuevos y mapas rehechos
+- **Paso de montaña**: una cordillera de roca parte el campo de arriba abajo; solo se cruza por uno o dos pasos (de unos 50 m). Defiéndelos o fuérzalos.
+- **Río profundo**: el río no se puede cruzar a nado; solo hay dos vados anchos (40-48 m). Quien los domine controla la batalla.
+- **Riscos en los demás mapas**: peñascos y escarpes de roca en la franja central (en «Tierra de colinas», también escarpes; en «Río profundo» manda el río). La roca es alta: no se pisa, tapa la vista y para las flechas.
+- **Mapas justos**: ningún obstáculo cae en las zonas de despliegue, todo paso mide al menos 35 m (también contra el borde del campo) y los pasos y vados quedan a la misma distancia de los dos ejércitos. Si un mapa no cumple, se genera otra variante.
+
+## Terreno que no se pisa (base para riscos, pasos de montaña y asedios)
+- **Las tropas rodean lo que no se puede atravesar**: al mandar mover o atacar al otro lado, la unidad busca el camino por un vado en vez de ir en línea recta.
+- **Nadie entra en el agua profunda**: los soldados se deslizan por la orilla. Mandar a una unidad a un punto del agua la lleva a la orilla más cercana.
+- **Ningún soldado se queda atrás en la orilla ni pegado a la roca**: si al cruzar un vado su puesto queda al otro lado del agua, el soldado busca su propio camino por el vado; y quien perseguía a un enemigo al otro lado del agua lo deja y vuelve a su puesto.
+- **Sin trampas en el despliegue**: solo se puede desplegar donde luego se puede llegar andando. Los rincones a los que no se llega por un paso de al menos 35 m no cuentan como campo jugable. El servidor también lo comprueba en las partidas en red.
+
+- **Columna automática en los pasos**: si al cruzar un paso el ala de una unidad rozaría la roca o el agua, la unidad pasa a columna y recupera su formación al salir.
+- **Ver por dónde va**: las unidades seleccionadas que rodean algo muestran su camino punteado (verde al moverse, rojo al atacar; con Alt, las de todas).
+- **Cursor de «no alcanzable»** sobre roca y agua profunda (la orden vale: las tropas van a la orilla o al pie de la roca). Y el ratón sobre la cara de un risco ya apunta a la roca, no al suelo de detrás.
+- **La IA sabe de pasos**: en defensiva se planta frente al paso más cercano, cerrándolo; su caballería, si el paso corto está taponado y hay otro libre, da la vuelta por el libre y te coge por detrás.
+- **Tutorial**: la página «El terreno» explica los riscos y los pasos; capturas nuevas.
+
+## Más rápido
+- **Las batallas empiezan antes**: generar el mapa pasa de 0,1-0,5 s a unos 30-50 ms, y pintar el relieve es hasta la mitad de rápido. En el servidor, montar una partida en red pasa de 0,2-0,4 s a menos de 0,05 s de cálculo (en Render, con su poca CPU, de varios segundos con el servidor parado a menos de medio). Los mapas salen exactamente iguales que antes.
+
+## Seguridad en red
+- **Despliegue de la caballería corregido**: la caballería ligera, los caballeros y los arqueros a caballo salían en la línea de infantería en vez de en las alas, y los ballesteros con la infantería en vez de con los arqueros. Ahora todo lo montado va a las alas.
+- **Servidor más robusto**: un mensaje enorme ya no puede tumbar el servidor (antes sí), se limita cuántos mensajes por segundo puede mandar cada jugador (a quien inunda se le corta la conexión) y, al volver a una batalla tras una desconexión, el estado lo calcula el servidor en vez de pedírselo al rival.
+- **Ya no se puede colar una partida manipulada**: si la simulación de un jugador se desvía, el servidor reproduce la batalla desde un punto de control fiable y corrige al que se ha desviado, sea quien sea (antes se copiaba siempre la del primer jugador al otro). Quien se desvía tres veces pierde.
+- **Ya no se puede ganar una partida en red mandando un «he ganado» falso**: el resultado tiene que confirmarlo el rival o comprobarlo el servidor con un estado que comparten los dos jugadores. Un anuncio falso no termina la batalla; al segundo, quien lo hace pierde por trampa.
+
+## Al desplegar
+- Cambia la simulación y los mapas: todos los jugadores tienen que recargar la página para jugar en red con la misma versión.
+
+---
+
 # La altura cuenta en el combate (18 de octubre de 2026)
 
 ## Terreno

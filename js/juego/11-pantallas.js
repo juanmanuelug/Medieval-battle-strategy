@@ -370,7 +370,7 @@ function textoMoral(u) {
   const factores = (u.factoresMoral || []).slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
   const firmar = v => (v > 0 ? '+' : '−') + Math.abs(v);
   const principales = factores.slice(0, 2).map(f => f[0] + ' ' + firmar(f[1])).join(', ');
-  const todos = 'Moral ' + Math.round(u.moral) + ' de ' + Math.round(u.moralMax) + ' (huye por debajo de 25; 18 con el general cerca).\n' + (factores.length ? factores.map(f => '· ' + f[0] + ' ' + firmar(f[1])).join('\n') : 'Sin nada que la afecte.');
+  const todos = 'Moral ' + Math.round(u.moral) + ' de ' + Math.round(u.moralMax) + ' (huye por debajo de ' + MORAL_HUIDA + '; ' + MORAL_HUIDA_CON_GENERAL + ' con el general cerca).\n' + (factores.length ? factores.map(f => '· ' + f[0] + ' ' + firmar(f[1])).join('\n') : 'Sin nada que la afecte.');
   return `<span class="texto-moral" title="${textoEsc(todos)}">moral ${Math.round(u.moral)}${principales ? ' (' + textoEsc(principales) + ')' : ''}</span>`;
 }
 /* Discurso del general antes del despliegue: retrato, rasgos y frases según el enemigo, el ejército y los rasgos */

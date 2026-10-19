@@ -4,6 +4,14 @@
 const CAMPO = { ancho: 440, alto: 320 };       // metros (doblado el 2026-10-10: antes 220 × 160, no daba tiempo a maniobrar)
 // línea de despliegue de cada bando, en fracción del ancho: el frente del jugador en x = 0,28·ancho y el enemigo en 0,72·ancho
 const FRENTE_DESPLIEGUE = 0.28;
+// Zona de despliegue de cada bando: el izquierdo hasta el 38 % del ancho, el derecho desde el 62 % (aquí y no en 04-ordenes.js
+// desde el 2026-10-19: el terreno también la usa, y antes llevaba 4 copias de reserva por si no estaba cargada)
+const FONDO_ZONA_DESPLIEGUE = 0.38;
+function zonaDespliegue(equipo) {
+  return equipo === 0 ? { x0: 6, x1: Math.round(CAMPO.ancho * FONDO_ZONA_DESPLIEGUE), y0: 6, y1: CAMPO.alto - 6 } : { x0: Math.round(CAMPO.ancho * (1 - FONDO_ZONA_DESPLIEGUE)), x1: CAMPO.ancho - 6, y0: 6, y1: CAMPO.alto - 6 };
+}
+// aura del general sin rasgos (radio en m, moral que suma por segundo a las unidades dentro); los rasgos amplían el radio
+const AURA_GENERAL = { radio: 35, moral: 1.5 };
 const PASO_SIMULACION = 1 / 30;                 // segundos por paso fijo
 const GRAVEDAD = 9.8;
 

@@ -51,7 +51,7 @@ function cliente(nombre, claveReconexion) {
     if (c.atrasado && m.pasos) { c.estadosGuardados.push({ n: m.n, estado: x('serializarEstado')(c.sim) }); if (c.estadosGuardados.length > 6) c.estadosGuardados.shift(); }
     if (!nuevo) return;
     c.turnos++;
-    if (m.pasos && m.n % 10 === 0) c.enviar({ tipo: 'resumen', n: m.n, h: x('resumenEstado')(c.sim) });
+    if (m.pasos && m.n % x('TURNOS_ENTRE_RESUMENES') === 0) c.enviar({ tipo: 'resumen', n: m.n, h: x('resumenEstado')(c.sim) });
     // final de la batalla, con el mismo criterio que el navegador (derrota de un bando + 3 s de remate)
     if (m.pasos && !c.resultadoEnviado) {
       if (c.finSimulado === null && c.sim.tiempo > 5 && (c.sim.equipoDerrotado(0) || c.sim.equipoDerrotado(1))) c.finSimulado = c.sim.tiempo + 3;
@@ -154,13 +154,14 @@ const alaPar = async (a, b) => { for (let k = 0; k < 40 && a.sim.paso !== b.sim.
     await alaPar(ana, beto);
     comprobar(beto.desincronias.length === desincroniasAntes && resumenDe(ana.sim) === resumenDe(beto.sim), 'tras copiar el estado, Beto vuelve a ir idéntico a Ana');
     if (RELEVO) {
-      // el que da el estado va por detrás: manda el de 6 turnos antes y el servidor añade los turnos repartidos desde entonces
+      // (desde la seguridad S2, 2026-10-19, la desincronía la arbitra el servidor reproduciendo desde su punto de control, así que el
+      // estado ya no lo da Ana: da igual que vaya atrasada) el estado llega con los turnos repartidos desde el turno en disputa
       ana.atrasado = true; await esperar(5600);
       const estadosAntes = beto.estadosRecibidos;
       beto.sim.vida[beto.propias()[1].indices[0]] -= 25;
       await esperar(2500);
       const ultimoEstado = beto.mensajes.filter(m => m.tipo === 'estado').pop();
-      comprobar(beto.estadosRecibidos > estadosAntes && ultimoEstado && ultimoEstado.siguientes.length >= 5, 'relevo: con un estado atrasado llegan también los turnos posteriores (' + (ultimoEstado ? ultimoEstado.siguientes.length : 0) + ')');
+      comprobar(beto.estadosRecibidos > estadosAntes && ultimoEstado && ultimoEstado.siguientes.length >= 1, 'relevo: con el estado llegan también los turnos posteriores al de la disputa (' + (ultimoEstado ? ultimoEstado.siguientes.length : 0) + ')');
       ana.atrasado = false; ana.estadosGuardados = [];
       await esperar(2000); await alaPar(ana, beto);
       comprobar(resumenDe(ana.sim) === resumenDe(beto.sim), 'relevo: tras reaplicarlos, Beto vuelve a ir idéntico a Ana');

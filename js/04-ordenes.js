@@ -16,11 +16,10 @@
    aplicarOrden(sim, equipo, orden, { desplegando }) → true si se aplicó (con al menos una unidad válida) o false. */
 const ORDENES_SIMPLES = ['avanzar', 'formar', 'cargar', 'disparar'];
 const MAX_UNIDADES_ORDEN = 40;
+// red (los lee también el servidor, vía motor.js): pasos de simulación por turno y cada cuántos turnos se manda el resumen de estado
+const PASOS_POR_TURNO_RED = 3, TURNOS_ENTRE_RESUMENES = 10;
 
-// Zona de despliegue de cada bando: el izquierdo hasta el 38 % del ancho, el derecho desde el 62 %
-function zonaDespliegue(equipo) {
-  return equipo === 0 ? { x0: 6, x1: Math.round(CAMPO.ancho * 0.38), y0: 6, y1: CAMPO.alto - 6 } : { x0: Math.round(CAMPO.ancho * 0.62), x1: CAMPO.ancho - 6, y0: 6, y1: CAMPO.alto - 6 };
-}
+// la zona de despliegue de cada bando (zonaDespliegue) está en 01-datos-unidades.js
 
 function aplicarOrden(sim, equipo, orden, contexto) {
   if (!orden || typeof orden !== 'object' || !Array.isArray(orden.u) || orden.u.length > MAX_UNIDADES_ORDEN) return false;
@@ -48,7 +47,8 @@ function aplicarOrden(sim, equipo, orden, contexto) {
     case 'recolocar': {
       if (!desplegando || !Array.isArray(orden.d)) return false;
       let alguna = false;
-      unidades.forEach(u => { const d = orden.d[orden.u.indexOf(u.id)]; if (!d || !numero(d[0]) || !numero(d[1])) return; const [x, y] = enZona(d[0], d[1]); sim.recolocarUnidad(u, x, y, numero(d[2]) ? d[2] : u.rumbo); alguna = true; });
+      // (fase A de los pasos) el sitio pedido o el válido más cercano: ningún soldado en terreno que no se pisa ni en un bolsillo
+      unidades.forEach(u => { const d = orden.d[orden.u.indexOf(u.id)]; if (!d || !numero(d[0]) || !numero(d[1])) return; const rumbo = numero(d[2]) ? d[2] : u.rumbo; const sitio = sim.posicionDespliegue(u, d[0], d[1], rumbo, zona); if (!sitio) return; sim.recolocarUnidad(u, sitio[0], sitio[1], rumbo); alguna = true; });
       return alguna;
     }
     case 'atacar': {
@@ -66,12 +66,20 @@ function aplicarOrden(sim, equipo, orden, contexto) {
     case 'formar': {
       if (!FORMACIONES[orden.clave]) return false;
       let alguna = false;
-      for (const u of unidades) if (sim.formar(u, orden.clave)) { alguna = true; if (desplegando) sim.recolocarUnidad(u, u.origenX, u.origenY); }
+      for (const u of unidades) {
+        const previa = u.formacion && u.formacion.clave;
+        if (!sim.formar(u, orden.clave)) continue;
+        alguna = true;
+        if (!desplegando) continue;
+        // en el despliegue, la nueva forma tiene que caber en terreno jugable; si no cabe en ningún sitio cercano, se deshace
+        const sitio = sim.posicionDespliegue(u, u.origenX, u.origenY, u.rumbo, zona);
+        if (sitio) sim.recolocarUnidad(u, sitio[0], sitio[1]); else { sim.formar(u, previa); sim.recolocarUnidad(u, u.origenX, u.origenY); }
+      }
       return alguna;
     }
     case 'encarar': {
       if (!numero(orden.rumbo)) return false;
-      for (const u of unidades) { if (desplegando) sim.recolocarUnidad(u, u.origenX, u.origenY, orden.rumbo); else if (u.orden === 'formar') u.rumboFinal = orden.rumbo; }
+      for (const u of unidades) { if (desplegando) { const sitio = sim.posicionDespliegue(u, u.origenX, u.origenY, orden.rumbo, zona); if (sitio) sim.recolocarUnidad(u, sitio[0], sitio[1], orden.rumbo); } else if (u.orden === 'formar') u.rumboFinal = orden.rumbo; }
       return true;
     }
     case 'escaramuza': {
@@ -88,8 +96,12 @@ function aplicarOrden(sim, equipo, orden, contexto) {
 function resumenEstado(sim) {
   let h = 2166136261 >>> 0;
   const mezclar = v => { h = Math.imul(h ^ (v | 0), 16777619) >>> 0; };
-  for (let i = 0; i < sim.cantidad; i++) { mezclar(Math.round(sim.posX[i] * 100)); mezclar(Math.round(sim.posY[i] * 100)); mezclar(Math.round(sim.vida[i] * 10)); mezclar(sim.estado[i]); }
-  for (const u of sim.unidades) { mezclar(Math.round(u.moral * 10)); mezclar(Math.round(u.cohesion * 10)); mezclar(Math.round(u.origenX * 100)); mezclar(Math.round(u.origenY * 100)); }
+  // (seguridad S1, 2026-10-19) además, todo lo que decide si un bando está derrotado y quién gana (bando y unidad de cada soldado,
+  // y de cada unidad su bando, sus vivos y si huye, se retira o puede volver): así el servidor puede fiarse de un estado cuyo
+  // resumen coincide con el de los dos jugadores para decidir el final (antes un estado trucado en esos campos pasaba)
+  mezclar(sim.cantidad);
+  for (let i = 0; i < sim.cantidad; i++) { mezclar(Math.round(sim.posX[i] * 100)); mezclar(Math.round(sim.posY[i] * 100)); mezclar(Math.round(sim.vida[i] * 10)); mezclar(sim.estado[i]); mezclar(sim.equipo[i]); mezclar(sim.unidadDe[i]); }
+  for (const u of sim.unidades) { mezclar(Math.round(u.moral * 10)); mezclar(Math.round(u.cohesion * 10)); mezclar(Math.round(u.origenX * 100)); mezclar(Math.round(u.origenY * 100)); mezclar(u.equipo); mezclar(u.vivos); mezclar(u.huyendo ? 1 : 0); mezclar(u.retirada ? 1 : 0); mezclar(u.puedeVolver ? 1 : 0); }
   mezclar(sim.paso);
   return h.toString(16);
 }

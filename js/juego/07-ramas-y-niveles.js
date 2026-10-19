@@ -63,9 +63,10 @@ const tiposDisponibles = ramaClave => Object.keys(TROPA).filter(t => !TROPA[t].e
 const GENERAL = { tipo: 'caballeriaPesada', soldados: 12, modificadores: { vida: 1.4, dano: 1.3, velocidad: 1, moral: 1.5 } };
 const ORO_INICIAL = 12000;
 const DIFICULTADES = {
-  // presupuesto: fracción del valor del ejército del jugador; sesgoNivel: niveles por encima (o debajo) del nivel medio del jugador
-  facil: { nombre: 'Fácil', presupuesto: 0.7, sesgoNivel: -0.6, descripcion: 'La IA gasta un 70 % de tu oro y recluta tropas algo peores que las tuyas. Reacciona tarde, sus tiradores se distraen y su caballería a veces carga cuesta arriba.' },
-  normal: { nombre: 'Normal', presupuesto: 1.0, sesgoNivel: 0, descripcion: 'La IA gasta tanto como tú, con tropas de calidad parecida.' },
-  dificil: { nombre: 'Difícil', presupuesto: 1.3, sesgoNivel: 0.5, descripcion: 'La IA gasta un 30 % más y recluta tropas algo mejores. Flanquea, forma muro ante tus cargas y concentra el fuego de sus tiradores.' },
-  brutal: { nombre: 'Brutal', presupuesto: 1.7, sesgoNivel: 1.0, descripcion: 'La IA gasta un 70 % más y recluta un nivel por encima del tuyo. Juega como en difícil: flanquea, forma muro ante tus cargas y concentra el fuego.' },
+  // presupuesto: fracción del valor del ejército del jugador; sesgoNivel: niveles por encima (o debajo) del nivel medio del jugador;
+  // tacticas: el juego de la IA en batalla (tacticasPorDificultad en 09b-ia-batalla.js), aparte de cuánto gasta
+  facil: { nombre: 'Fácil', presupuesto: 0.7, sesgoNivel: -0.6, tacticas: 'facil', descripcion: 'La IA gasta un 70 % de tu oro y recluta tropas algo peores que las tuyas. Reacciona tarde, sus tiradores se distraen y su caballería a veces carga cuesta arriba.' },
+  normal: { nombre: 'Normal', presupuesto: 1.0, sesgoNivel: 0, tacticas: 'normal', descripcion: 'La IA gasta tanto como tú, con tropas de calidad parecida.' },
+  dificil: { nombre: 'Difícil', presupuesto: 1.3, sesgoNivel: 0.5, tacticas: 'dificil', descripcion: 'La IA gasta un 30 % más y recluta tropas algo mejores. Flanquea, forma muro ante tus cargas y concentra el fuego de sus tiradores.' },
+  brutal: { nombre: 'Brutal', presupuesto: 1.7, sesgoNivel: 1.0, tacticas: 'dificil', descripcion: 'La IA gasta un 70 % más y recluta un nivel por encima del tuyo. Juega como en difícil: flanquea, forma muro ante tus cargas y concentra el fuego.' },
 };

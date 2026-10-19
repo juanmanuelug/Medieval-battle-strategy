@@ -22,5 +22,7 @@ function crearAleatorio(semilla) {
 }
 const limitar = (valor, minimo, maximo) => valor < minimo ? minimo : valor > maximo ? maximo : valor;
 const distancia = (ax, ay, bx, by) => Math.hypot(bx - ax, by - ay);
+// ángulo llevado a (-π, π] (la simulación y la IA comparan rumbos con esto)
+const normalizarAngulo = angulo => { while (angulo > Math.PI) angulo -= 2 * Math.PI; while (angulo < -Math.PI) angulo += 2 * Math.PI; return angulo; };
 // Se llama `elemento` y no `$` para no chocar con el `$` del motor del diseñador de estandartes, que el juego también carga
 const elemento = selector => document.querySelector(selector);

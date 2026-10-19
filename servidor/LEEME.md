@@ -77,6 +77,27 @@ En Render se cambia en el servicio, pestaña *Environment*: `BATALLA_ARBITRO` = 
 `/salud` dice qué modo está activo (`modo`). Los navegadores no necesitan saberlo: responden a lo que pida el servidor.
 Pruebas: `node prueba-batalla-red.js` (árbitro) y `node prueba-batalla-red.js --relevo`.
 
+### Resultado acordado en el modo relevo (seguridad S1, 2026-10-19)
+Antes, en el relevo, el servidor terminaba la batalla con el primer navegador que anunciaba un resultado: un navegador trucado podía ganar con un mensaje. Ahora:
+- si los dos anuncian el mismo ganador, se acaba;
+- si se contradicen, o uno anuncia y el otro no lo confirma en 8 s, el servidor **verifica**: pide a un navegador (`pedirVerificacion`) su estado en un turno futuro de resumen; cuando los resúmenes de los dos jugadores para ese turno coinciden y el del estado recibido es ese mismo, el estado es fiable (lo comparten los dos) y el servidor ve con él si la batalla ha terminado y quién gana (`motor.restaurar` + `recontar`). Si no ha terminado, el anuncio era falso y la batalla sigue; al segundo anuncio falso de un equipo, pierde por `trampa`. Si no se puede verificar en 60 s, se anula (`disputa`);
+- el resumen de estado incluye ahora todo lo que decide el final (bando y unidad de cada soldado; bando, vivos, huida, retirada y posibilidad de volver de cada unidad): un estado trucado en esos campos no cuadra con el de los dos.
+Prueba: `node prueba-trampas-relevo.js`.
+
+### Desincronías arbitradas en el modo relevo (seguridad S2, 2026-10-19)
+Antes, en una desincronía se copiaba siempre el estado del equipo 0 al otro (un navegador trucado en el equipo 0 colaba lo que quisiera). Ahora el servidor arbitra:
+- **puntos de control fiables**: el inicial lo guarda el servidor al empezar la batalla (su simulación tiene los dos despliegues); después, cada 100 turnos (10 s), pide a un navegador, alternando, su estado en un turno de resumen y solo lo guarda si los resúmenes de los dos para ese turno coinciden y el del estado es ese;
+- **en una desincronía** carga el último punto de control en una simulación aparte (`simDisputas`) y reproduce las órdenes del historial hasta el turno en disputa, a trozos de 5 pasos (entre trozo y trozo atiende turnos y mensajes); quien no coincide recibe el estado y los turnos siguientes; quien coincide, nada. El resultado es el nuevo punto de control;
+- como mucho un arbitraje cada 10 s (las disputas que llegan antes se aplazan; las de turnos ya arbitrados se descartan); quien se desvía 3 veces con el rival de acuerdo con el servidor pierde (`desvio`).
+Coste: reproducir hasta 10 s de batalla (unos 300 pasos: de 0,3 s de cálculo en una batalla pequeña a ~1 s en una de 1.700 soldados), solo cuando hay disputa. Prueba: `prueba-trampas-relevo.js` (casos 5 a 8).
+
+### Límites, mensajes grandes y reconexión (seguridad S3, 2026-10-19)
+- **Error de conexión**: cada conexión atiende su evento `error` (antes no: un mensaje de más del tope de tamaño provocaba un error sin atender que tiraba el proceso entero; cualquiera podía tumbar el servidor con un mensaje grande).
+- **Tamaño**: tope de 4 MB por mensaje (`maxPayload`; un estado completo de 2.400 soldados pesa unos 0,5 MB); más, se corta esa conexión.
+- **Frecuencia**: por jugador, mensajes por segundo de cada tipo (`LIMITE_MENSAJES`: resumen 4, orden 25, chat 3…; 10 los demás) y 60 en total; los que pasan se descartan, y con más de 300 descartes en un minuto se corta la conexión.
+- **Reconexión en el relevo**: quien vuelve a una batalla recibe el estado que reproduce el servidor desde su último punto de control hasta el turno actual (`reincorporarDesdeControl`, con la batalla congelada mientras); antes lo daba el otro navegador, que podía mandar uno trucado. Si no hay punto de control utilizable, como antes. Si el estado no llega en 90 s, la batalla se anula.
+Prueba: `prueba-trampas-relevo.js` (casos 9 a 11).
+
 ## Publicar en Render (gratis, encendido 24/7)
 
 Un solo servicio de Render sirve el juego y las partidas en red; un «despertador» externo gratuito evita que se duerma.

@@ -107,14 +107,24 @@ const VERSION_PROTOCOLO = 1;
 const ARRANQUE = new Date().toISOString();
 let estadoGlobal = null;            // jugadores, salas y cola del servidor en marcha (para /salud)
 const MAX_JUGADORES_SALA = 2;
-const PRESUPUESTOS = [6000, 9000, 12000, 18000, 25000];   // oro de cada jugador; 12000 es el oro inicial de un reino
-const PRESUPUESTO_POR_DEFECTO = 12000;
+const PRESUPUESTOS = [6000, 9000, 12000, 18000, 25000];   // oro de cada jugador; por defecto, el oro inicial de un reino (ORO_INICIAL)
 const MAX_TAMANO_BLASON = 200000;                           // caracteres del blasón en JSON (los importados con muchas capas)
 const LETRAS_CODIGO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // sin O/0 ni I/1, que se confunden al dictarlos
 const MS_TURNO = 100;                 // un turno de batalla cada 100 ms…
-const PASOS_POR_TURNO = 3;            // …que son 3 pasos de simulación de 1/30 s
 const TIEMPO_DESPLIEGUE = 120;        // segundos de despliegue como mucho
-const TURNOS_ENTRE_RESUMENES = 10;    // los jugadores mandan su resumen de estado cada 10 turnos (1 s)
+// seguridad S1 (2026-10-19): espera a que el otro confirme un resultado, tiempo máximo para verificarlo, anuncios falsos que hacen
+// perder y tamaño máximo de un estado que manda un navegador
+// seguridad S2 (2026-10-19): turnos entre puntos de control, tiempo máximo para que llegue uno, arbitrajes como mucho uno cada
+// MS_ENTRE_ARBITRAJES y pasos de simulación por trozo de la reproducción (entre trozo y trozo el servidor atiende lo demás)
+// (trozos pequeños: en Render, con 0,1 de CPU, un trozo de 30 pasos de una batalla grande eran ~1 s con los turnos parados)
+// DESVIOS_MAXIMOS: quien se desvía tantas veces mientras el otro coincidía con el servidor pierde (un jugador honrado no se desvía)
+/* seguridad S3 (2026-10-19): mensajes por segundo de cada tipo que acepta el servidor de un jugador (los que pasan se descartan) y
+   en total; quien descarta más de DESCARTES_MAXIMOS en un minuto es un abuso: se le corta la conexión. Los navegadores mandan muy
+   por debajo (un resumen por segundo, órdenes sueltas). */
+const LIMITE_MENSAJES = { resumen: 4, orden: 25, estadoCompleto: 2, estadoVerificacion: 3, resultado: 2, chat: 3, pedirPausa: 2, responderPausa: 3, reanudarPausa: 3, rendirse: 2, listo: 5, ejercito: 3, crearSala: 2, unirse: 3, listarSalas: 3, buscarPartida: 3, hola: 3 };
+const LIMITE_POR_DEFECTO = 10, LIMITE_TOTAL = 60, DESCARTES_MAXIMOS = 300;
+const TURNOS_ENTRE_CONTROLES = 100, ESPERA_CONTROL = 15000, MS_ENTRE_ARBITRAJES = 10000, PASOS_POR_TROZO = 5, DESVIOS_MAXIMOS = 3;
+const ESPERA_CONFIRMACION_RESULTADO = 8000, VERIFICACION_MAXIMA = 60000, ANUNCIOS_FALSOS_MAXIMOS = 2, TAMANO_MAXIMO_ESTADO = 4 * 1024 * 1024;
 const MAX_ORDENES_POR_TURNO = 30;     // por jugador: más es un cliente roto o malicioso
 const ESPERA_RECONEXION = 60;         // segundos que la batalla espera congelada a un jugador desconectado
 const MS_ENTRE_REENVIOS = 5000;       // como mucho un reenvío del estado completo cada 5 s por jugador
@@ -139,12 +149,17 @@ const ESPERA_RESPUESTA_PAUSA = 15;    // s para aceptar o rechazar una pausa ped
 function crearServidorLobby(opciones) {
   const o = Object.assign({ puerto: 8787, registro: true, esperaReconexion: ESPERA_RECONEXION, arbitro: ARBITRO_POR_DEFECTO }, opciones || {});
   const servidorHttp = http.createServer(servirArchivo);
-  const wss = new WebSocketServer({ server: servidorHttp, maxPayload: 1024 * 1024 });
+  // (seguridad S3) un mensaje puede ser un estado completo (unos 0,5 MB con 2.400 soldados): hasta 4 MB; más, la conexión se corta
+  const wss = new WebSocketServer({ server: servidorHttp, maxPayload: TAMANO_MAXIMO_ESTADO });
   servidorHttp.listen(o.puerto);
   const jugadores = new Map();   // ws → { id, nombre, sala, buscando, vivo }
   const salas = new Map();       // id → { id, codigo, nombre, privada, jugadores: [jugador], listos: Set(id), creada, desdeMatchmaking }
   const cola = [];               // jugadores buscando partida, por orden de llegada
   const motor = crearMotor();    // el código del juego, para validar ejércitos (y simular en el paso 3)
+  // (2026-10-19) lo que el servidor comparte con los navegadores sale del mismo código del juego, no de una copia: pasos de
+  // simulación por turno, cada cuántos turnos llega un resumen (1 s), unidades por orden y oro por defecto de cada jugador
+  const PASOS_POR_TURNO = motor.ejecutar('PASOS_POR_TURNO_RED'), TURNOS_ENTRE_RESUMENES = motor.ejecutar('TURNOS_ENTRE_RESUMENES');
+  const MAX_UNIDADES_ORDEN = motor.ejecutar('MAX_UNIDADES_ORDEN'), PRESUPUESTO_POR_DEFECTO = motor.ejecutar('ORO_INICIAL');
   let siguienteId = 1;
   const log = (...a) => { if (o.registro) console.log(new Date().toISOString().slice(11, 19), ...a); };
 
@@ -178,6 +193,10 @@ function crearServidorLobby(opciones) {
       arbitro: !!o.arbitro,
       historial: [],                        // relevo: turnos repartidos en combate (los últimos TURNOS_EN_HISTORIAL)
       resumenesJugadores: new Map(),        // relevo: n → [resumen del equipo 0, resumen del equipo 1]
+      // (seguridad S1) relevo: lo que ha anunciado cada equipo ({ n, ganador, desde }), la verificación en curso y los anuncios falsos
+      anuncios: [null, null], verificacion: null, anunciosFalsos: [0, 0],
+      // (seguridad S2) relevo: último punto de control fiable { n, estado, faltanPasos }, el que se ha pedido y el arbitraje en curso
+      puntoControl: null, solicitudControl: null, arbitraje: null, ultimoArbitraje: 0, desviosConfirmados: [0, 0], simDisputas: null,
       solicitudEstado: null,                // relevo: { fuente, destinos: [{ jugador, reconexion }], desde }
       reincorporando: null };               // relevo: jugador que vuelve en combate y espera el estado (la batalla sigue congelada)
     sala.batalla = batalla; sala.fase = 'batalla';
@@ -199,6 +218,7 @@ function crearServidorLobby(opciones) {
       log('el estado pedido no llegó', sala.codigo, s.fuente.nombre);
       if (s.destinos.some(d => d.reconexion)) return terminarBatalla(sala, null, 'error');
     }
+    if (b.reincorporando && Date.now() - b.reincorporando.desde > 90000) { log('el estado para quien vuelve no llega: batalla anulada', sala.codigo); b.reincorporando = null; return terminarBatalla(sala, null, 'error'); }
     if (b.reincorporando) return;          // relevo: se espera el estado para quien vuelve; mientras, nada avanza
     if (b.solicitudPausa && Date.now() - b.solicitudPausa.desde > ESPERA_RESPUESTA_PAUSA * 1000) {
       const pidio = jugadorDeEquipo(sala, b.solicitudPausa.equipo); b.solicitudPausa = null;
@@ -225,10 +245,16 @@ function crearServidorLobby(opciones) {
     }
     const comienza = b.desplegando;
     if (comienza) { b.desplegando = false; log('batalla: fin del despliegue', sala.codigo); }
+    if (!b.arbitro && (b.anuncios[0] || b.anuncios[1])) { evaluarAnuncios(sala); if (b.terminada) return; }
     const turno = { tipo: 'turno', n: ++b.turno, ordenes, pasos: PASOS_POR_TURNO };
     if (b.arbitro) {
       b.simulacion.avanzar(PASOS_POR_TURNO);
       if (turno.n % TURNOS_ENTRE_RESUMENES === 0) { b.resumenes.set(turno.n, b.simulacion.resumen()); b.resumenes.delete(turno.n - TURNOS_ENTRE_RESUMENES * 30); }
+    }
+    if (comienza && !b.arbitro) {
+      // (seguridad S2) punto de control inicial: la simulación del servidor ya tiene los dos despliegues y las órdenes de este turno;
+      // le faltan sus pasos
+      b.puntoControl = { n: turno.n, estado: b.simulacion.serializar(), faltanPasos: turno.pasos };
     }
     if (comienza) {
       // el turno que empieza la batalla trae a cada uno el despliegue del rival (y las órdenes de este turno, todavía de despliegue)
@@ -237,6 +263,7 @@ function crearServidorLobby(opciones) {
     } else { repartir(sala, turno); guardarEnHistorial(b, turno); }
     // relevo: el estado lo tiene que dar un navegador
     if (!b.arbitro) {
+      if (!comienza) pedirPuntoControl(sala);
       if (b.pedirEstado.size && !b.solicitudEstado) {
         const destinos = [...b.pedirEstado].map(id => sala.jugadores.find(j => j.id === id)).filter(Boolean).map(jugador => ({ jugador, reconexion: false }));
         b.pedirEstado.clear();
@@ -252,7 +279,7 @@ function crearServidorLobby(opciones) {
     }
     // derrota de un bando: 3 s de remate (como en la batalla individual) y el servidor da el resultado
     const tiempo = b.simulacion.tiempo();
-    if (b.finEn === null && tiempo > 5 && b.simulacion.algunoDerrotado()) b.finEn = tiempo + 3;
+    b.finEn = b.simulacion.finDeBatalla(b.finEn);
     if (b.finEn !== null && tiempo >= b.finEn) terminarBatalla(sala, b.simulacion.ganador(), 'derrota');
   }
   /* ----- modo relevo ----- */
@@ -262,6 +289,173 @@ function crearServidorLobby(opciones) {
     if (b.historial.length > TURNOS_EN_HISTORIAL) b.historial.splice(0, b.historial.length - TURNOS_EN_HISTORIAL);
   }
   // pide el estado a un navegador conectado que no sea de los destinos (el del equipo 0 si puede ser)
+  /* ---------- Arbitraje de las desincronías (seguridad S2, modo relevo, 2026-10-19) ----------
+     Antes, en una desincronía mandaba siempre el equipo 0 (su estado se copiaba al otro): un navegador trucado en el equipo 0 colaba
+     lo que quisiera. Ahora:
+     · PUNTOS DE CONTROL fiables: el inicial lo pone el servidor al empezar la batalla (su simulación tiene los dos despliegues); luego,
+       cada TURNOS_ENTRE_CONTROLES turnos, se pide a un navegador (alternando) su estado en un turno de resumen y solo se guarda si
+       los resúmenes de los dos para ese turno coinciden y el del estado es ese mismo;
+     · en una desincronía, el servidor carga el último punto de control en su simulación de arbitraje y reproduce las órdenes del
+       historial hasta el turno en disputa, a trozos de PASOS_POR_TROZO pasos (entre trozo y trozo atiende lo demás: en Render, con
+       poca CPU, puede tardar unos segundos). Quien no coincide con el resultado recibe ese estado y los turnos que ha simulado desde
+       entonces; quien coincide no se toca. El resultado es el nuevo punto de control. Como mucho un arbitraje cada MS_ENTRE_ARBITRAJES. */
+  function simDisputas(b) { if (!b.simDisputas) b.simDisputas = motor.crearBatallaRed(b.ficha); return b.simDisputas; }
+  function pedirPuntoControl(sala) {
+    const b = sala.batalla; if (!b.puntoControl || b.arbitraje) return;
+    // una desincronía que llegó cuando no se podía arbitrar: ahora
+    if (b.disputaPendiente !== undefined && b.disputaPendiente !== null && b.disputaPendiente <= (b.arbitradoHasta || 0)) b.disputaPendiente = null;
+    if (b.disputaPendiente !== undefined && b.disputaPendiente !== null && Date.now() - b.ultimoArbitraje >= MS_ENTRE_ARBITRAJES) { const n = b.disputaPendiente; b.disputaPendiente = null; if (arbitrar(sala, n)) return; }
+    if (b.solicitudControl) { if (Date.now() - b.solicitudControl.desde > ESPERA_CONTROL) b.solicitudControl = null; return; }
+    if (b.turno - b.puntoControl.n < TURNOS_ENTRE_CONTROLES) return;
+    const equipo = b.siguienteFuenteControl || 0; b.siguienteFuenteControl = 1 - equipo;
+    const fuente = jugadorDeEquipo(sala, equipo) || jugadorDeEquipo(sala, 1 - equipo);
+    if (!fuente || fuente.ws.readyState !== 1 || [...b.ausentes.values()].some(a => a.jugador === fuente)) return;
+    const n = Math.ceil((b.turno + 5) / TURNOS_ENTRE_RESUMENES) * TURNOS_ENTRE_RESUMENES;
+    b.solicitudControl = { n, fuente, desde: Date.now(), estado: null, turnoEstado: null };
+    enviar(fuente, { tipo: 'pedirVerificacion', n });
+  }
+  function comprobarPuntoControl(sala) {
+    const b = sala.batalla, c = b.solicitudControl; if (!c || !c.estado || b.arbitraje) return;
+    const par = b.resumenesJugadores.get(c.turnoEstado);
+    if (!par || par[0] === null || par[1] === null) return;                 // falta el resumen de alguno: se espera
+    b.solicitudControl = null;
+    if (par[0] !== par[1]) return;                                          // no están de acuerdo: no sirve (se pedirá otro)
+    const sim = simDisputas(b);
+    if (!sim.restaurar(c.estado) || sim.resumen() !== par[0]) { log('punto de control descartado: el estado no es el que tienen los dos', sala.codigo); return; }
+    b.puntoControl = { n: c.turnoEstado, estado: c.estado, faltanPasos: 0 };
+  }
+  // devuelve false si no se puede arbitrar (sin punto de control anterior al turno o sin todos los turnos desde él en el historial)
+  function arbitrar(sala, n) {
+    const b = sala.batalla, pc = b.puntoControl;
+    if (!pc || pc.n > n) return false;
+    const turnos = b.historial.filter(tt => tt.n > pc.n && tt.n <= n);
+    if (turnos.length !== n - pc.n) return false;
+    log('desincronía en el turno', n, sala.codigo, ': arbitraje desde el punto de control del turno', pc.n, '(' + turnos.length + ' turnos)');
+    return reproducir(sala, n, duracion => terminarArbitraje(sala, duracion));
+  }
+  /* Reproduce en simDisputas desde el último punto de control hasta el turno n (incluido), a trozos; al acabar llama a alTerminar.
+     false si no se puede (sin punto de control anterior, sin todos los turnos en el historial o con otra reproducción en curso). */
+  function reproducir(sala, n, alTerminar) {
+    const b = sala.batalla, pc = b.puntoControl;
+    if (b.arbitraje || !pc || pc.n > n) return false;
+    const turnos = b.historial.filter(tt => tt.n > pc.n && tt.n <= n);
+    if (turnos.length !== n - pc.n) return false;
+    const sim = simDisputas(b);
+    if (!sim.restaurar(pc.estado)) return false;
+    const inicio = Date.now();
+    b.arbitraje = { n, cola: turnos, pasosPendientes: pc.faltanPasos || 0, pasos: 0, calculo: 0, alTerminar };
+    const trozo = () => {
+      const a = b.arbitraje; if (!a || sala.batalla !== b || b.terminada) { b.arbitraje = null; return; }
+      const t0 = Date.now();
+      let presupuesto = PASOS_POR_TROZO;
+      while (presupuesto > 0) {
+        if (a.pasosPendientes > 0) { sim.avanzar(1); a.pasosPendientes--; a.pasos++; presupuesto--; continue; }
+        const siguiente = a.cola.shift(); if (!siguiente) break;
+        for (const { e, o } of siguiente.ordenes) sim.aplicar(e, o, false);
+        a.pasosPendientes = siguiente.pasos;
+      }
+      a.calculo += Date.now() - t0;
+      if (a.pasosPendientes > 0 || a.cola.length) { setTimeout(trozo, 0); return; }
+      a.alTerminar(Date.now() - inicio);
+    };
+    setTimeout(trozo, 0);
+    return true;
+  }
+  // (seguridad S3) quien vuelve a una batalla en el relevo recibe el estado que reproduce el servidor hasta el turno actual (la
+  // batalla está congelada mientras); si hay una reproducción en curso (un arbitraje), se espera a que acabe
+  function reincorporarDesdeControl(sala) {
+    const b = sala.batalla, r = b.reincorporando; if (!r) return false;
+    if (!b.puntoControl || b.puntoControl.n > b.turno || b.historial.filter(tt => tt.n > b.puntoControl.n && tt.n <= b.turno).length !== b.turno - b.puntoControl.n) return false;
+    if (b.arbitraje) { setTimeout(() => { if (sala.batalla === b && b.reincorporando === r && !reincorporarDesdeControl(sala)) { b.reincorporando = null; terminarBatalla(sala, null, 'error'); } }, 200); return true; }
+    const n = b.turno;
+    return reproducir(sala, n, duracion => {
+      const sim = b.simDisputas, estado = sim.serializar();
+      b.arbitraje = null; b.puntoControl = { n, estado, faltanPasos: 0 };
+      if (sala.batalla !== b || b.terminada || b.reincorporando !== r) return;
+      b.reincorporando = null;
+      enviar(r.jugador, Object.assign(mensajeReanudacion(sala, r.equipo, r.clave), { n, estado, siguientes: b.historial.filter(tt => tt.n > n) }));
+      avisarVuelta(sala, r.jugador);
+      log('estado reproducido por el servidor entregado a', r.jugador.nombre, 'turno', n, 'en', duracion, 'ms', Math.round(estado.length / 1024) + ' KB');
+    });
+  }
+  // (seguridad S3) límites de mensajes por jugador: ventana de un segundo por tipo y en total; los que pasan se descartan
+  function dentroDeLimites(jugador, tipo) {
+    const ahora = Date.now();
+    if (!jugador.limites || ahora - jugador.limites.inicio >= 1000) jugador.limites = { inicio: ahora, total: 0, porTipo: {} };
+    if (!jugador.descartes || ahora - jugador.descartes.inicio >= 60000) jugador.descartes = { inicio: ahora, cuenta: 0 };
+    const l = jugador.limites; l.total++; l.porTipo[tipo] = (l.porTipo[tipo] || 0) + 1;
+    if (l.total <= LIMITE_TOTAL && l.porTipo[tipo] <= (LIMITE_MENSAJES[tipo] || LIMITE_POR_DEFECTO)) return true;
+    if (++jugador.descartes.cuenta > DESCARTES_MAXIMOS) { log('demasiados mensajes de', jugador.nombre || '(sin nombre)', ': conexión cortada'); try { jugador.ws.terminate(); } catch (e) {} }
+    return false;
+  }
+  function terminarArbitraje(sala, duracion) {
+    const b = sala.batalla, a = b.arbitraje, sim = b.simDisputas;
+    const verdad = sim.resumen(), estado = sim.serializar(), par = b.resumenesJugadores.get(a.n) || [null, null];
+    const siguientes = b.historial.filter(tt => tt.n > a.n);
+    const corregidos = [];
+    for (const equipo of [0, 1]) {
+      if (par[equipo] === verdad) continue;
+      const jugador = jugadorDeEquipo(sala, equipo); if (!jugador) continue;
+      b.desincronias++; b.desviosConfirmados[equipo]++; corregidos.push(jugador.nombre);
+      enviar(jugador, { tipo: 'desincronia', n: a.n });
+      enviar(jugador, { tipo: 'estado', n: a.n, estado, siguientes });
+      b.reenviado.set(jugador.id, Date.now());
+    }
+    log('arbitraje del turno', a.n, sala.codigo, ':', a.pasos, 'pasos en', duracion, 'ms (' + a.calculo + ' ms de cálculo); corregido', corregidos.join(', ') || 'nadie (los dos coincidían con el servidor)');
+    b.puntoControl = { n: a.n, estado, faltanPasos: 0 };
+    b.arbitraje = null; b.ultimoArbitraje = Date.now(); b.arbitradoHasta = b.turno;
+    // desviado una y otra vez mientras el rival coincidía con el servidor: su partida está manipulada (o rota): pierde
+    for (const equipo of [0, 1]) if (b.desviosConfirmados[equipo] >= DESVIOS_MAXIMOS && par[1 - equipo] === verdad) { terminarBatalla(sala, 1 - equipo, 'desvio'); return; }
+    comprobarVerificacion(sala);                                             // por si una verificación del resultado esperaba
+  }
+
+  /* ---------- Resultado acordado (seguridad S1, modo relevo, 2026-10-19) ----------
+     · Los dos anuncian el mismo ganador → se acaba.
+     · Se contradicen, o uno lo anuncia y el otro no lo confirma en ESPERA_CONFIRMACION_RESULTADO ms → verificación: se pide el estado
+       a un navegador en un turno futuro múltiplo de TURNOS_ENTRE_RESUMENES; cuando los resúmenes de los DOS para ese turno coinciden
+       y el del estado recibido es ese mismo, el estado es fiable (es el que tienen los dos), y con él el servidor ve si la batalla ha
+       terminado y quién gana. Si no ha terminado, el anuncio era falso: se descarta (y la batalla sigue); al segundo anuncio falso
+       de un mismo equipo, ese equipo pierde ('trampa'). Si en VERIFICACION_MAXIMA ms no se puede verificar, se anula ('disputa'). */
+  function evaluarAnuncios(sala) {
+    const b = sala.batalla; if (!b || b.terminada) return;
+    const [a0, a1] = b.anuncios;
+    if (a0 && a1 && a0.ganador === a1.ganador) { b.anuncios = [null, null]; b.verificacion = null; b.inicioVerificacion = null; terminarBatalla(sala, a0.ganador, 'derrota'); return; }
+    const primero = a0 && a1 ? Math.min(a0.desde, a1.desde) : (a0 || a1).desde;
+    if (b.inicioVerificacion && Date.now() - b.inicioVerificacion > VERIFICACION_MAXIMA) { log('resultado sin verificar a tiempo: batalla anulada', sala.codigo); terminarBatalla(sala, null, 'disputa'); return; }
+    if (b.verificacion) return;
+    if (!(a0 && a1) && Date.now() - primero < ESPERA_CONFIRMACION_RESULTADO) return;
+    if (!b.inicioVerificacion) b.inicioVerificacion = Date.now();
+    pedirVerificacion(sala, b.fuentePreferida !== undefined ? b.fuentePreferida : a0 ? 0 : 1);
+  }
+  function pedirVerificacion(sala, equipoPreferido) {
+    const b = sala.batalla;
+    const conectado = equipo => { const jugador = jugadorDeEquipo(sala, equipo); return jugador && jugador.ws.readyState === 1 && ![...b.ausentes.values()].some(a => a.jugador === jugador) ? jugador : null; };
+    const fuente = conectado(equipoPreferido) || conectado(1 - equipoPreferido);
+    if (!fuente) return;
+    const n = Math.ceil((b.turno + 5) / TURNOS_ENTRE_RESUMENES) * TURNOS_ENTRE_RESUMENES;
+    b.verificacion = { n, fuente, equipoFuente: b.equipos.get(fuente.id), desde: Date.now(), estado: null, turnoEstado: null, intentos: (b.verificacion && b.verificacion.intentos || 0) + 1 };
+    enviar(fuente, { tipo: 'pedirVerificacion', n });
+    log('verificación de resultado pedida a', fuente.nombre, 'para el turno', n);
+  }
+  function comprobarVerificacion(sala) {
+    const b = sala.batalla, v = b.verificacion; if (!v || !v.estado) return;
+    const par = b.resumenesJugadores.get(v.turnoEstado);
+    if (!par || par[0] === null || par[1] === null) return;               // falta el resumen de alguno: se espera
+    // no concluyente: se vuelve a pedir (en el siguiente turno, desde evaluarAnuncios) al otro navegador
+    const reintentar = motivo => { log('verificación no concluyente:', motivo, sala.codigo); b.fuentePreferida = 1 - v.equipoFuente; b.verificacion = null; };
+    if (par[0] !== par[1]) return reintentar('los resúmenes de los dos no coinciden en el turno ' + v.turnoEstado);
+    if (b.arbitraje) return;                                                // la simulación de arbitraje está ocupada: al acabar
+    const sim = simDisputas(b);
+    if (!sim.restaurar(v.estado)) return reintentar('estado ilegible');
+    if (sim.resumen() !== par[0]) return reintentar('el estado no es el que tienen los dos');
+    // estado fiable
+    const terminada = sim.algunoDerrotado(), ganador = terminada ? sim.ganador() : null;
+    const anuncios = b.anuncios; b.anuncios = [null, null]; b.verificacion = null; b.inicioVerificacion = null; b.fuentePreferida = undefined;
+    for (const equipo of [0, 1]) if (anuncios[equipo] && (!terminada || anuncios[equipo].ganador !== ganador)) { b.anunciosFalsos[equipo]++; log('anuncio de resultado falso del equipo', equipo, '(' + b.anunciosFalsos[equipo] + ')', sala.codigo); }
+    const tramposo = [0, 1].find(equipo => b.anunciosFalsos[equipo] >= ANUNCIOS_FALSOS_MAXIMOS);
+    if (tramposo !== undefined) { terminarBatalla(sala, 1 - tramposo, 'trampa'); return; }
+    if (terminada) terminarBatalla(sala, ganador, 'derrota');
+  }
   function solicitarEstado(sala, destinos) {
     const b = sala.batalla, excluidos = destinos.map(d => d.jugador);
     const candidatos = sala.jugadores.filter(j => !excluidos.includes(j) && j.ws.readyState === 1 && ![...b.ausentes.values()].some(a => a.jugador === j));
@@ -330,8 +524,11 @@ function crearServidorLobby(opciones) {
       // desplegando, el estado entero enseñaría el despliegue del rival: se le devuelven solo sus órdenes
       if (b.desplegando) reanudacion.ordenesPropias = b.desplieguePropio[equipo];
       else if (!b.arbitro) {
-        // relevo: el estado lo da el otro navegador; la batalla sigue congelada hasta que llegue (estadoCompleto)
+        // relevo: la batalla sigue congelada hasta que quien vuelve tenga el estado. (Seguridad S3, 2026-10-19) lo calcula el
+        // servidor reproduciendo desde el último punto de control (antes lo daba el otro navegador: podía mandar uno trucado); si
+        // no se puede (sin punto de control o sin los turnos), como antes
         b.reincorporando = { jugador, equipo, clave, desde: Date.now() };
+        if (reincorporarDesdeControl(sala)) { log('vuelve a la batalla', sala.codigo, jugador.nombre, 'tras', Math.round((Date.now() - desde) / 1000), 's; el servidor reproduce su estado'); return true; }
         if (!solicitarEstado(sala, [{ jugador, reconexion: true }])) { b.reincorporando = null; log('nadie puede dar el estado', sala.codigo); terminarBatalla(sala, null, 'abandono'); return true; }
         log('vuelve a la batalla', sala.codigo, jugador.nombre, 'tras', Math.round((Date.now() - desde) / 1000), 's; se pide el estado al rival');
         return true;
@@ -424,7 +621,7 @@ function crearServidorLobby(opciones) {
       if (sala.jugadores.length === MAX_JUGADORES_SALA && sala.jugadores.every(jug => sala.ejercitos.has(jug.id))) {
         sala.fase = 'lista';
         const ficha = { tipo: 'batallaLista', semilla: sala.semilla, clima: sala.clima, mapa: sala.mapa, presupuesto: sala.presupuesto, jugadores: sala.jugadores.map((jug, equipo) => Object.assign({ nombre: jug.nombre, equipo }, sala.ejercitos.get(jug.id))) };
-        ficha.tiempoDespliegue = TIEMPO_DESPLIEGUE;
+        ficha.tiempoDespliegue = TIEMPO_DESPLIEGUE; ficha.esperaReconexion = o.esperaReconexion;   // lo que espera a quien se desconecta
         log('batalla lista', sala.codigo, ficha.jugadores.map(x => x.nombre + ' (' + x.rama + ', ' + x.ejercito.length + ' unidades)').join(' contra '));
         empezarBatallaSala(sala, ficha);
         avisarSala(sala);
@@ -435,8 +632,8 @@ function crearServidorLobby(opciones) {
       const equipo = b.equipos.get(j.id);
       if (b.pendientes.filter(p => p.e === equipo).length >= MAX_ORDENES_POR_TURNO) return;
       // solo los campos que entiende aplicarOrden (sin objetos raros que repartir al otro jugador)
-      const o = m.orden, limpia = { a: String(o.a), u: Array.isArray(o.u) ? o.u.slice(0, 40) : [] };
-      if (Array.isArray(o.d)) limpia.d = o.d.slice(0, 40).map(d => Array.isArray(d) ? d.slice(0, 3) : null);
+      const o = m.orden, limpia = { a: String(o.a), u: Array.isArray(o.u) ? o.u.slice(0, MAX_UNIDADES_ORDEN) : [] };
+      if (Array.isArray(o.d)) limpia.d = o.d.slice(0, MAX_UNIDADES_ORDEN).map(d => Array.isArray(d) ? d.slice(0, 3) : null);
       for (const campo of ['m', 'orden', 'clave', 'objetivo', 'rumbo', 'activa']) if (o[campo] !== undefined) limpia[campo] = o[campo];
       if (Number.isInteger(o.k)) limpia.k = o.k;     // número de la orden en el navegador que la manda (ver ordenesEnCamino)
       b.pendientes.push({ e: equipo, o: limpia });
@@ -452,8 +649,16 @@ function crearServidorLobby(opciones) {
         if (!Number.isInteger(m.n) || typeof m.h !== 'string') return;
         const equipo = b.equipos.get(j.id), par = b.resumenesJugadores.get(m.n) || [null, null];
         par[equipo] = m.h; b.resumenesJugadores.set(m.n, par); b.resumenesJugadores.delete(m.n - TURNOS_ENTRE_RESUMENES * 30);
-        if (par[0] !== null && par[1] !== null && par[0] !== par[1]) {
-          // no se sabe quién tiene razón: manda el equipo 0 y se corrige al otro
+        if (b.verificacion && b.verificacion.estado && b.verificacion.turnoEstado === m.n) comprobarVerificacion(j.sala);
+        if (b.solicitudControl && b.solicitudControl.estado && b.solicitudControl.turnoEstado === m.n) comprobarPuntoControl(j.sala);
+        if (par[0] !== null && par[1] !== null && par[0] !== par[1] && m.n > (b.arbitradoHasta || 0)) {
+          // (seguridad S2) el servidor arbitra: reproduce desde el último punto de control y corrige a quien no coincida. Las
+          // disputas de turnos hasta el final del último arbitraje (b.arbitradoHasta) son viejas: resúmenes de antes de que el
+          // desviado recibiera la corrección; se descartan (si no, se le volvía a corregir y a contar como desvío)
+          // ya en ello, o hace poco: se apunta y se arbitra en cuanto se pueda (desde el turno, en pedirPuntoControl)
+          if (b.arbitraje || Date.now() - b.ultimoArbitraje < MS_ENTRE_ARBITRAJES) { b.disputaPendiente = m.n; return; }
+          if (arbitrar(j.sala, m.n)) return;
+          // sin punto de control o sin los turnos (no debería pasar): como antes, manda el equipo 0 y se corrige al otro
           const desviado = jugadorDeEquipo(j.sala, 1); if (!desviado) return;
           b.desincronias++; enviar(desviado, { tipo: 'desincronia', n: m.n }); log('desincronía', j.sala.codigo, desviado.nombre, 'turno', m.n, '(relevo)');
           if (Date.now() - (b.reenviado.get(desviado.id) || 0) > MS_ENTRE_REENVIOS) { b.pedirEstado.add(desviado.id); b.reenviado.set(desviado.id, Date.now()); }
@@ -487,12 +692,25 @@ function crearServidorLobby(opciones) {
         }
       }
     },
-    // relevo: un navegador ha visto la derrota de un bando (y sus 3 s de remate); vale el primero que llega
+    /* relevo: un navegador ha visto la derrota de un bando (y sus 3 s de remate). (Seguridad S1, 2026-10-19: antes valía el primero
+       que llegaba y un navegador trucado podía ganar con un mensaje.) Si los dos anuncian el mismo ganador, se acaba; si no
+       coinciden, o el otro no lo confirma en ESPERA_CONFIRMACION_RESULTADO ms, el servidor lo comprueba con un estado en el que
+       los dos están de acuerdo (verificarResultado). */
     resultado(j, m) {
-      const b = batallaDe(j); if (!b || b.arbitro || b.desplegando) return;
+      const b = batallaDe(j); if (!b || b.arbitro || b.desplegando || b.terminada) return;
       if (!Number.isInteger(m.n) || m.n > b.turno || (m.ganador !== 0 && m.ganador !== 1)) return;
-      log('resultado anunciado por', j.nombre, 'en el turno', m.n);
-      terminarBatalla(j.sala, m.ganador, 'derrota');
+      const equipo = b.equipos.get(j.id);
+      if (b.anuncios[equipo]) return;                                       // un anuncio por equipo (hasta que se resuelva)
+      b.anuncios[equipo] = { n: m.n, ganador: m.ganador, desde: Date.now() };
+      log('resultado anunciado por', j.nombre, 'en el turno', m.n, ': gana el equipo', m.ganador);
+      evaluarAnuncios(j.sala);
+    },
+    // (seguridad S1) el estado pedido para verificar un resultado: se comprueba cuando estén los resúmenes de los dos para ese turno
+    estadoVerificacion(j, m) {
+      const b = batallaDe(j); if (!b || !Number.isInteger(m.n) || m.n > b.turno || typeof m.estado !== 'string' || m.estado.length > TAMANO_MAXIMO_ESTADO) return;
+      const v = b.verificacion, c = b.solicitudControl;
+      if (v && v.fuente === j && !v.estado && m.n >= v.n) { v.estado = m.estado; v.turnoEstado = m.n; comprobarVerificacion(j.sala); }
+      if (c && c.fuente === j && !c.estado && m.n >= c.n) { c.estado = m.estado; c.turnoEstado = m.n; comprobarPuntoControl(j.sala); }
     },
     pedirPausa(j) {
       const b = batallaDe(j); if (!b || b.pausa) return;
@@ -526,8 +744,12 @@ function crearServidorLobby(opciones) {
       let m; try { m = JSON.parse(String(datos)); } catch (e) { return enviar(jugador, { tipo: 'error', mensaje: 'Mensaje ilegible.' }); }
       const accion = m && acciones[m.tipo];
       if (!accion) return enviar(jugador, { tipo: 'error', mensaje: 'Orden desconocida: ' + (m && m.tipo) });
+      if (!dentroDeLimites(jugador, m.tipo)) return;
       try { accion(jugador, m); } catch (e) { log('error en', m.tipo, e.message); enviar(jugador, { tipo: 'error', mensaje: 'Error del servidor.' }); }
     });
+    // (seguridad S3, 2026-10-19) un error de la conexión (p. ej. un mensaje de más de maxPayload) solo cierra esa conexión: sin este
+    // manejador, el error sin atender tiraba el proceso entero (cualquiera podía tumbar el servidor con un mensaje grande)
+    ws.on('error', e => { log('error en la conexión de', jugador.nombre || '(sin nombre)', ':', e.message); try { ws.terminate(); } catch (x) {} });
     ws.on('close', () => {
       sacarDeCola(jugador); jugadores.delete(ws);
       const b = batallaDe(jugador);

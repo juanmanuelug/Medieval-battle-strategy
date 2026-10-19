@@ -1,6 +1,8 @@
 'use strict';
 /* ---------- Ejércitos: tienda del jugador y reclutamiento de la IA ----------
    Una entrada de ejército es { tipo, nivel } (nivel = índice en NIVELES); los soldados y el precio salen de los datos. */
+// unidades como mucho en un ejército de una batalla en red (lo comprueba el servidor, vía motor.js, y lo respeta la tienda en red)
+const MAX_UNIDADES_EJERCITO = 20;
 function soldadosDeUnidad(ramaClave, tipo) { const rama = RAMAS[ramaClave]; return TROPA[tipo].rama === 'artilleria' ? TROPA[tipo].tamano : Math.round(TROPA[tipo].tamano * (rama.extraSoldados || 1)); }
 function precioUnidad(ramaClave, tipo, nivel) {
   if (TROPA[tipo].precioFijo) return TROPA[tipo].precioFijo;           // mangoneles: el mismo precio en todas las ramas

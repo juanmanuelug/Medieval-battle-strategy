@@ -7,7 +7,10 @@
 function colocarEjercito(sim, equipo, ramaClave, ejercito, multMoral) {
   const frenteX = equipo === 0 ? Math.round(CAMPO.ancho * FRENTE_DESPLIEGUE) : Math.round(CAMPO.ancho * (1 - FRENTE_DESPLIEGUE)), rumbo = equipo === 0 ? 0 : Math.PI, signo = equipo === 0 ? 1 : -1;
   const grupos = { infanteria: [], lanceros: [], arqueros: [], caballeria: [], artilleria: [] };
-  for (const e of ejercito) { const t = e.tipo; (t === 'lanceros' ? grupos.lanceros : t === 'arqueros' ? grupos.arqueros : t === 'caballeriaPesada' ? grupos.caballeria : t === 'mangoneles' ? grupos.artilleria : grupos.infanteria).push(e); }
+  // por la rama de la tropa (2026-10-19; antes por nombre y solo caballeriaPesada iba a las alas: la ligera, los caballeros y
+  // los arqueros a caballo salían en la línea de infantería, y los ballesteros también); todo lo montado, a las alas
+  const grupoDe = tipo => TROPA[tipo].rama === 'artilleria' ? grupos.artilleria : TIPOS[TIPO[tipo]].montado ? grupos.caballeria : tipo === 'lanceros' ? grupos.lanceros : TROPA[tipo].rama === 'arqueros' ? grupos.arqueros : grupos.infanteria;
+  for (const e of ejercito) grupoDe(e.tipo).push(e);
   const unidades = [];
   const crear = (e, x, y) => {
     const soldados = soldadosDeUnidad(ramaClave, e.tipo);
@@ -46,6 +49,11 @@ function colocarEjercito(sim, equipo, ramaClave, ejercito, multMoral) {
     if (y < 10 || y > CAMPO.alto - 10) { crear(e, limitar(xLibre - signo * (4 + salto), 8, CAMPO.ancho - 8), CAMPO.alto / 2 + lado * (anchoFrente / 4)); return; }
     crear(e, limitar(frenteX - signo * (6 + salto), 8, CAMPO.ancho - 8), y);
   });
+  // (fase A de los pasos, 2026-10-18) ninguna unidad empieza con soldados en terreno que no se pisa: al sitio válido más cercano
+  if (sim.hayBloqueos && sim.hayBloqueos()) {
+    const zona = zonaDespliegue(equipo);
+    for (const u of unidades) { const sitio = sim.posicionDespliegue(u, u.origenX, u.origenY, u.rumbo, zona); if (sitio && (sitio[0] !== u.origenX || sitio[1] !== u.origenY)) sim.recolocarUnidad(u, sitio[0], sitio[1], u.rumbo); }
+  }
   return unidades;
 }
 
@@ -60,13 +68,21 @@ function crearGeneralBatalla(sim, equipo, ramaClave, nombre, efectos) {
 /* Batalla en red (multijugador, paso 3): la simulación se monta igual en el servidor y en los dos navegadores a partir de la
    ficha del servidor ({ semilla, clima, jugadores: [{ nombre, equipo, rama, ejercito }] }). Sin rasgos del general ni temor:
    los dos bandos en igualdad. → { sim, terreno, unidades: [unidades del equipo 0, unidades del equipo 1] } */
+// Fin de una batalla: cuando un bando está derrotado (pasados TIEMPO_MINIMO_FIN s) se simulan REMATE_FIN s más. Lo usan la
+// batalla individual, el navegador en el relevo y el servidor en el árbitro (vía motor.js): un mismo final en los tres.
+// finEn: el tiempo de simulación en que acaba, o null si aún no se sabe; devuelve el nuevo
+const TIEMPO_MINIMO_FIN = 5, REMATE_FIN = 3;
+function finDeBatalla(sim, finEn) {
+  if (finEn === null && sim.tiempo > TIEMPO_MINIMO_FIN && (sim.equipoDerrotado(0) || sim.equipoDerrotado(1))) return sim.tiempo + REMATE_FIN;
+  return finEn;
+}
 function montarSimulacionRed(ficha) {
   const terreno = typeof Terreno !== 'undefined' ? new Terreno(ficha.semilla, { mapa: ficha.mapa || mapaDesdeSemilla(ficha.semilla) }) : null;
   const sim = new Simulacion({ semilla: ficha.semilla, terreno, clima: ficha.clima });
   const jugadores = [0, 1].map(equipo => ficha.jugadores.find(j => j.equipo === equipo));
   const unidades = jugadores.map((j, equipo) => colocarEjercito(sim, equipo, j.rama, j.ejercito));
   jugadores.forEach((j, equipo) => unidades[equipo].push(crearGeneralBatalla(sim, equipo, j.rama, 'Guardia de ' + j.nombre, null)));
-  sim.auraPorEquipo = [{ radio: 35, moral: 1.5 }, { radio: 35, moral: 1.5 }];
+  sim.auraPorEquipo = [{ ...AURA_GENERAL }, { ...AURA_GENERAL }];
   sim.recontar();
   return { sim, terreno, unidades };
 }
@@ -109,7 +125,7 @@ function iniciarBatalla(opciones) {
     sim = new Simulacion({ semilla, terreno, clima });
     unidadesJugador = colocarEjercito(sim, 0, reino.rama, reino.ejercito, efectosGeneralPropio.multMoralPropia);
     unidadesIA = colocarEjercito(sim, 1, ramaIA, ejercitoIA, efectosGeneralPropio.multMoralEnemiga);
-    sim.auraPorEquipo = [{ radio: efectosGeneralPropio.auraRadio, moral: efectosGeneralPropio.auraMoral }, { radio: 35, moral: 1.5 }];
+    sim.auraPorEquipo = [{ radio: efectosGeneralPropio.auraRadio, moral: efectosGeneralPropio.auraMoral }, { ...AURA_GENERAL }];
     unidadesJugador.push(crearGeneralBatalla(sim, 0, reino.rama, 'Guardia del rey ' + reino.rey, efectosGeneralPropio));
     unidadesIA.push(crearGeneralBatalla(sim, 1, ramaIA, 'Guardia del general enemigo', null));
     colinaDefensiva = actitudIA === 'defensiva' && typeof prepararDefensaIA === 'function' ? prepararDefensaIA(sim, unidadesIA, terreno) : null;
@@ -235,11 +251,14 @@ function iniciarBatalla(opciones) {
   const CURSOR_MOVER = cursorSvg('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M8 30 V4" stroke="#1a1410" stroke-width="3"/><path d="M9 5 h16 l-4 5 l4 5 h-16 z" fill="#9ee07a" stroke="#1a1410" stroke-width="1.5"/><ellipse cx="8" cy="30" rx="5" ry="2" fill="none" stroke="#9ee07a" stroke-width="1.5"/></svg>', 8, 30);
   // unidad bajo el puntero: primero por lo que se ve (cuerpo o estandarte, en pantalla) y si no, por cercanía en el suelo
   const buscarUnidad = (equipo, x, y, clientX, clientY) => (clientX !== undefined && renderizador.unidadBajoPuntero(equipo, clientX, clientY)) || sim.unidadEnPunto(equipo, x, y, 4);
+  // (fase C de los pasos) sobre roca o agua profunda: círculo tachado (la orden vale, pero las tropas se quedan en la orilla o al pie)
+  const CURSOR_NO_ALCANZABLE = cursorSvg('<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="10" fill="rgba(20,16,12,0.35)" stroke="#e05a44" stroke-width="3.5"/><path d="M7 7 L21 21" stroke="#e05a44" stroke-width="3.5" stroke-linecap="round"/></svg>', 14, 14);
   const cursor = (x, y, clientX, clientY) => {
     if (terminada) return 'default';
     // con tropas seleccionadas, el enemigo bajo el puntero manda: en el cuerpo a cuerpo hay propios y enemigos mezclados
     if (seleccion.length && !desplegando && buscarUnidad(equipoRival, x, y, clientX, clientY)) return CURSOR_ATACAR;
     if (buscarUnidad(equipoPropio, x, y, clientX, clientY)) return 'pointer';
+    if (seleccion.length && sim.hayBloqueos() && !sim.transitable(x, y)) return CURSOR_NO_ALCANZABLE;
     return seleccion.length ? CURSOR_MOVER : 'default';
   };
   let ultimoClic = { id: -1, t: 0 };
@@ -333,8 +352,10 @@ function iniciarBatalla(opciones) {
     const nevado = sim.clima.nieve;
     if (nevado) { c.fillStyle = '#dfe6ec'; c.fillRect(0, 0, w, h); }
     if (terreno) for (const m of terreno.manchas) { c.fillStyle = m.tipo === 2 ? (nevado ? '#f1f4f7' : '#7a9842') : (nevado ? '#4a5e48' : '#2f4a1e'); c.beginPath(); for (let k = 0; k <= 24; k++) { const a = -Math.PI + k / 24 * 2 * Math.PI, r = terreno.radioEn(m, a) * escalaMini; const px = m.x * escalaMini + Math.cos(a) * r, py = m.y * escalaMini + Math.sin(a) * r; if (k === 0) c.moveTo(px, py); else c.lineTo(px, py); } c.closePath(); c.fill(); }
+    // riscos (fase B de los pasos, 2026-10-19)
+    if (terreno && terreno.riscos) { c.fillStyle = nevado ? '#8e959d' : '#6c665c'; for (const risco of terreno.riscos) for (const [x, y, radio] of risco.circulos) { c.beginPath(); c.arc(x * escalaMini, y * escalaMini, Math.max(1, radio * escalaMini), 0, Math.PI * 2); c.fill(); } }
     // río y vados (2026-10-13)
-    if (terreno && terreno.rio) for (let y = 0; y < CAMPO.alto; y += 2) { const vado = terreno.rio.vados.some(v => Math.abs(y - v) <= terreno.rio.anchoVado / 2); c.fillStyle = vado ? '#9aa88a' : '#3f6f9a'; c.fillRect((terreno.rio.centroX(y) - terreno.rio.ancho / 2) * escalaMini, y * escalaMini, terreno.rio.ancho * escalaMini, 2 * escalaMini + 0.5); }
+    if (terreno && terreno.rio) for (let y = 0; y < CAMPO.alto; y += 2) { const vado = terreno.rio.vados.some(v => Math.abs(y - v) <= terreno.rio.anchoVado / 2); c.fillStyle = vado ? '#9aa88a' : terreno.rio.profundo ? '#1f4a70' : '#3f6f9a'; c.fillRect((terreno.rio.centroX(y) - terreno.rio.ancho / 2) * escalaMini, y * escalaMini, terreno.rio.ancho * escalaMini, 2 * escalaMini + 0.5); }
     c.strokeStyle = '#2a201a'; c.strokeRect(0.5, 0.5, w - 1, h - 1);
     for (const u of sim.unidades) {
       if (u.vivos === 0 || oculto(u.equipo)) continue;
@@ -370,13 +391,14 @@ function iniciarBatalla(opciones) {
   let estadoPedido = null;                                  // el servidor pidió el estado al acabar el turno n (o después)
   let ultimoTurnoHecho = red && red.reanudacion ? red.reanudacion.n || 0 : 0;
   let finSimulado = null, resultadoEnviado = false;         // derrota de un bando: 3 s de remate, como en el servidor árbitro
+  let estadosPedidos = [];                 // turnos para los que el servidor ha pedido el estado (seguridad S1 y S2)
   function responderEstado() {
     if (estadoPedido === null || desplegando || pasosTurno || ultimoTurnoHecho < estadoPedido || !red.enviarEstado) return;
     red.enviarEstado(ultimoTurnoHecho, serializarEstado(sim)); estadoPedido = null;
   }
   function comprobarFin() {
     if (resultadoEnviado || !red.resultado) return;
-    if (finSimulado === null && sim.tiempo > 5 && (sim.equipoDerrotado(0) || sim.equipoDerrotado(1))) finSimulado = sim.tiempo + 3;
+    finSimulado = finDeBatalla(sim, finSimulado);
     if (finSimulado !== null && sim.tiempo >= finSimulado) { red.resultado(turnoActual.n, ganadorBatalla(sim)); resultadoEnviado = true; }
   }
   let resincronizaciones = 0;
@@ -405,7 +427,10 @@ function iniciarBatalla(opciones) {
   function turnoTerminado() {
     if (!turnoActual) return;
     ultimoTurnoHecho = turnoActual.n;
-    if (turnoActual.pasos && turnoActual.n % 10 === 0 && red.resumen) red.resumen(turnoActual.n, resumenEstado(sim));
+    if (turnoActual.pasos && turnoActual.n % TURNOS_ENTRE_RESUMENES === 0 && red.resumen) red.resumen(turnoActual.n, resumenEstado(sim));
+    // (seguridad S1) el servidor verifica un resultado con el estado de un turno de resumen: se manda justo al acabar ese turno
+    // (S2) puede haber varias pedidas a la vez (punto de control y verificación): un estado sirve para todas las de turnos ya alcanzados
+    if (estadosPedidos.length && turnoActual.pasos && turnoActual.n % TURNOS_ENTRE_RESUMENES === 0 && turnoActual.n >= Math.min(...estadosPedidos) && red.enviarVerificacion) { red.enviarVerificacion(turnoActual.n, serializarEstado(sim)); estadosPedidos = estadosPedidos.filter(n => n > turnoActual.n); }
     if (turnoActual.pasos) comprobarFin();
     responderEstado();
   }
@@ -419,7 +444,6 @@ function iniciarBatalla(opciones) {
      Adaptable: cada vez que se vacía, crece un turno (hasta COLCHON_MAXIMO); tras ESPERA_REDUCIR s sin vaciarse, baja uno (no
      de COLCHON_TURNOS): con buena conexión el retraso sigue siendo pequeño y con una mala la batalla deja de congelarse. */
   const COLCHON_TURNOS = red && Number.isInteger(red.colchon) ? red.colchon : 2;
-  const PASOS_POR_TURNO_RED = 3;            // los del servidor (PASOS_POR_TURNO en servidor-lobby.js)
   const RITMO_RECUPERACION = 1.25, PASOS_MAX_FOTOGRAMA = 6, PASOS_MAX_RECUPERANDO = 12;
   const COLCHON_MAXIMO = Math.max(COLCHON_TURNOS, 5), ESPERA_REDUCIR = 15000;
   let rellenando = true, colchonActual = COLCHON_TURNOS, ultimoVaciado = performance.now();
@@ -483,8 +507,8 @@ function iniciarBatalla(opciones) {
     if (ahora - ultimoHud > 500) { ultimoHud = ahora; seleccion = seleccion.filter(u => u.vivos > 0); avisar(); const guardia = unidadesJugador.find(u => u.esGeneral); if (guardia && guardia.luchando > 0) conductaGeneral.trabada = true; }
     if (ahora - ultimoMinimapa > 250) { ultimoMinimapa = ahora; pintarMinimapa(); }
     // en red el final lo decide el servidor (llega en un turno, ya con los 3 s de remate simulados); se muestra 1,5 s después
-    if (!red && !terminada && sim.tiempo > 5 && (sim.equipoDerrotado(0) || sim.equipoDerrotado(1))) { terminada = true; tiempoFin = sim.tiempo; }
-    if (red ? terminada && ahora - momentoFin > 1500 : terminada && sim.tiempo - tiempoFin > 3) {
+    if (!red && !terminada && sim.tiempo > TIEMPO_MINIMO_FIN && (sim.equipoDerrotado(0) || sim.equipoDerrotado(1))) { terminada = true; tiempoFin = sim.tiempo; }
+    if (red ? terminada && ahora - momentoFin > 1500 : terminada && sim.tiempo - tiempoFin > REMATE_FIN) {
       activo = false; window.removeEventListener('keydown', tecla);
       const e = sim.estadisticas;
       const victoria = red ? finRed.ganador === equipoPropio : ganadorBatalla(sim) === 0;
@@ -503,6 +527,7 @@ function iniciarBatalla(opciones) {
     recibirTurno: turno => { if (red) turnosRed.push(turno); },
     // modo relevo: el servidor pide el estado de este navegador al acabar el turno n (se manda en cuanto se llega a él)
     pedirEstado: n => { if (!red) return; estadoPedido = n; responderEstado(); },
+    pedirVerificacion: n => { if (red && Number.isInteger(n) && estadosPedidos.length < 8) estadosPedidos.push(n); },
     desincronia: n => { avisoDesincronia = n; console.warn('Batalla en red: el estado de este navegador se ha desviado del servidor en el turno', n); },
     desincronizado: () => avisoDesincronia,
     resincronizaciones: () => resincronizaciones,

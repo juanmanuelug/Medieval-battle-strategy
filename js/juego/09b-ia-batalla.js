@@ -134,8 +134,7 @@ function elegirBlancoCaballeriaIA(sim, u, unidadesIA, opciones) {
     if (distancia(desdeX, desdeY, e.centroX, e.centroY) > maxima) continue;
     const debilidad = debilidadMele(e);
     // hacia dónde mira el enemigo y si el jinete le queda a la espalda
-    let desdeJinete = Math.atan2(u.centroY - e.centroY, u.centroX - e.centroX) - e.rumbo;
-    while (desdeJinete > Math.PI) desdeJinete -= 2 * Math.PI; while (desdeJinete < -Math.PI) desdeJinete += 2 * Math.PI;
+    const desdeJinete = normalizarAngulo(Math.atan2(u.centroY - e.centroY, u.centroX - e.centroX) - e.rumbo);
     const daLaEspalda = Math.abs(desdeJinete) > ANGULO_ESPALDA;
     const conAliado = e.luchando > 0 && unidadesIA.some(a => a !== u && a.vivos > 0 && !a.huyendo && a.luchando > 0 && distancia(a.centroX, a.centroY, e.centroX, e.centroY) < 25);
     let puntos, motivo, carrerillaX = null, carrerillaY = null;
@@ -150,7 +149,10 @@ function elegirBlancoCaballeriaIA(sim, u, unidadesIA, opciones) {
       // la carga se lanza desde detrás de la unidad (al otro lado de hacia donde mira)
       carrerillaX = limitar(e.centroX - Math.cos(e.rumbo) * BLANCO_IA.carrerilla, 6, CAMPO.ancho - 6); carrerillaY = limitar(e.centroY - Math.sin(e.rumbo) * BLANCO_IA.carrerilla, 6, CAMPO.alto - 6);
     } else { puntos = BLANCO_IA.debil + debilidad * BLANCO_IA.porDebilidad; motivo = 'débil'; if (e.stats.antiCaballeria) puntos -= 60; }
-    puntos -= d * BLANCO_IA.distanciaPunto;
+    // (fase C) tras un paso: la distancia por el paso que se usaría y, si todos están defendidos, castigo (cargar de frente en un paso)
+    const camino = caminoPorPasosIA(sim, u, e);
+    if (camino) { puntos -= camino.distancia * BLANCO_IA.distanciaPunto; if (camino.todosDefendidos) puntos -= CASTIGO_PASO_DEFENDIDO; }
+    else puntos -= d * BLANCO_IA.distanciaPunto;
     if (!mejor || puntos > mejor.puntos || (puntos === mejor.puntos && e.id < mejor.blanco.id)) mejor = { blanco: e, motivo, puntos, desdeX: carrerillaX, desdeY: carrerillaY };
   }
   return mejor;
@@ -172,9 +174,53 @@ function unidadEnMedio(sim, u, x, y, blanco) {
   }
   return mejor;
 }
+/* Paso alternativo (fase C, 2026-10-19): si para llegar al blanco hay que cruzar un paso (la recta está cortada) y el más corto
+   (el que menos alarga el camino) tiene enemigos a menos de PASO_DEFENDIDO m, y hay otro sin defender, la caballería va primero
+   a ese otro. Devuelve el punto del paso, o null. */
+const PASO_DEFENDIDO = 30, CASTIGO_PASO_DEFENDIDO = 35;
+/* Camino hasta un enemigo cuando hay pasos que cruzar (la recta está cortada): la distancia de verdad (por el paso que se usaría),
+   el paso (si el más corto está defendido y hay otro libre, el libre) y si todos están defendidos. null si se va en recta. */
+function caminoPorPasosIA(sim, u, e) {
+  if (!sim.hayBloqueos || !sim.hayBloqueos()) return null;
+  const pasos = sim.terreno.pasosClave(); if (!pasos.length) return null;
+  const rodeo = p => distancia(u.centroX, u.centroY, p[0], p[1]) + distancia(p[0], p[1], e.centroX, e.centroY);
+  const defendido = p => sim.unidades.some(o => o.equipo !== u.equipo && o.vivos > 0 && !o.huyendo && distancia(o.centroX, o.centroY, p[0], p[1]) < PASO_DEFENDIDO);
+  // también cuenta como cruzar un paso ir en recta A TRAVÉS de uno defendido (la recta pasa a menos de 15 m de su centro)
+  const alSegmento = p => { const dx = e.centroX - u.centroX, dy = e.centroY - u.centroY, l2 = dx * dx + dy * dy || 1, s = limitar(((p[0] - u.centroX) * dx + (p[1] - u.centroY) * dy) / l2, 0, 1); return distancia(p[0], p[1], u.centroX + dx * s, u.centroY + dy * s); };
+  if (sim.terreno.rectaLibre(u.centroX, u.centroY, e.centroX, e.centroY, HOLGURA_RECTA) && !pasos.some(p => alSegmento(p) < 15 && defendido(p))) return null;
+  const ordenados = pasos.slice().sort((a, b) => rodeo(a) - rodeo(b) || a[1] - b[1]);
+  const libre = ordenados.find(p => !defendido(p));
+  const paso = libre || ordenados[0];
+  return { distancia: rodeo(paso), paso, cortoDefendido: defendido(ordenados[0]), todosDefendidos: !libre };
+}
+// una vez alcanzado el paso libre se recuerda (u.pasoUsadoIA) y no se vuelve a mandar a él: si no, al alejarse unos metros de su
+// centro la IA la devolvía al paso y la caballería iba y venía en él
+function pasoAlternativoIA(sim, u, e) {
+  const camino = caminoPorPasosIA(sim, u, e);
+  if (!camino || !camino.cortoDefendido || camino.todosDefendidos) return null;
+  if (u.pasoUsadoIA && distancia(u.pasoUsadoIA[0], u.pasoUsadoIA[1], camino.paso[0], camino.paso[1]) < 5) return null;
+  if (distancia(u.centroX, u.centroY, camino.paso[0], camino.paso[1]) < 12) { u.pasoUsadoIA = camino.paso.slice(); return null; }
+  return camino.paso;
+}
 function cargarBlancoIA(sim, u, eleccion, alcanceCarga) {
   if (!eleccion) return false;
   const e = eleccion.blanco, plan = u.planCargaIA;
+  const porOtroPaso = pasoAlternativoIA(sim, u, e);
+  if (porOtroPaso) {
+    if (plan && plan.id === e.id && plan.porPaso && u.orden === 'mover') return false;
+    sim.ordenar(u, 'mover', porOtroPaso[0], porOtroPaso[1], Math.atan2(e.centroY - porOtroPaso[1], e.centroX - porOtroPaso[0]), 'correr');
+    u.planCargaIA = { id: e.id, x: porOtroPaso[0], y: porOtroPaso[1], carga: false, porPaso: true };
+    return true;
+  }
+  // hay que cruzar, y el paso que toca está libre: se ataca y la simulación lleva la ruta (la carrerilla y los rodeos de abajo
+  // suponen ir en recta y, con la roca en medio, ponían puntos dentro de ella: la caballería iba y venía sin cruzar)
+  const camino = caminoPorPasosIA(sim, u, e);
+  if (camino && !camino.todosDefendidos) {
+    if (u.orden === 'atacar' && u.objetivoFijo === e.id) return false;
+    if (u.formacion.clave !== 'cuna') sim.formar(u, 'cuna');
+    sim.ordenarAtaque(u, e, 'correr'); u.planCargaIA = { id: e.id, carga: true, porRuta: true };
+    return true;
+  }
   let puntoX = eleccion.desdeX, puntoY = eleccion.desdeY;
   if (puntoX === null) { const d = distancia(u.centroX, u.centroY, e.centroX, e.centroY) || 1; puntoX = e.centroX + (u.centroX - e.centroX) / d * BLANCO_IA.carrerilla; puntoY = e.centroY + (u.centroY - e.centroY) / d * BLANCO_IA.carrerilla; }
   /* otra unidad enemiga en medio (de la línea de carga hasta el blanco o del camino al punto de carrerilla): se da la vuelta por
@@ -186,7 +232,7 @@ function cargarBlancoIA(sim, u, eleccion, alcanceCarga) {
     let radio = 25;
     for (const o of sim.unidades) if (o.equipo !== u.equipo && o.vivos > 0 && !o.huyendo && o !== e && distancia(o.centroX, o.centroY, e.centroX, e.centroY) < 50) radio = Math.max(radio, distancia(o.centroX, o.centroY, e.centroX, e.centroY) + sim.dimensionesUnidad(o).ancho / 2 + BLANCO_IA.holguraRodeo);
     const anguloJinete = Math.atan2(u.centroY - e.centroY, u.centroX - e.centroX), anguloEspalda = e.rumbo + Math.PI;
-    let falta = anguloEspalda - anguloJinete; while (falta > Math.PI) falta -= 2 * Math.PI; while (falta < -Math.PI) falta += 2 * Math.PI;
+    const falta = normalizarAngulo(anguloEspalda - anguloJinete);
     const enCirculo = angulo => [limitar(e.centroX + Math.cos(angulo) * radio, 6, CAMPO.ancho - 6), limitar(e.centroY + Math.sin(angulo) * radio, 6, CAMPO.alto - 6)];
     let destino;
     if (Math.abs(falta) <= RODEO_PASO) destino = enCirculo(anguloEspalda);
@@ -222,6 +268,23 @@ function prepararDefensaIA(sim, unidadesIA, terreno) {
   if (!terreno || !unidadesIA.length) return null;
   let sx = 0, sy = 0; for (const u of unidadesIA) { sx += u.origenX; sy += u.origenY; }
   const centroX = sx / unidadesIA.length, centroY = sy / unidadesIA.length;
+  /* (fase C de los pasos, 2026-10-19) con pasos que cruzar (vados del río profundo o pasos de la cordillera), el ejército se planta
+     en el borde de su zona frente al paso más cercano a su centro, cerrándolo: quien quiera pasar tiene que salir de él a su frente */
+  const pasos = terreno.pasosClave ? terreno.pasosClave() : [];
+  if (pasos.length) {
+    let paso = pasos[0]; for (const p of pasos) if (Math.abs(p[1] - centroY) < Math.abs(paso[1] - centroY)) paso = p;
+    const equipo = unidadesIA[0].equipo, zona = zonaDespliegue(equipo);
+    const frenteX = zona ? (equipo === 1 ? zona.x0 + 6 : zona.x1 - 6) : paso[0] + (equipo === 1 ? 50 : -50);
+    // el frente del ejército (la unidad más adelantada) en frenteX y su centro a la altura del paso
+    let adelantada = unidadesIA[0]; for (const u of unidadesIA) if ((equipo === 1 ? u.origenX < adelantada.origenX : u.origenX > adelantada.origenX)) adelantada = u;
+    const dx = frenteX - adelantada.origenX, dy = paso[1] - centroY;
+    for (const u of unidadesIA) {
+      const x = u.origenX + dx, y = limitar(u.origenY + dy, 8, CAMPO.alto - 8);
+      const sitio = sim.posicionDespliegue ? sim.posicionDespliegue(u, x, y, u.rumbo, zona) : [x, y];
+      if (sitio) sim.recolocarUnidad(u, sitio[0], sitio[1], u.rumbo);
+    }
+    return { x: paso[0], y: paso[1], r: 25, paso: true };
+  }
   let mejor = null, mejorD = Infinity;
   for (const m of terreno.manchas) {
     if (m.tipo !== TERRENO.COLINA || m.x < CAMPO.ancho * 0.55) continue;            // solo colinas de su mitad
@@ -233,7 +296,8 @@ function prepararDefensaIA(sim, unidadesIA, terreno) {
   const dx = mejor.x + mejor.r * 0.3 - centroX, dy = mejor.y - centroY;
   for (const u of unidadesIA) {
     const x = limitar(u.origenX + dx, CAMPO.ancho * 0.5 + 8, CAMPO.ancho - 8), y = limitar(u.origenY + dy, 8, CAMPO.alto - 8);
-    sim.recolocarUnidad(u, x, y, u.rumbo);
+    const sitio = sim.posicionDespliegue ? sim.posicionDespliegue(u, x, y, u.rumbo, zonaDespliegue(u.equipo)) : [x, y];
+    if (sitio) sim.recolocarUnidad(u, sitio[0], sitio[1], u.rumbo);
   }
   return mejor;
 }
@@ -339,7 +403,7 @@ function concentrarFuegoIA(sim, tiradores, enemigos) {
 }
 
 function inteligenciaArtificialBatalla(sim, unidadesIA, nivelIA, actitudElegida) {
-  const dificil = nivelIA.presupuesto >= 1.3, facil = nivelIA.presupuesto <= 0.75;   // ver tacticasPorDificultad
+  const dificil = nivelIA.tacticas === 'dificil', facil = nivelIA.tacticas === 'facil';   // ver tacticasPorDificultad
   if (sim.paso % (facil ? 90 : 30) !== 0) return;                                   // fácil: decide cada 3 s
   const t = sim.tiempo;
   // estado propio de la IA: la actitud vigente (la defensiva puede pasar a ofensiva) y el puesto de cada unidad
