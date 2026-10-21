@@ -25,7 +25,9 @@ const ICONOS_TIPO = {
   // guardia del general: corona (la usa la insignia del estandarte en el campo)
   general: '<path d="M4 17 L5 8 L9 12 L12 6 L15 12 L19 8 L20 17 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 20 H20" stroke="currentColor" stroke-width="2"/>',
 };
-const NOMBRE_CORTO_TIPO = { infanteriaLigera: 'Inf. ligera', infanteriaPesada: 'Inf. pesada', lanceros: 'Lanceros', arqueros: 'Arqueros', ballesteros: 'Ballesteros', caballeriaPesada: 'Cab. pesada', caballeriaLigera: 'Cab. ligera', arquerosACaballo: 'Arq. a caballo', caballeros: 'Caballeros', guardiaVarega: 'Varegos', templarios: 'Templarios', berserkers: 'Berserkers', mangoneles: 'Mangoneles' };
+// el nombre corto de cada tropa está en TIPOS (nombreCorto, 01-datos-unidades.js)
+// galones de un nivel (uno por nivel, desde milicia); 11-pantallas.js los envuelve para las tiendas
+const galonesHtml = nivel => '<span class="galon"></span>'.repeat(nivel + 1);
 
 function construirBarraUnidades(contenedor, unidades, acciones) {
   contenedor.replaceChildren();
@@ -36,14 +38,14 @@ function construirBarraUnidades(contenedor, unidades, acciones) {
     tarjeta.type = 'button';
     tarjeta.className = 'tarjeta-unidad' + (unidad.esGeneral ? ' general' : '');
     tarjeta.title = unidad.nombre + ' · clic: seleccionar (Mayús añade) · doble clic: ir a la unidad · arrastrar: cambiar el orden';
-    const galones = unidad.esGeneral ? '★' : '<span class="galon"></span>'.repeat((unidad.nivel || 0) + 1);
+    const galones = unidad.esGeneral ? '★' : galonesHtml(unidad.nivel || 0);
     tarjeta.innerHTML = `<span class="tipo-icono"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">${ICONOS_TIPO[clave] || ''}</svg></span>
       <span class="galones" title="${unidad.esGeneral ? 'General' : NIVELES[unidad.nivel || 0].nombre}">${galones}</span>
       <span class="grupo-insignia" title="Grupo (pulsa su número para seleccionarlo)"></span>
       <span class="retrato"></span>
       <span class="cuenta"></span>
       <span class="municion" title="Andanadas"></span>
-      <span class="nombre-tipo">${textoEsc(unidad.esGeneral ? 'General' : NOMBRE_CORTO_TIPO[clave] || TIPOS[unidad.tipo].nombre)}</span>
+      <span class="nombre-tipo">${textoEsc(unidad.esGeneral ? 'General' : TIPOS[unidad.tipo].nombreCorto || TIPOS[unidad.tipo].nombre)}</span>
       <span class="barra cohesion" title="Cohesión"><span></span></span>
       <span class="barra vida" title="Vida"><span></span></span>
       <span class="barra moral" title="Moral"><span></span></span>`;

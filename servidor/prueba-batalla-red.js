@@ -101,6 +101,9 @@ const alaPar = async (a, b) => { for (let k = 0; k < 40 && a.sim.paso !== b.sim.
     ana.enviar({ tipo: 'orden', orden: { a: 'mover', u: [unidadAna.id], d: [[300, 100, null]] } });   // mover no vale desplegando
     beto.enviar({ tipo: 'orden', orden: { a: 'formar', u: [muroBeto], clave: 'muro' } });
     beto.enviar({ tipo: 'orden', orden: { a: 'recolocar', u: [unidadBeto.id], d: [[330, 60, Math.PI]] } });
+    // frente a medida (2026-10-20): el cuarto dato es el frente (soldados por fila) que se dibuja arrastrando
+    const unidadFrente = ana.propias().find(u => u.formacion.clave === 'linea' && !u.stats.artilleria && u.id !== unidadAna.id);
+    ana.enviar({ tipo: 'orden', orden: { a: 'recolocar', u: [unidadFrente.id], d: [[80, 160, 0, 8]] } });
     await esperar(400);
     comprobar(Math.round(ana.sim.unidades[unidadAna.id].origenX) === 60, 'Ana ve su propia recolocación');
     comprobar(Math.round(beto.sim.unidades[unidadAna.id].origenX) !== 60 && ana.sim.unidades[muroBeto].formacion.clave !== 'muro', 'despliegue a ciegas: ninguno recibe lo que despliega el otro');
@@ -115,12 +118,15 @@ const alaPar = async (a, b) => { for (let k = 0; k < 40 && a.sim.paso !== b.sim.
     comprobar(Math.round(beto.sim.unidades[unidadAna.id].origenY) === 100 && ana.sim.unidades[muroBeto].formacion.clave === 'muro' && Math.round(ana.sim.unidades[unidadBeto.id].origenY) === 60, 'al empezar, cada uno recibe el despliegue del otro');
     await alaPar(ana, beto);
     comprobar(resumenDe(ana.sim) === resumenDe(beto.sim), 'y las dos simulaciones son idénticas');
+    comprobar(ana.sim.unidades[unidadFrente.id].frente === 8 && beto.sim.unidades[unidadFrente.id].frente === 8, 'el frente dibujado en el despliegue llega igual al rival (8 soldados por fila)');
     // combate
     atacarTodos(ana); atacarTodos(beto);
     ana.enviar({ tipo: 'orden', orden: { a: 'atacar', u: [ana.propias()[3].id], objetivo: beto.propias()[0].id, m: 'correr' } });
     ana.enviar({ tipo: 'orden', orden: { a: 'basura', u: 'x', d: { mal: 1 } } });
     ana.enviar({ tipo: 'orden', orden: { a: 'mover', u: [ana.propias()[2].id], d: [[NaN, 'a', null]] } });
+    ana.enviar({ tipo: 'orden', orden: { a: 'mover', u: [unidadFrente.id], d: [[150, 160, 0, 14, 'basura']] } });   // con frente (y un quinto dato que el servidor quita)
     await esperar(3000);
+    comprobar(beto.sim.unidades[unidadFrente.id].frente === 14 && resumenDe(ana.sim) === resumenDe(beto.sim), 'un frente nuevo al mover, en combate, llega igual al rival y las dos siguen idénticas');
     // pausa de común acuerdo: Ana la pide, Beto la rechaza; la vuelve a pedir y Beto la acepta
     ana.limpiar('pausaRechazada'); ana.enviar({ tipo: 'pedirPausa' });
     await ana.espera('pausaSolicitada'); await beto.espera('pausaPedida');

@@ -42,16 +42,25 @@ const GENERAL_DESESPERADO = 0.35;           // o si le queda menos de esta fracc
      unidad del jugador que pelea con los suyos más cerca de él; si no hay ninguna, a por la más cercana.
    - Si no, se queda junto a sus tropas: en ofensiva, GENERAL_DETRAS m detrás del centro de su ejército, del lado contrario al
      jugador, para que su aura de moral las cubra; en defensiva, en su puesto. */
+// (2026-10-19) piezas comunes de la IA: el equipo de la IA y el del rival (antes, el rival era el 0 escrito a mano), una unidad
+// que sigue en la pelea, los enemigos que siguen en ella, los soldados en pie de un bando y el aliado trabado junto a un punto
+const equipoDeLaIA = unidadesIA => unidadesIA[0] ? unidadesIA[0].equipo : 1;
+const unidadActiva = u => u.vivos > 0 && !u.huyendo;
+const enemigosActivos = (sim, equipoIA) => sim.unidades.filter(e => e.equipo !== equipoIA && unidadActiva(e));
+// soldados en pie (sin los que huyen) de un bando; sinGeneral: sin contar la guardia del general
+const soldadosEnPie = (sim, equipo, sinGeneral) => sim.unidades.reduce((s, x) => s + (x.equipo === equipo && !(sinGeneral && x.esGeneral) && !x.huyendo ? x.vivos : 0), 0);
+function aliadoTrabadoJunto(unidadesIA, excluida, x, y, radio) { for (const a of unidadesIA) if (a !== excluida && unidadActiva(a) && a.luchando > 0 && distancia(x, y, a.centroX, a.centroY) < radio) return a; return null; }
+function enemigoMasCercano(enemigos, x, y) { let enemigo = null, d = Infinity; for (const e of enemigos) { const de = distancia(x, y, e.centroX, e.centroY); if (de < d) { d = de; enemigo = e; } } return { enemigo, d }; }
+
 function ordenesGeneralIA(sim, u, unidadesIA, t, enDefensa, estado) {
-  const enPie = equipo => sim.unidades.reduce((s, x) => s + (x.equipo === equipo && !x.esGeneral && !x.huyendo ? x.vivos : 0), 0);
-  const propios = enPie(1), delJugador = enPie(0);
+  const equipoIA = u.equipo, equipoRival = 1 - equipoIA;
+  const propios = soldadosEnPie(sim, equipoIA, true), delJugador = soldadosEnPie(sim, equipoRival, true);
   if (!estado.iniciales) estado.iniciales = [Math.max(1, delJugador), Math.max(1, propios)];   // ejércitos al empezar (sin las guardias)
   const fraccionPropia = propios / estado.iniciales[1], fraccionJugador = delJugador / estado.iniciales[0];
-  const jugadorRoto = sim.estadisticas.vivos[0] - sim.estadisticas.huyendo[0] < 40;
+  const jugadorRoto = sim.estadisticas.vivos[equipoRival] - sim.estadisticas.huyendo[equipoRival] < 40;
   const perdiendo = propios === 0 || fraccionPropia < GENERAL_DESESPERADO || (fraccionPropia < fraccionJugador * GENERAL_PERDIENDO && fraccionPropia < 1 - GENERAL_PERDIDAS_MINIMAS);
-  const enemigos = sim.unidades.filter(e => e.equipo === 0 && e.vivos > 0 && !e.huyendo);
-  let cercano = null, dCercano = Infinity;
-  for (const e of enemigos) { const d = distancia(u.centroX, u.centroY, e.centroX, e.centroY); if (d < dCercano) { dCercano = d; cercano = e; } }
+  const enemigos = enemigosActivos(sim, equipoIA);
+  const { enemigo: cercano, d: dCercano } = enemigoMasCercano(enemigos, u.centroX, u.centroY);
   const atacando = u.orden === 'cargar' || u.orden === 'avanzar' || (u.orden === 'atacar' && u.objetivoFijo >= 0 && sim.unidades[u.objetivoFijo].vivos > 0 && !sim.unidades[u.objetivoFijo].huyendo);
   if (t > 20 && (dCercano < 25 || jugadorRoto || perdiendo)) {
     if (atacando || !cercano) return;
@@ -71,7 +80,7 @@ function ordenesGeneralIA(sim, u, unidadesIA, t, enDefensa, estado) {
   if (sim.paso % 90 !== 0) return;
   // detrás del centro de su ejército, del lado contrario al del jugador
   let sx = 0, sy = 0, n = 0, ex = 0, ey = 0, m = 0;
-  for (const a of unidadesIA) if (!a.esGeneral && a.vivos > 0 && !a.huyendo) { sx += a.centroX * a.vivos; sy += a.centroY * a.vivos; n += a.vivos; }
+  for (const a of unidadesIA) if (!a.esGeneral && unidadActiva(a)) { sx += a.centroX * a.vivos; sy += a.centroY * a.vivos; n += a.vivos; }
   for (const e of enemigos) { ex += e.centroX * e.vivos; ey += e.centroY * e.vivos; m += e.vivos; }
   if (!n || !m) return;
   const cx = sx / n, cy = sy / n, hx = ex / m - cx, hy = ey / m - cy, largo = Math.hypot(hx, hy) || 1;
@@ -136,7 +145,7 @@ function elegirBlancoCaballeriaIA(sim, u, unidadesIA, opciones) {
     // hacia dónde mira el enemigo y si el jinete le queda a la espalda
     const desdeJinete = normalizarAngulo(Math.atan2(u.centroY - e.centroY, u.centroX - e.centroX) - e.rumbo);
     const daLaEspalda = Math.abs(desdeJinete) > ANGULO_ESPALDA;
-    const conAliado = e.luchando > 0 && unidadesIA.some(a => a !== u && a.vivos > 0 && !a.huyendo && a.luchando > 0 && distancia(a.centroX, a.centroY, e.centroX, e.centroY) < 25);
+    const conAliado = e.luchando > 0 && !!aliadoTrabadoJunto(unidadesIA, u, e.centroX, e.centroY, 25);
     let puntos, motivo, carrerillaX = null, carrerillaY = null;
     const cuestaArriba = cargaCuestaArriba(sim, u, e), seArriesga = cuestaArriba && arriesgada && arriesgaCuesta(sim, u, e);
     if (!cuestaArriba || seArriesga) {
@@ -184,7 +193,7 @@ function caminoPorPasosIA(sim, u, e) {
   if (!sim.hayBloqueos || !sim.hayBloqueos()) return null;
   const pasos = sim.terreno.pasosClave(); if (!pasos.length) return null;
   const rodeo = p => distancia(u.centroX, u.centroY, p[0], p[1]) + distancia(p[0], p[1], e.centroX, e.centroY);
-  const defendido = p => sim.unidades.some(o => o.equipo !== u.equipo && o.vivos > 0 && !o.huyendo && distancia(o.centroX, o.centroY, p[0], p[1]) < PASO_DEFENDIDO);
+  const defendido = p => sim.unidades.some(o => o.equipo !== u.equipo && unidadActiva(o) && distancia(o.centroX, o.centroY, p[0], p[1]) < PASO_DEFENDIDO);
   // también cuenta como cruzar un paso ir en recta A TRAVÉS de uno defendido (la recta pasa a menos de 15 m de su centro)
   const alSegmento = p => { const dx = e.centroX - u.centroX, dy = e.centroY - u.centroY, l2 = dx * dx + dy * dy || 1, s = limitar(((p[0] - u.centroX) * dx + (p[1] - u.centroY) * dy) / l2, 0, 1); return distancia(p[0], p[1], u.centroX + dx * s, u.centroY + dy * s); };
   if (sim.terreno.rectaLibre(u.centroX, u.centroY, e.centroX, e.centroY, HOLGURA_RECTA) && !pasos.some(p => alSegmento(p) < 15 && defendido(p))) return null;
@@ -230,7 +239,7 @@ function cargarBlancoIA(sim, u, eleccion, alcanceCarga) {
   const estorbo = unidadEnMedio(sim, u, e.centroX, e.centroY, e) || unidadEnMedio(sim, u, puntoX, puntoY, e);
   if (estorbo) {
     let radio = 25;
-    for (const o of sim.unidades) if (o.equipo !== u.equipo && o.vivos > 0 && !o.huyendo && o !== e && distancia(o.centroX, o.centroY, e.centroX, e.centroY) < 50) radio = Math.max(radio, distancia(o.centroX, o.centroY, e.centroX, e.centroY) + sim.dimensionesUnidad(o).ancho / 2 + BLANCO_IA.holguraRodeo);
+    for (const o of sim.unidades) if (o.equipo !== u.equipo && unidadActiva(o) && o !== e && distancia(o.centroX, o.centroY, e.centroX, e.centroY) < 50) radio = Math.max(radio, distancia(o.centroX, o.centroY, e.centroX, e.centroY) + sim.dimensionesUnidad(o).ancho / 2 + BLANCO_IA.holguraRodeo);
     const anguloJinete = Math.atan2(u.centroY - e.centroY, u.centroX - e.centroX), anguloEspalda = e.rumbo + Math.PI;
     const falta = normalizarAngulo(anguloEspalda - anguloJinete);
     const enCirculo = angulo => [limitar(e.centroX + Math.cos(angulo) * radio, 6, CAMPO.ancho - 6), limitar(e.centroY + Math.sin(angulo) * radio, 6, CAMPO.alto - 6)];
@@ -315,8 +324,8 @@ const DISTANCIA_FLANQUEO = 70, HOLGURA_FLANCO = 8, AMENAZA_CARGA = { distancia: 
 const numeroFijo = (a, b, c) => (Math.imul((a + 1) * 73856093 ^ (b + 1) * 19349663 ^ (c + 1) * 83492791, 2654435761) >>> 0) / 4294967296;
 function tacticasPorDificultad(sim, unidadesIA, estado, t, dificil, facil) {
   if (t < 4) return;
-  const enemigos = sim.unidades.filter(e => e.equipo !== (unidadesIA[0] && unidadesIA[0].equipo) && e.vivos > 0 && !e.huyendo);
-  const tiradores = unidadesIA.filter(u => u.vivos > 0 && !u.huyendo && u.stats.alcanceTiro && !u.sinMunicion && !u.stats.disparaEnMovimiento && !u.trabada);
+  const enemigos = enemigosActivos(sim, equipoDeLaIA(unidadesIA));
+  const tiradores = unidadesIA.filter(u => unidadActiva(u) && u.stats.alcanceTiro && !u.sinMunicion && !u.stats.disparaEnMovimiento && !u.trabada);
   if (dificil) {
     reaccionarACargasIA(sim, unidadesIA, enemigos);
     if (estado.actitud === 'ofensiva') flanquearIA(sim, unidadesIA, enemigos);
@@ -356,7 +365,7 @@ function reaccionarACargasIA(sim, unidadesIA, enemigos) {
 // (2) flanqueo: a la unidad del jugador que pelea con una de la IA, una infantería libre (sin trabar) de la IA va a su costado (el
 // más cercano, a media anchura más HOLGURA_FLANCO m) y desde allí la ataca. Un flanqueador por blanco
 function flanquearIA(sim, unidadesIA, enemigos) {
-  const flanqueados = new Set(unidadesIA.filter(u => u.planFlanqueoIA && u.vivos > 0 && !u.huyendo).map(u => u.planFlanqueoIA.id));
+  const flanqueados = new Set(unidadesIA.filter(u => u.planFlanqueoIA && unidadActiva(u)).map(u => u.planFlanqueoIA.id));
   for (const u of unidadesIA) {
     if (u.vivos === 0 || u.huyendo || u.esGeneral || u.stats.montado || u.stats.alcanceTiro || u.stats.artilleria) continue;
     const plan = u.planFlanqueoIA;
@@ -421,9 +430,8 @@ function inteligenciaArtificialBatalla(sim, unidadesIA, nivelIA, actitudElegida)
     // batalla ganada (2026-10-18): con VENTAJA_REMATE veces los soldados en pie del jugador, sale a rematar (si no, unos pocos
     // supervivientes lejos de su puesto, como el general, dejaban la batalla abierta para siempre)
     else if (estado.huboChoque) {
-      const enPie = equipo => sim.unidades.reduce((s, u) => s + (u.equipo === equipo && !u.huyendo ? u.vivos : 0), 0);
-      const equipoIA = unidadesIA[0] ? unidadesIA[0].equipo : 1;
-      if (enPie(equipoIA) >= VENTAJA_REMATE * Math.max(1, enPie(1 - equipoIA))) { estado.actitud = 'ofensiva'; estado.motivoCambio = 'ventaja'; }
+      const equipoIA = equipoDeLaIA(unidadesIA);
+      if (soldadosEnPie(sim, equipoIA, false) >= VENTAJA_REMATE * Math.max(1, soldadosEnPie(sim, 1 - equipoIA, false))) { estado.actitud = 'ofensiva'; estado.motivoCambio = 'ventaja'; }
     }
   }
   if (estado.actitud === 'defensiva') iaDefensiva(sim, unidadesIA, estado, t, facil);
@@ -476,9 +484,9 @@ function iaOfensiva(sim, unidadesIA, estado, t, dificil, facil) {
 
 function iaDefensiva(sim, unidadesIA, estado, t, facil) {
   // enemigos vivos y aliados trabados (para socorrer)
-  const enemigos = sim.unidades.filter(e => e.equipo === 0 && e.vivos > 0 && !e.huyendo);
-  const enemigoMasCercanoA = (x, y) => { let mejor = null, mejorD = Infinity; for (const e of enemigos) { const d = distancia(x, y, e.centroX, e.centroY); if (d < mejorD) { mejorD = d; mejor = e; } } return { enemigo: mejor, d: mejorD }; };
-  const aliadoTrabadoCerca = (u, radio) => { for (const a of unidadesIA) if (a !== u && a.vivos > 0 && !a.huyendo && a.luchando > 0 && distancia(u.centroX, u.centroY, a.centroX, a.centroY) < radio) return a; return null; };
+  const enemigos = enemigosActivos(sim, equipoDeLaIA(unidadesIA));
+  const enemigoMasCercanoA = (x, y) => enemigoMasCercano(enemigos, x, y);
+  const aliadoTrabadoCerca = (u, radio) => aliadoTrabadoJunto(unidadesIA, u, u.centroX, u.centroY, radio);
   for (const u of unidadesIA) {
     if (u.vivos === 0 || u.huyendo) continue;
     const datos = u.stats, puesto = estado.puestos.get(u) || { x: u.origenX, y: u.origenY, rumbo: u.rumbo };

@@ -5,7 +5,7 @@
    Al cambiar de idioma se repinta la pantalla abierta, para que lo que se monta con datos salga en el idioma nuevo. */
 function registrarDatosTraducibles() {
   const cadaUno = (tabla, campos) => { for (const fila of Object.values(tabla || {})) registrarTraducibles(fila, campos); };
-  if (typeof TIPOS !== 'undefined') for (const t of TIPOS) registrarTraducibles(t, ['nombre']);
+  if (typeof TIPOS !== 'undefined') for (const t of TIPOS) registrarTraducibles(t, ['nombre', 'nombreCorto']);
   cadaUno(typeof FORMACIONES !== 'undefined' && FORMACIONES, ['nombre', 'descripcion', 'ventajas']);
   if (typeof QUIEN_PUEDE_FORMACION !== 'undefined') registrarTraducibles(QUIEN_PUEDE_FORMACION, Object.keys(QUIEN_PUEDE_FORMACION));
   cadaUno(typeof CLIMAS !== 'undefined' && CLIMAS, ['nombre', 'descripcion']);
@@ -16,7 +16,6 @@ function registrarDatosTraducibles() {
   cadaUno(typeof DIFICULTADES !== 'undefined' && DIFICULTADES, ['nombre', 'descripcion']);
   cadaUno(typeof ACTITUDES_IA !== 'undefined' && ACTITUDES_IA, ['nombre', 'descripcion']);
   cadaUno(typeof RASGOS_GENERAL !== 'undefined' && RASGOS_GENERAL, ['nombres', 'descripcion', 'frases']);
-  if (typeof NOMBRE_CORTO_TIPO !== 'undefined') registrarTraducibles(NOMBRE_CORTO_TIPO, Object.keys(NOMBRE_CORTO_TIPO));
   if (typeof PASOS_TUTORIAL !== 'undefined') for (const p of PASOS_TUTORIAL) registrarTraducibles(p, ['titulo', 'texto']);
 }
 // repintar la pantalla abierta con el idioma nuevo

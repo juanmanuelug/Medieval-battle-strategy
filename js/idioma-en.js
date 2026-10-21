@@ -11,7 +11,7 @@ const TEXTOS_EN = {
   'Cuesta abajo: +{n} % en el cuerpo a cuerpo': 'Downhill: +{n}% in melee', 'Cuesta arriba: −{n} % en el cuerpo a cuerpo': 'Uphill: −{n}% in melee',
   'Carga cuesta abajo: +{n} %': 'Downhill charge: +{n}%', 'Carga cuesta arriba: −{n} %': 'Uphill charge: −{n}%',
   'El terreno': 'The terrain',
-  'Gana las alturas: se golpea más fuerte cuesta abajo, la caballería carga mejor bajando y peor subiendo, y desde arriba se dispara más lejos. Subir frena y cansa. Las colinas tapan: las ballestas solo tiran a quien ven y las flechas que chocan con una ladera se quedan en ella. Los bosques frenan, impiden cargar y protegen de las flechas. Los riscos y el agua profunda no se pueden atravesar: tus tropas los rodean solas por los pasos y los vados, que son los puntos que hay que defender. Con tropas seleccionadas, pasa el ratón por un enemigo para ver qué te da el terreno contra él.': 'Take the high ground: blows land harder downhill, cavalry charges better going down and worse going up, and you shoot further from above. Climbing slows and tires. Hills block: crossbows only shoot at what they can see, and arrows that hit a slope stay in it. Forests slow you down, stop charges and protect from arrows. Crags and deep water cannot be crossed: your troops go around them on their own through the passes and fords, which are the points to hold. With troops selected, hover over an enemy to see what the ground gives you against it.',
+  'Gana las alturas: se golpea más fuerte cuesta abajo, la caballería carga mejor bajando y peor subiendo, y desde arriba se dispara más lejos. Subir frena y cansa. Las colinas tapan: las ballestas solo tiran a quien ven y las flechas que chocan con una ladera se quedan en ella. Los bosques frenan, impiden cargar y protegen de las flechas. Los riscos y el agua profunda no se pueden atravesar: tus tropas los rodean solas por los pasos, los vados y los puentes, que son los puntos que hay que defender (un puente es estrecho: se cruza con el frente estrechado). Por los caminos se marcha más deprisa y se cansa menos. Con tropas seleccionadas, pasa el ratón por un enemigo para ver qué te da el terreno contra él.': 'Take the high ground: blows land harder downhill, cavalry charges better going down and worse going up, and you shoot further from above. Climbing slows and tires. Hills block: crossbows only shoot at what they can see, and arrows that hit a slope stay in it. Forests slow you down, stop charges and protect from arrows. Crags and deep water cannot be crossed: your troops go around them on their own through the passes, fords and bridges, which are the points to hold (a bridge is narrow: it is crossed with a narrowed front). On roads you march faster and tire less. With troops selected, hover over an enemy to see what the ground gives you against it.',
   // ---- inicio, reino y menú ----
   'Batallas medievales': 'Medieval Battles',
   'Funda tu reino, recluta un ejército y dirígelo en batallas masivas.': 'Found your kingdom, raise an army and lead it in massive battles.',
@@ -51,7 +51,7 @@ const TEXTOS_EN = {
   'Añade unidades enemigas con los botones de arriba. Además de estas, la IA siempre lleva la guardia de su general.': 'Add enemy units with the buttons above. Besides these, the AI always brings its general’s guard.',
   // ---- batalla: HUD, despliegue, órdenes, ayuda ----
   'Fase de despliegue.': 'Deployment phase.',
-  'Coloca tus unidades dentro de la zona marcada: clic derecho las sitúa, arrastrar derecho les da el rumbo, F cambia la formación.': 'Place your units inside the marked area: right click places them, right drag sets their facing, F changes formation.',
+  'Coloca tus unidades dentro de la zona marcada: clic derecho las sitúa, arrastrar derecho dibuja su frente (más largo, más ancho; más corto, más fondo), F cambia la formación.': 'Place your units inside the marked area: right click places them, right drag draws their front (longer is wider, shorter is deeper), F changes formation.',
   '¡Comenzar la batalla!': 'Start the battle!', 'Intro': 'Enter', 'Esperando al rival…': 'Waiting for your opponent…',
   'Retirarse': 'Retreat', 'Rendirse': 'Surrender', 'Retirarse del campo (cuenta como derrota)': 'Retreat from the field (counts as a defeat)',
   'Rendirse: tu rival gana la batalla': 'Surrender: your opponent wins the battle',
@@ -79,7 +79,7 @@ const TEXTOS_EN = {
   'Alt': 'Alt', 'sin nada seleccionado: ver a dónde va cada unidad (verde al paso, amarillo a la carrera, rojo atacando, ámbar disparando)': 'with nothing selected: see where each unit is going (green walking, yellow running, red attacking, amber shooting)',
   'Ordenar': 'Orders', 'Clic derecho': 'Right click', 'en el suelo: mover al paso (varias unidades forman una fila; con': 'on the ground: move at a walk (several units form a line; with', 'conservan su disposición y, arrastrando, el conjunto gira hacia el rumbo: así se mueve el ejército entero tal como está)': 'they keep their layout and, when dragging, the whole group turns to face the direction: that is how you move the whole army as it is)',
   'sobre un enemigo o su estandarte: atacar': 'on an enemy or its banner: attack', 'Doble clic derecho': 'Double right click', ': a la carrera': ': at a run', 'Arrastrar derecho': 'Right drag',
-  ': mover con rumbo (se previsualiza la fila);': ': move with facing (the line is previewed);', 'Ctrl': 'Ctrl', ': solo encarar': ': only face', 'Clic derecho en el minimapa': 'Right click on the minimap', ': mover allí': ': move there',
+  ': dibuja el frente: el largo es el ancho de la formación (más corto, más filas) y la tropa mira perpendicular, hacia delante (se previsualiza);': ': draw the front: its length is the width of the formation (shorter means more ranks) and the troops face perpendicular to it, forwards (previewed);', 'Ctrl': 'Ctrl', ': solo encarar': ': only face', 'Clic derecho en el minimapa': 'Right click on the minimap', ': mover allí': ': move there',
   ': modo escaramuza de los arqueros a caballo (activado por defecto: se alejan de quien se les acerca y siguen disparando)': ': horse archer skirmish mode (on by default: they ride away from whoever approaches and keep shooting)',
   'atacar ·': 'attack ·', 'cargar ·': 'charge ·', 'disparar ·': 'shoot ·', 'alto ·': 'halt ·', 'cambia la formación (Mayús+R / Mayús+T: corriendo)': 'changes formation (Shift+R / Shift+T: running)',
   'Cámara y juego': 'Camera and game', 'flechas': 'arrow keys', 'botón central': 'middle button', 'espacio+arrastrar': 'space+drag', ': desplazar': ': pan', 'Rueda': 'Wheel', ': zoom ·': ': zoom ·',
@@ -132,7 +132,7 @@ const TEXTOS_EN = {
   'Tierra de colinas': 'Hill country', 'Muchas colinas grandes y escarpes de roca: quien gane las alturas tiene ventaja.': 'Many large hills and rocky escarpments: whoever takes the heights has the advantage.',
   'Valle': 'Valley', 'Dos cordilleras a lo largo de los bordes y un valle llano en medio.': 'Two ridges along the edges and a flat valley in between.',
   'Río profundo': 'Deep river', 'Un río profundo que no se puede cruzar a nado: solo hay dos vados. Quien los domine controla la batalla.': 'A deep river that cannot be swum across: there are only two fords. Whoever holds them controls the battle.',
-  'agua profunda': 'deep water', 'risco': 'crag',
+  'agua profunda': 'deep water', 'risco': 'crag', 'camino': 'road', 'puente': 'bridge',
   'Paso de montaña': 'Mountain pass', 'Una cordillera de roca parte el campo: solo se cruza por uno o dos pasos. Defiéndelos o fuérzalos.': 'A rocky ridge splits the field: it can only be crossed through one or two passes. Hold them or force them.',
   'Río con vados': 'River with fords', 'Un río cruza el campo entre los dos ejércitos: el agua frena muchísimo y no deja cargar; los vados son el paso.': 'A river crosses the field between the two armies: the water slows a lot and prevents charges; the fords are the way across.',
   'Fácil': 'Easy', 'Normal': 'Normal', 'Difícil': 'Hard', 'Brutal': 'Brutal',
@@ -180,8 +180,8 @@ const TEXTOS_EN = {
   'Cada tropa, su papel': 'Every troop has its role', 'Cámara y atajos': 'Camera and shortcuts', 'Juega con amigos': 'Play with friends', '¡A jugar!': 'Let’s play!', '← Anterior': '← Previous', 'Siguiente →': 'Next →', 'Cerrar (Esc)': 'Close (Esc)',
   'Cada rama tiene ventajas en sus tropas y una unidad exclusiva: caballeros, guardia varega, templarios, arqueros a caballo o berserkers. Tu blasón sale en escudos, sobrevestas y estandartes.': 'Each faction has troop advantages and an exclusive unit: knights, Varangian Guard, Templars, horse archers or berserkers. Your coat of arms appears on shields, surcoats and banners.',
   'Cada botón compra una unidad completa. Los niveles (leva, milicia, hombres de armas, veteranos) dan más vida, daño y moral, pero cuestan más. Busca un ejército equilibrado: infantería que aguante, tiradores, caballería y, si quieres, mangoneles.': 'Each button buys a full unit. Levels (levy, militia, men-at-arms, veterans) give more health, damage and morale, but cost more. Aim for a balanced army: infantry that holds, missile troops, cavalry and, if you like, mangonels.',
-  'Antes de empezar, coloca tus tropas dentro de la zona amarilla: selecciónalas y haz clic derecho donde quieras; arrastrando con el botón derecho eliges hacia dónde miran. Cuando estés listo, «¡Comenzar la batalla!» o Intro.': 'Before starting, place your troops inside the yellow area: select them and right click where you want; right dragging chooses which way they face. When you are ready, «Start the battle!» or Enter.',
-  'Clic o recuadro para seleccionar (Mayús añade, Ctrl+A todas, también desde las tarjetas de abajo). Clic derecho en el suelo: mover al paso; doble clic o Mayús: a la carrera, que cansa. Con Alt, varias unidades conservan su disposición (arrastrando, giran todas hacia el rumbo). Las líneas verdes marcan el destino.': 'Click or drag a box to select (Shift adds, Ctrl+A all, also from the cards at the bottom). Right click on the ground: move at a walk; double click or Shift: at a run, which tires. With Alt, several units keep their layout (when dragging, they all turn to face the direction). Green lines show the destination.',
+  'Antes de empezar, coloca tus tropas dentro de la zona amarilla: selecciónalas y haz clic derecho donde quieras; arrastrando con el botón derecho dibujas su frente: cuanto más largo, más ancha la formación, y miran perpendicular a él. Cuando estés listo, «¡Comenzar la batalla!» o Intro.': 'Before starting, place your troops inside the yellow area: select them and right click where you want; right dragging draws their front: the longer it is, the wider the formation, and they face perpendicular to it. When you are ready, «Start the battle!» or Enter.',
+  'Clic o recuadro para seleccionar (Mayús añade, Ctrl+A todas, también desde las tarjetas de abajo). Clic derecho en el suelo: mover al paso; doble clic o Mayús: a la carrera, que cansa. Arrastrando con el botón derecho dibujas el frente: más largo, formación más ancha; más corto, más profunda. Con Alt, varias unidades conservan su disposición (arrastrando, giran todas hacia el rumbo). Las líneas verdes marcan el destino.': 'Click or drag a box to select (Shift adds, Ctrl+A all, also from the cards at the bottom). Right click on the ground: move at a walk; double click or Shift: at a run, which tires. Right dragging draws the front: longer makes a wider formation, shorter a deeper one. With Alt, several units keep their layout (when dragging, they all turn to face the direction). Green lines show the destination.',
   'Clic derecho sobre un enemigo para atacarlo: la caballería carga y los tiradores disparan. Atajos: R atacar, C cargar, T disparar, H alto. La franja de encima de las tarjetas tiene las órdenes y las formaciones de lo seleccionado.': 'Right click an enemy to attack it: cavalry charges and missile troops shoot. Shortcuts: R attack, C charge, T shoot, H halt. The strip above the cards has the orders and formations for the selection.',
   'Cada formación tiene sus ventajas: el muro de escudos aguanta flechas y cargas, el cuadro frena a la caballería, la orden abierta reduce el daño de flechas y piedras, y la cuña hace que la caballería penetre. F cambia la formación; pasa el ratón por un botón para ver sus efectos.': 'Each formation has its advantages: the shield wall holds against arrows and charges, the square stops cavalry, loose order reduces arrow and stone damage, and the wedge lets cavalry break through. F changes formation; hover over a button to see its effects.',
   'Nadie lucha hasta el último hombre: las bajas, los ataques por el flanco o la espalda, las cargas y el cansancio bajan la moral, y la unidad acaba huyendo (su estandarte parpadea en blanco). El general cerca y las filas de apoyo dan ánimo. Las barras de cada tarjeta son vida, moral y cohesión.': 'Nobody fights to the last man: losses, attacks on the flank or rear, charges and fatigue lower morale, and the unit ends up fleeing (its banner flashes white). A nearby general and supporting ranks give heart. The bars on each card are health, morale and cohesion.',
@@ -214,6 +214,8 @@ const TEXTOS_EN = {
   'Rama desconocida.': 'Unknown faction.', 'El ejército está vacío.': 'The army is empty.', 'Nivel no válido.': 'Invalid level.', 'Esa tropa no se vende en ese nivel.': 'That troop is not sold at that level.',
 };
 
+// «12.000» → «12,000»: los miles, en inglés con coma (los números del juego salen con formatoNumero, a la española)
+const conMiles = numero => numero.replace(/\./g, ',');
 const PATRONES_EN = [
   // ---- inicio, menú, tienda ----
   [/^Reino guardado:$/, 'Saved kingdom:'],
@@ -224,7 +226,8 @@ const PATRONES_EN = [
   [/^(\d+) soldados por unidad · vida ([\d.,]+), daño ([\d.,]+), velocidad ([\d.,]+)(, (\d+) andanadas)?( · .+)?$/, (m, s, v, d, vel, x, a, bonos) => `${s} soldiers per unit · health ${v}, damage ${d}, speed ${vel}${a ? `, ${a} volleys` : ''}${bonos ? bonos.replace(/vida/g, 'health').replace(/daño/g, 'damage').replace(/velocidad/g, 'speed').replace(/precio/g, 'price') : ''}`],
   [/^(\d+) soldados por unidad$/, '$1 soldiers per unit'],
   [/^(.+): ×([\d.]+) vida y daño, ×([\d.]+) moral$/, '$1: ×$2 health and damage, ×$3 morale'],
-  [/^([\d.]+) oro$/, '$1 gold'],
+  [/^([\d.]+) oro$/, (m, n) => conMiles(n) + ' gold'],
+  [/^(\d{1,3}(?:\.\d{3})+)$/, (m, n) => conMiles(n)],          // un precio suelto (2.000) con los miles a la inglesa
   [/^disponibles · ejército: (\d+) unidades, (\d+) soldados$/, 'available · army: $1 units, $2 soldiers'],
   [/^(\d+) soldados · ([\d.]+)$/, '$1 soldiers · $2'],
   [/^Añadir una unidad de (.+)$/, 'Add a unit of $1'],
@@ -280,18 +283,18 @@ const PATRONES_EN = [
   [/^· anfitrión (.+) · (\d+)\/(\d+)$/, '· host $1 · $2/$3'],
   [/^Código para invitar:$/, 'Invite code:'],
   [/^Clima: (.+?)(?: · Mapa: (.+))?$/, (m, c, mp) => `Weather: ${traducirTexto(c)}${mp ? ' · Map: ' + traducirTexto(mp) : ''}`],
-  [/^([\d.]+) de oro$/, '$1 gold'],
-  [/^([\d.]+) de ([\d.]+) de oro gastado · quedan (-?[\d.]+)$/, '$1 of $2 gold spent · $3 left'],
-  [/^Los dos estáis listos\. Juegas en el lado (izquierdo|derecho); clima: (.+)\. Elegid rama y ejército con ([\d.]+) de oro\.$/, (m, lado, c, oro) => `You are both ready. You play on the ${lado === 'izquierdo' ? 'left' : 'right'} side; weather: ${traducirTexto(c)}. Choose faction and army with ${oro} gold.`],
-  [/^Clima: (.+) · ([\d.]+) de oro por jugador · semilla (\d+)$/, (m, c, oro, s) => `Weather: ${traducirTexto(c)} · ${oro} gold per player · seed ${s}`],
-  [/^\((izquierda|derecha)\) · (.+) · ([\d.]+) de oro$/, (m, lado, rama, oro) => `(${lado === 'izquierda' ? 'left' : 'right'}) · ${rama} · ${oro} gold`],
+  [/^([\d.]+) de oro$/, (m, n) => conMiles(n) + ' gold'],
+  [/^([\d.]+) de ([\d.]+) de oro gastado · quedan (-?[\d.]+)$/, (m, a, b, c) => `${conMiles(a)} of ${conMiles(b)} gold spent · ${conMiles(c)} left`],
+  [/^Los dos estáis listos\. Juegas en el lado (izquierdo|derecho); clima: (.+)\. Elegid rama y ejército con ([\d.]+) de oro\.$/, (m, lado, c, oro) => `You are both ready. You play on the ${lado === 'izquierdo' ? 'left' : 'right'} side; weather: ${traducirTexto(c)}. Choose faction and army with ${conMiles(oro)} gold.`],
+  [/^Clima: (.+) · ([\d.]+) de oro por jugador · semilla (\d+)$/, (m, c, oro, s) => `Weather: ${traducirTexto(c)} · ${conMiles(oro)} gold per player · seed ${s}`],
+  [/^\((izquierda|derecha)\) · (.+) · ([\d.]+) de oro$/, (m, lado, rama, oro) => `(${lado === 'izquierda' ? 'left' : 'right'}) · ${rama} · ${conMiles(oro)} gold`],
   [/^(\d+) × (.+)$/, (m, n, u) => `${n} × ${traducirTexto(u)}`],
   [/^\((\d+) soldados\)$/, '($1 soldiers)'],
   [/^Sala de (.+)$/, '$1’s room'],
   // mensajes del servidor con datos
   [/^(.+) ha entrado en la sala$/, '$1 joined the room'],
   [/^(.+) ha salido de la sala(; la preparación se cancela)?$/, (m, n, c) => `${n} left the room${c ? '; preparation is cancelled' : ''}`],
-  [/^Presupuesto: ([\d.]+) de oro por jugador$/, 'Budget: $1 gold per player'],
+  [/^Presupuesto: ([\d.]+) de oro por jugador$/, (m, n) => 'Budget: ' + conMiles(n) + ' gold per player'],
   [/^Ejército no válido: (.+)$/, (m, motivo) => 'Invalid army: ' + traducirTexto(motivo)],
   [/^Como mucho (\d+) unidades\.$/, 'At most $1 units.'],
   [/^Como mucho (\d+) unidades de (.+)\.$/, (m, n, nombre) => `At most ${n} units of ${TEXTOS_EN[nombre] || nombre}.`],

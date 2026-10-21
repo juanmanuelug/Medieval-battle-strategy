@@ -7,13 +7,13 @@ const CLAVE_TUTORIAL_VISTO = 'batallas.tutorialVisto.v1';
 const PASOS_TUTORIAL = [
   { imagen: '1-ramas', titulo: 'Elige una rama', texto: 'Cada rama tiene ventajas en sus tropas y una unidad exclusiva: caballeros, guardia varega, templarios, arqueros a caballo o berserkers. Tu blasón sale en escudos, sobrevestas y estandartes.' },
   { imagen: '2-tienda', titulo: 'Recluta tu ejército', texto: 'Cada botón compra una unidad completa. Los niveles (leva, milicia, hombres de armas, veteranos) dan más vida, daño y moral, pero cuestan más. Busca un ejército equilibrado: infantería que aguante, tiradores, caballería y, si quieres, mangoneles.' },
-  { imagen: '3-despliegue', titulo: 'Despliega', texto: 'Antes de empezar, coloca tus tropas dentro de la zona amarilla: selecciónalas y haz clic derecho donde quieras; arrastrando con el botón derecho eliges hacia dónde miran. Cuando estés listo, «¡Comenzar la batalla!» o Intro.' },
-  { imagen: '4-mover', titulo: 'Selecciona y mueve', texto: 'Clic o recuadro para seleccionar (Mayús añade, Ctrl+A todas, también desde las tarjetas de abajo). Clic derecho en el suelo: mover al paso; doble clic o Mayús: a la carrera, que cansa. Con Alt, varias unidades conservan su disposición (arrastrando, giran todas hacia el rumbo). Las líneas verdes marcan el destino.' },
+  { imagen: '3-despliegue', titulo: 'Despliega', texto: 'Antes de empezar, coloca tus tropas dentro de la zona amarilla: selecciónalas y haz clic derecho donde quieras; arrastrando con el botón derecho dibujas su frente: cuanto más largo, más ancha la formación, y miran perpendicular a él. Cuando estés listo, «¡Comenzar la batalla!» o Intro.' },
+  { imagen: '4-mover', titulo: 'Selecciona y mueve', texto: 'Clic o recuadro para seleccionar (Mayús añade, Ctrl+A todas, también desde las tarjetas de abajo). Clic derecho en el suelo: mover al paso; doble clic o Mayús: a la carrera, que cansa. Arrastrando con el botón derecho dibujas el frente: más largo, formación más ancha; más corto, más profunda. Con Alt, varias unidades conservan su disposición (arrastrando, giran todas hacia el rumbo). Las líneas verdes marcan el destino.' },
   { imagen: '5-combate', titulo: 'Ataca', texto: 'Clic derecho sobre un enemigo para atacarlo: la caballería carga y los tiradores disparan. Atajos: R atacar, C cargar, T disparar, H alto. La franja de encima de las tarjetas tiene las órdenes y las formaciones de lo seleccionado.' },
   { imagen: '6-formaciones', titulo: 'Formaciones', texto: 'Cada formación tiene sus ventajas: el muro de escudos aguanta flechas y cargas, el cuadro frena a la caballería, la orden abierta reduce el daño de flechas y piedras, y la cuña hace que la caballería penetre. F cambia la formación; pasa el ratón por un botón para ver sus efectos.' },
   { imagen: '7-moral', titulo: 'Moral y cohesión', texto: 'Nadie lucha hasta el último hombre: las bajas, los ataques por el flanco o la espalda, las cargas y el cansancio bajan la moral, y la unidad acaba huyendo (su estandarte parpadea en blanco). El general cerca y las filas de apoyo dan ánimo. Las barras de cada tarjeta son vida, moral y cohesión.' },
   { imagen: '9-tropas', titulo: 'Cada tropa, su papel', texto: 'Los lanceros paran a la caballería; la caballería arrolla a tiradores e infantería ligera, y mejor por la espalda; los tiradores castigan a quien no lleva escudo; los mangoneles destrozan formaciones cerradas. La insignia junto al estandarte dice qué es cada unidad.' },
-  { imagen: '10-terreno', titulo: 'El terreno', texto: 'Gana las alturas: se golpea más fuerte cuesta abajo, la caballería carga mejor bajando y peor subiendo, y desde arriba se dispara más lejos. Subir frena y cansa. Las colinas tapan: las ballestas solo tiran a quien ven y las flechas que chocan con una ladera se quedan en ella. Los bosques frenan, impiden cargar y protegen de las flechas. Los riscos y el agua profunda no se pueden atravesar: tus tropas los rodean solas por los pasos y los vados, que son los puntos que hay que defender. Con tropas seleccionadas, pasa el ratón por un enemigo para ver qué te da el terreno contra él.' },
+  { imagen: '10-terreno', titulo: 'El terreno', texto: 'Gana las alturas: se golpea más fuerte cuesta abajo, la caballería carga mejor bajando y peor subiendo, y desde arriba se dispara más lejos. Subir frena y cansa. Las colinas tapan: las ballestas solo tiran a quien ven y las flechas que chocan con una ladera se quedan en ella. Los bosques frenan, impiden cargar y protegen de las flechas. Los riscos y el agua profunda no se pueden atravesar: tus tropas los rodean solas por los pasos, los vados y los puentes, que son los puntos que hay que defender (un puente es estrecho: se cruza con el frente estrechado). Por los caminos se marcha más deprisa y se cansa menos. Con tropas seleccionadas, pasa el ratón por un enemigo para ver qué te da el terreno contra él.' },
   { imagen: '8-camara', titulo: 'Cámara y atajos', texto: 'W A S D o las flechas mueven la cámara y la rueda acerca; clic en el minimapa para saltar. G agrupa la selección (su número la recupera), Alt sin nada seleccionado muestra los destinos, P pausa y F1 abre la ayuda completa.' },
   { imagen: null, titulo: 'Juega con amigos', texto: 'En «Multijugador» puedes crear una sala y pasar su código a un amigo, o pulsar «Buscar partida». Cada uno recluta con el mismo oro y despliega a ciegas; la pausa se le pide al rival. ¡Suerte en el campo!' },
 ];
@@ -22,7 +22,7 @@ function abrirTutorial(desde) {
   pasoTutorial = desde || 0;
   pintarTutorial();
   elemento('#tutorial').classList.remove('oculto');
-  try { localStorage.setItem(CLAVE_TUTORIAL_VISTO, '1'); } catch (e) {}
+  guardarLocal(CLAVE_TUTORIAL_VISTO, '1');
 }
 function cerrarTutorial() { elemento('#tutorial').classList.add('oculto'); }
 function pintarTutorial() {
@@ -54,6 +54,6 @@ elementoListo(() => {
     else if (e.key === 'Escape') cerrarTutorial();
   }, true);
   // la primera vez que se entra en el juego se abre solo
-  let visto = true; try { visto = !!localStorage.getItem(CLAVE_TUTORIAL_VISTO); } catch (e) {}
+  const visto = !!leerLocal(CLAVE_TUTORIAL_VISTO, '1');
   if (!visto) setTimeout(() => abrirTutorial(), 400);
 });

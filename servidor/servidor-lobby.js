@@ -111,7 +111,6 @@ const PRESUPUESTOS = [6000, 9000, 12000, 18000, 25000];   // oro de cada jugador
 const MAX_TAMANO_BLASON = 200000;                           // caracteres del blasón en JSON (los importados con muchas capas)
 const LETRAS_CODIGO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // sin O/0 ni I/1, que se confunden al dictarlos
 const MS_TURNO = 100;                 // un turno de batalla cada 100 ms…
-const TIEMPO_DESPLIEGUE = 120;        // segundos de despliegue como mucho
 // seguridad S1 (2026-10-19): espera a que el otro confirme un resultado, tiempo máximo para verificarlo, anuncios falsos que hacen
 // perder y tamaño máximo de un estado que manda un navegador
 // seguridad S2 (2026-10-19): turnos entre puntos de control, tiempo máximo para que llegue uno, arbitrajes como mucho uno cada
@@ -121,7 +120,7 @@ const TIEMPO_DESPLIEGUE = 120;        // segundos de despliegue como mucho
 /* seguridad S3 (2026-10-19): mensajes por segundo de cada tipo que acepta el servidor de un jugador (los que pasan se descartan) y
    en total; quien descarta más de DESCARTES_MAXIMOS en un minuto es un abuso: se le corta la conexión. Los navegadores mandan muy
    por debajo (un resumen por segundo, órdenes sueltas). */
-const LIMITE_MENSAJES = { resumen: 4, orden: 25, estadoCompleto: 2, estadoVerificacion: 3, resultado: 2, chat: 3, pedirPausa: 2, responderPausa: 3, reanudarPausa: 3, rendirse: 2, listo: 5, ejercito: 3, crearSala: 2, unirse: 3, listarSalas: 3, buscarPartida: 3, hola: 3 };
+const LIMITE_MENSAJES = { resumen: 4, orden: 25, estadoCompleto: 2, estadoVerificacion: 3, resultado: 2, chat: 3, pedirPausa: 2, responderPausa: 3, reanudarPausa: 3, rendirse: 2, listo: 5, ejercito: 3, crearSala: 2, unirse: 3, listarSalas: 3, buscarPartida: 3, hola: 3, cancelarBusqueda: 3, salir: 3, opcionesSala: 5, retirarEjercito: 3, listoDespliegue: 3 };
 const LIMITE_POR_DEFECTO = 10, LIMITE_TOTAL = 60, DESCARTES_MAXIMOS = 300;
 const TURNOS_ENTRE_CONTROLES = 100, ESPERA_CONTROL = 15000, MS_ENTRE_ARBITRAJES = 10000, PASOS_POR_TROZO = 5, DESVIOS_MAXIMOS = 3;
 const ESPERA_CONFIRMACION_RESULTADO = 8000, VERIFICACION_MAXIMA = 60000, ANUNCIOS_FALSOS_MAXIMOS = 2, TAMANO_MAXIMO_ESTADO = 4 * 1024 * 1024;
@@ -147,7 +146,8 @@ const ESPERA_ESTADO = 20000;          // relevo: ms que se espera el estado pedi
 const ESPERA_RESPUESTA_PAUSA = 15;    // s para aceptar o rechazar una pausa pedida
 
 function crearServidorLobby(opciones) {
-  const o = Object.assign({ puerto: 8787, registro: true, esperaReconexion: ESPERA_RECONEXION, arbitro: ARBITRO_POR_DEFECTO }, opciones || {});
+  const motor = crearMotor();    // el código del juego, para validar ejércitos (y simular en el paso 3)
+  const o = Object.assign({ puerto: motor.ejecutar('PUERTO_POR_DEFECTO'), registro: true, esperaReconexion: ESPERA_RECONEXION, arbitro: ARBITRO_POR_DEFECTO }, opciones || {});
   const servidorHttp = http.createServer(servirArchivo);
   // (seguridad S3) un mensaje puede ser un estado completo (unos 0,5 MB con 2.400 soldados): hasta 4 MB; más, la conexión se corta
   const wss = new WebSocketServer({ server: servidorHttp, maxPayload: TAMANO_MAXIMO_ESTADO });
@@ -155,11 +155,12 @@ function crearServidorLobby(opciones) {
   const jugadores = new Map();   // ws → { id, nombre, sala, buscando, vivo }
   const salas = new Map();       // id → { id, codigo, nombre, privada, jugadores: [jugador], listos: Set(id), creada, desdeMatchmaking }
   const cola = [];               // jugadores buscando partida, por orden de llegada
-  const motor = crearMotor();    // el código del juego, para validar ejércitos (y simular en el paso 3)
   // (2026-10-19) lo que el servidor comparte con los navegadores sale del mismo código del juego, no de una copia: pasos de
   // simulación por turno, cada cuántos turnos llega un resumen (1 s), unidades por orden y oro por defecto de cada jugador
   const PASOS_POR_TURNO = motor.ejecutar('PASOS_POR_TURNO_RED'), TURNOS_ENTRE_RESUMENES = motor.ejecutar('TURNOS_ENTRE_RESUMENES');
   const MAX_UNIDADES_ORDEN = motor.ejecutar('MAX_UNIDADES_ORDEN'), PRESUPUESTO_POR_DEFECTO = motor.ejecutar('ORO_INICIAL');
+  const formatoNumero = motor.ejecutar('formatoNumero');      // como en los navegadores: la traducción al inglés lo espera así
+  const TIEMPO_DESPLIEGUE = motor.ejecutar('TIEMPO_DESPLIEGUE'), NOMBRE_JUGADOR_POR_DEFECTO = motor.ejecutar('NOMBRE_JUGADOR_POR_DEFECTO'), LARGO_MAXIMO_NOMBRE = motor.ejecutar('LARGO_MAXIMO_NOMBRE');
   let siguienteId = 1;
   const log = (...a) => { if (o.registro) console.log(new Date().toISOString().slice(11, 19), ...a); };
 
@@ -572,7 +573,7 @@ function crearServidorLobby(opciones) {
 
   const acciones = {
     hola(j, m) {
-      j.nombre = String(m.nombre || 'Jugador').trim().slice(0, 30) || 'Jugador'; enviar(j, { tipo: 'bienvenida', id: j.id, version: VERSION_PROTOCOLO }); enviar(j, { tipo: 'salas', lista: listaPublica() });
+      j.nombre = String(m.nombre || NOMBRE_JUGADOR_POR_DEFECTO).trim().slice(0, LARGO_MAXIMO_NOMBRE) || NOMBRE_JUGADOR_POR_DEFECTO; enviar(j, { tipo: 'bienvenida', id: j.id, version: VERSION_PROTOCOLO }); enviar(j, { tipo: 'salas', lista: listaPublica() });
       if (m.claveReconexion && !j.sala) reanudarBatalla(j, String(m.claveReconexion));
     },
     listarSalas(j) { enviar(j, { tipo: 'salas', lista: listaPublica() }); },
@@ -606,7 +607,7 @@ function crearServidorLobby(opciones) {
       if (!PRESUPUESTOS.includes(m.presupuesto)) return enviar(j, { tipo: 'error', mensaje: 'Presupuesto no válido.' });
       sala.presupuesto = m.presupuesto; sala.listos.clear();      // con otras condiciones, hay que volver a marcar «Listo»
       avisarSala(sala);
-      for (const otro of sala.jugadores) enviar(otro, { tipo: 'chat', de: null, texto: 'Presupuesto: ' + m.presupuesto.toLocaleString('es-ES') + ' de oro por jugador', hora: Date.now() });
+      for (const otro of sala.jugadores) enviar(otro, { tipo: 'chat', de: null, texto: 'Presupuesto: ' + formatoNumero(m.presupuesto) + ' de oro por jugador', hora: Date.now() });
     },
     ejercito(j, m) {
       const sala = j.sala; if (!sala || sala.fase !== 'preparacion') return enviar(j, { tipo: 'error', mensaje: 'Ahora no se puede confirmar un ejército.' });
@@ -633,7 +634,7 @@ function crearServidorLobby(opciones) {
       if (b.pendientes.filter(p => p.e === equipo).length >= MAX_ORDENES_POR_TURNO) return;
       // solo los campos que entiende aplicarOrden (sin objetos raros que repartir al otro jugador)
       const o = m.orden, limpia = { a: String(o.a), u: Array.isArray(o.u) ? o.u.slice(0, MAX_UNIDADES_ORDEN) : [] };
-      if (Array.isArray(o.d)) limpia.d = o.d.slice(0, MAX_UNIDADES_ORDEN).map(d => Array.isArray(d) ? d.slice(0, 3) : null);
+      if (Array.isArray(o.d)) limpia.d = o.d.slice(0, MAX_UNIDADES_ORDEN).map(d => Array.isArray(d) ? d.slice(0, 4) : null);   // x, y, rumbo y frente
       for (const campo of ['m', 'orden', 'clave', 'objetivo', 'rumbo', 'activa']) if (o[campo] !== undefined) limpia[campo] = o[campo];
       if (Number.isInteger(o.k)) limpia.k = o.k;     // número de la orden en el navegador que la manda (ver ordenesEnCamino)
       b.pendientes.push({ e: equipo, o: limpia });
@@ -737,7 +738,7 @@ function crearServidorLobby(opciones) {
   };
 
   wss.on('connection', ws => {
-    const jugador = { ws, id: 'J' + (siguienteId++), nombre: 'Jugador', sala: null, buscando: false, vivo: true };
+    const jugador = { ws, id: 'J' + (siguienteId++), nombre: NOMBRE_JUGADOR_POR_DEFECTO, sala: null, buscando: false, vivo: true };
     jugadores.set(ws, jugador);
     ws.on('pong', () => { jugador.vivo = true; });
     ws.on('message', datos => {
@@ -766,5 +767,5 @@ function crearServidorLobby(opciones) {
   return { wss, servidorHttp, cerrar: () => new Promise(r => { clearInterval(latido); for (const ws of jugadores.keys()) ws.terminate(); wss.close(() => servidorHttp.close(() => r())); }), estado: () => ({ jugadores: jugadores.size, salas: salas.size, enCola: cola.length, modo: o.arbitro ? 'arbitro' : 'relevo' }) };
 }
 
-if (require.main === module) crearServidorLobby({ puerto: Number(process.argv[2]) || Number(process.env.PORT) || 8787 });
+if (require.main === module) crearServidorLobby(Number(process.argv[2]) || Number(process.env.PORT) ? { puerto: Number(process.argv[2]) || Number(process.env.PORT) } : {});
 module.exports = { crearServidorLobby, VERSION_PROTOCOLO };

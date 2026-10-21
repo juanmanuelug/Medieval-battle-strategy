@@ -9,7 +9,8 @@
     "prueba": "node prueba-lobby.js",
     "prueba-batalla": "node prueba-batalla-red.js",
     "prueba-batalla-relevo": "node prueba-batalla-red.js --relevo",
-    "prueba-trampas-relevo": "node prueba-trampas-relevo.js"
+    "prueba-trampas-relevo": "node prueba-trampas-relevo.js",
+    "prueba-protocolo": "node prueba-protocolo.js"
   },
   "dependencies": {
     "ws": "8.18.0"

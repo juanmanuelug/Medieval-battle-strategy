@@ -15,7 +15,7 @@
 const CLAVE_IDIOMA = 'batallas.idioma.v1';
 const IDIOMAS = { es: 'Español', en: 'English' };
 let idiomaActual = (() => {
-  try { const guardado = localStorage.getItem(CLAVE_IDIOMA); if (IDIOMAS[guardado]) return guardado; } catch (e) {}
+  const guardado = leerLocal(CLAVE_IDIOMA); if (IDIOMAS[guardado]) return guardado;
   return (typeof navigator !== 'undefined' && /^en\b/i.test(navigator.language || '')) ? 'en' : 'es';
 })();
 const enIngles = () => idiomaActual === 'en' && typeof TEXTOS_EN !== 'undefined';
@@ -109,7 +109,7 @@ const alCambiarIdioma = funcion => oyentesIdioma.push(funcion);
 function cambiarIdioma(clave) {
   if (!IDIOMAS[clave]) return;
   idiomaActual = clave;
-  try { localStorage.setItem(CLAVE_IDIOMA, clave); } catch (e) {}
+  guardarLocal(CLAVE_IDIOMA, clave);
   document.documentElement.lang = clave;
   aplicarIdiomaADatos();
   traduciendo = true; try { traducirArbol(document.body); } finally { traduciendo = false; }
@@ -135,4 +135,5 @@ function iniciarIdioma() {
   vigilarPagina();
   if (idiomaActual !== 'es') cambiarIdioma(idiomaActual); else document.documentElement.lang = 'es';
 }
+// (no es elementoListo de 11-pantallas.js: con la página ya cargada, este espera a que acaben de cargarse los demás scripts)
 if (typeof document !== 'undefined') { if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciarIdioma); else setTimeout(iniciarIdioma, 0); }

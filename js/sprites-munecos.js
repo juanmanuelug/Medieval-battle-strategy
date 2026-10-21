@@ -361,7 +361,7 @@ function dibujarEstandarteDeMano(g, o) {
   g.restore();
 }
 function hexMuneco(n) { return typeof n === 'string' ? n : '#' + (n >>> 0).toString(16).padStart(6, '0'); }
-function oscurecerHex(hex, k) { const n = parseInt(hex.slice(1), 16); const r = Math.round(((n >> 16) & 255) * k), g = Math.round(((n >> 8) & 255) * k), b = Math.round((n & 255) * k); return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0'); }
+function oscurecerHex(hex, k) { const n = hexAEntero(hex); const r = Math.round(((n >> 16) & 255) * k), g = Math.round(((n >> 8) & 255) * k), b = Math.round((n & 255) * k); return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0'); }
 
 /* Recorta los márgenes transparentes de un canvas (para retratos y tarjetas) */
 function recortarLienzo(origen, margen) {

@@ -62,6 +62,8 @@ const tiposDisponibles = ramaClave => Object.keys(TROPA).filter(t => !TROPA[t].e
 // El general: guardia montada que acompaña a cada ejército, gratis y automática
 const GENERAL = { tipo: 'caballeriaPesada', soldados: 12, modificadores: { vida: 1.4, dano: 1.3, velocidad: 1, moral: 1.5 } };
 const ORO_INICIAL = 12000;
+// rama de reserva cuando no hay otra (reino sin rama, borrador de la preparación en red)
+const RAMA_POR_DEFECTO = 'cristiano';
 const DIFICULTADES = {
   // presupuesto: fracción del valor del ejército del jugador; sesgoNivel: niveles por encima (o debajo) del nivel medio del jugador;
   // tacticas: el juego de la IA en batalla (tacticasPorDificultad en 09b-ia-batalla.js), aparte de cuánto gasta

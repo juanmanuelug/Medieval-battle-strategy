@@ -18,6 +18,9 @@
 • Las batallas empiezan antes: el mapa se genera unas 5-10 veces más rápido (en red también, en el servidor).
 
 **Seguridad en red**
+• Puentes y caminos: los mapas de río tienen un puente estrecho (en el río profundo sustituye a un vado) y casi todos los mapas tienen caminos, más rápidos y que cansan menos.
+• Dibuja el frente: arrastra con el botón derecho al mover; más largo = formación más ancha, más corto = más filas, y miran perpendicular a la línea.
+• Pasos estrechos: ya no se ponen en columna; estrechan el frente y siguen en su formación, así que si el enemigo espera a la salida pelean formados.
 • Los riscos ya tapan a las tropas y árboles que tienen detrás (antes parecía que se subían a la roca).
 • Despliegue corregido: toda la caballería (ligera, caballeros, arqueros a caballo) empieza en las alas, y los ballesteros con los arqueros.
 • Servidor más robusto: ya no se le puede tumbar con un mensaje enorme ni inundarlo, y al volver tras una desconexión el estado lo da el servidor.

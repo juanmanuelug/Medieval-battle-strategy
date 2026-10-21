@@ -14,14 +14,25 @@ const vm = require('vm');
 const RAIZ_JUEGO = path.resolve(__dirname, '..');
 const SCRIPTS = ['js/00-aleatorio-y-utilidades.js', 'js/01-datos-unidades.js', 'js/02-rejilla-espacial.js', 'js/02b-terreno.js', 'js/03-simulacion.js', 'js/04-ordenes.js', 'js/04b-estado.js', 'js/juego/07-ramas-y-niveles.js', 'js/juego/09-ejercito.js'];
 
-function crearMotor() {
+/* (2026-10-20) Los scripts se cargan todos juntos dentro de UNA función, no cada uno como script del contexto: en un contexto
+   vm, cada global (las constantes y funciones del juego, y también Math, Object…) se lee a través del objeto global del
+   contexto, que es lento, y la simulación las lee en sus bucles a cada paso (medido: 12,5 ms por paso frente a 7,2 en un
+   navegador, en una batalla grande). Dentro de la función son variables locales, como en un navegador; las de JavaScript se
+   copian a locales al principio. El código del juego es el mismo y en el mismo orden: mismos resultados, bit a bit.
+   ejecutar(codigo) evalúa dentro de esa función (eval directo), así que ve todo lo cargado. opciones.extras: más scripts del
+   juego (rutas desde la raíz), para las pruebas (por ejemplo, la IA). */
+const GLOBALES_JS = ['Math', 'Object', 'Array', 'Number', 'String', 'Boolean', 'JSON', 'Map', 'Set', 'WeakMap', 'Symbol', 'Error', 'TypeError', 'RangeError',
+  'isFinite', 'isNaN', 'parseInt', 'parseFloat', 'ArrayBuffer', 'DataView', 'Float32Array', 'Float64Array', 'Int8Array', 'Int16Array', 'Int32Array',
+  'Uint8Array', 'Uint8ClampedArray', 'Uint16Array', 'Uint32Array', 'console', 'performance', 'window', 'localStorage'];
+function crearMotor(opciones) {
   const contexto = { console, performance: { now: () => Date.now() }, Math, window: {}, localStorage: { getItem: () => null, setItem() {} } };
   vm.createContext(contexto);
-  for (const f of SCRIPTS) vm.runInContext(fs.readFileSync(path.join(RAIZ_JUEGO, f), 'utf8'), contexto, { filename: f });
-  // colocarEjercito vive en 10-batalla.js, que además monta la interfaz: se carga solo esa función
-  const fuenteBatalla = fs.readFileSync(path.join(RAIZ_JUEGO, 'js/juego/10-batalla.js'), 'utf8');
-  vm.runInContext(fuenteBatalla.slice(fuenteBatalla.indexOf('function colocarEjercito'), fuenteBatalla.indexOf('function iniciarBatalla')), contexto, { filename: 'colocarEjercito' });
-  const ejecutar = codigo => vm.runInContext(codigo, contexto);
+  const leer = f => fs.readFileSync(path.isAbsolute(f) ? f : path.join(RAIZ_JUEGO, f), 'utf8');
+  // colocarEjercito vive en 10-batalla.js, que además monta la interfaz: se carga solo esa parte
+  const fuenteBatalla = leer('js/juego/10-batalla.js');
+  const fuentes = [...SCRIPTS.map(f => [f, leer(f)]), ['colocarEjercito (10-batalla.js)', fuenteBatalla.slice(fuenteBatalla.indexOf('function colocarEjercito'), fuenteBatalla.indexOf('function iniciarBatalla'))], ...((opciones && opciones.extras) || []).map(f => [f, leer(f)])];
+  const codigo = "(function () {\n'use strict';\nconst { " + GLOBALES_JS.join(', ') + " } = globalThis;\n" + fuentes.map(([nombre, fuente]) => '// ======== ' + nombre + '\n' + fuente).join('\n;\n') + "\nreturn codigo => eval(codigo);\n})()";
+  const ejecutar = vm.runInContext(codigo, contexto, { filename: 'motor-juego.js' });
   const RAMAS = ejecutar('RAMAS'), NIVELES = ejecutar('NIVELES');
   const MAX_UNIDADES = ejecutar('MAX_UNIDADES_EJERCITO');
   const tiposDisponibles = ejecutar('tiposDisponibles'), costeEjercito = ejecutar('costeEjercito'), incumpleLimitesEjercito = ejecutar('incumpleLimitesEjercito');

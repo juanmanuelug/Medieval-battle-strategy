@@ -13,7 +13,7 @@ function mostrar(nombre) {
 }
 const html = (sel, contenido) => { elemento(sel).innerHTML = contenido; };
 const textoEsc = s => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-const oro = n => n.toLocaleString('es-ES') + ' oro';
+const oro = n => formatoNumero(n) + ' oro';
 
 /* ----- blasón ----- */
 async function pintarBlason(selectorImg, estado, ancho) {
@@ -78,9 +78,28 @@ elementoListo(() => {
 function iniciarPantallaRama() {
   const muestraTropas = ['infanteriaPesada', 'arqueros', 'caballeriaPesada'];
   html('#lista-ramas', Object.entries(RAMAS).map(([clave, r]) => `<button class="tarjeta-rama${reino && reino.rama === clave ? ' actual' : ''}" data-rama="${clave}" style="--c1:${r.colores[0]};--c2:${r.colores[1]}"><span class="muestra"></span>${reino && reino.rama === clave ? '<span class="etiqueta-actual">Tu rama actual · conserva el ejército</span>' : ''}<span class="retratos-rama">${muestraTropas.map(t => `<span class="retrato-tropa" data-tipo="${t}" data-rama="${clave}" data-nivel="2" data-escala="32"></span>`).join('')}</span><strong>${textoEsc(r.nombre)}</strong><p>${textoEsc(r.descripcion)}</p><ul>${r.ventajas.map(v => `<li>${textoEsc(v)}</li>`).join('')}</ul></button>`).join(''));
-  for (const tarjeta of document.querySelectorAll('.tarjeta-rama')) { const r = RAMAS[tarjeta.dataset.rama]; pintarRetratosConBlason(tarjeta, parseInt(r.colores[0].slice(1), 16), parseInt(r.colores[1].slice(1), 16), PuenteDisenador.blasonPorDefecto(r.colores[0], r.colores[1], r.simbolo)); }
+  for (const tarjeta of document.querySelectorAll('.tarjeta-rama')) { const clave = tarjeta.dataset.rama; pintarRetratosConBlason(tarjeta, ...coloresDeRama(clave), blasonDeRama(clave)); }
 }
-const galones = nivel => '<span class="galones-nivel">' + '<span class="galon"></span>'.repeat(nivel + 1) + '</span>';
+const galones = nivel => '<span class="galones-nivel">' + galonesHtml(nivel) + '</span>';
+/* Tarjeta de una tropa en una tienda (2026-10-19; antes, tres copias: la tienda del reino, el ejército enemigo de la batalla
+   personalizada y la preparación en red). detalle: lo que sigue a «N soldados por unidad» (HTML); boton(nivel, i, precio) →
+   { clase, titulo (HTML), desactivado } de cada botón de nivel. */
+function tarjetaTropa(ramaClave, tipo, detalle, boton) {
+  const datos = TIPOS[TIPO[tipo]];
+  const botones = NIVELES.map((n, i) => {
+    if (!nivelesDeTropa(tipo).includes(i)) return '';
+    const precio = precioUnidad(ramaClave, tipo, i), b = boton(n, i, precio);
+    return `<button class="${b.clase}" data-tipo="${tipo}" data-nivel="${i}"${b.desactivado ? ' disabled' : ''} title="${b.titulo}">${galones(i)}${textoEsc(n.nombre)}<br><small>${formatoNumero(precio)}</small></button>`;
+  }).join('');
+  return `<div class="tropa"><span class="retrato-tropa" data-tipo="${tipo}" data-rama="${ramaClave}" data-nivel="1"></span><div class="tropa-nombre"><strong>${textoEsc(datos.nombre)}</strong><span>${soldadosDeUnidad(ramaClave, tipo)} soldados por unidad${detalle}</span>${maximoDeTropa(tipo) < Infinity ? `<span class="tropa-limite">Máximo ${maximoDeTropa(tipo)} por ejército</span>` : ''}</div><div class="niveles">${botones}</div></div>`;
+}
+// fila de un ejército reclutado (tienda y batalla personalizada), con el botón de quitar una unidad
+const filaEjercito = (r, claseBoton, titulo) => `<div class="fila-ejercito"><span>${r.unidades} × ${textoEsc(nombreUnidad(r.tipo, r.nivel))}</span><span>${r.soldados} soldados · ${formatoNumero(r.precio)}</span><button class="${claseBoton}" data-tipo="${r.tipo}" data-nivel="${r.nivel}" title="${titulo}">−</button></div>`;
+// rellena un <select> con pares [valor, texto]; tituloDe(valor), si se da, pone el título de cada opción
+function rellenarSelector(selector, pares, tituloDe) {
+  selector.replaceChildren(...pares.map(([valor, texto]) => { const opcion = document.createElement('option'); opcion.value = valor; opcion.textContent = texto; const titulo = tituloDe && tituloDe(valor); if (titulo) opcion.title = titulo; return opcion; }));
+}
+const OPCION_AL_AZAR = ['azar', 'Al azar'];
 elementoListo(() => {
   elemento('#lista-ramas').addEventListener('click', e => {
     const b = e.target.closest('[data-rama]'); if (!b) return;
@@ -98,7 +117,7 @@ function iniciarPantallaTienda() {
     const datos = TIPOS[TIPO[tipo]], b = (rama.bonificaciones || {})[tipo] || {};
     const nombresBono = { vida: 'vida', dano: 'daño', velocidad: 'velocidad', precio: 'precio' };
     const bonos = Object.entries(b).map(([k, v]) => nombresBono[k] + ' ×' + v).join(', ');
-    return `<div class="tropa"><span class="retrato-tropa" data-tipo="${tipo}" data-rama="${reino.rama}" data-nivel="1"></span><div class="tropa-nombre"><strong>${textoEsc(datos.nombre)}</strong><span>${soldadosDeUnidad(reino.rama, tipo)} soldados por unidad · vida ${datos.vida}, daño ${datos.dano}, velocidad ${datos.velocidad}${datos.alcanceTiro ? ', ' + datos.municion + ' andanadas' : ''}${bonos ? ' · ' + bonos : ''}</span>${maximoDeTropa(tipo) < Infinity ? `<span class="tropa-limite">Máximo ${maximoDeTropa(tipo)} por ejército</span>` : ''}</div><div class="niveles">${NIVELES.map((n, i) => !nivelesDeTropa(tipo).includes(i) ? '' : `<button class="btn-comprar" data-tipo="${tipo}" data-nivel="${i}" title="${textoEsc(n.nombre)}: ×${n.multStats} vida y daño, ×${n.multMoral} moral">${galones(i)}${textoEsc(n.nombre)}<br><small>${precioUnidad(reino.rama, tipo, i).toLocaleString('es-ES')}</small></button>`).join('')}</div></div>`;
+    return tarjetaTropa(reino.rama, tipo, ` · vida ${datos.vida}, daño ${datos.dano}, velocidad ${datos.velocidad}${datos.alcanceTiro ? ', ' + datos.municion + ' andanadas' : ''}${bonos ? ' · ' + bonos : ''}`, n => ({ clase: 'btn-comprar', titulo: `${textoEsc(n.nombre)}: ×${n.multStats} vida y daño, ×${n.multMoral} moral` }));
   }).join(''));
   const [colorReino, colorReinoSecundario] = coloresDelBlason(estadoBlason(reino));
   pintarRetratosConBlason(elemento('#tienda-tropas'), colorReino, colorReinoSecundario, estadoBlason(reino));
@@ -113,7 +132,7 @@ function pintarResumenEjercito() {
   const resumen = resumenEjercito(reino.rama, reino.ejercito);
   const soldados = resumen.reduce((s, r) => s + r.soldados, 0);
   html('#tienda-oro', `<strong>${oro(reino.oro)}</strong> disponibles · ejército: ${reino.ejercito.length} unidades, ${soldados} soldados`);
-  html('#tienda-ejercito', resumen.length ? resumen.map(r => `<div class="fila-ejercito"><span>${r.unidades} × ${textoEsc(nombreUnidad(r.tipo, r.nivel))}</span><span>${r.soldados} soldados · ${r.precio.toLocaleString('es-ES')}</span><button class="btn-vender" data-tipo="${r.tipo}" data-nivel="${r.nivel}" title="Devolver una unidad">−</button></div>`).join('') : '<p class="nota">Aún no has reclutado nada. Compra unidades con los botones de arriba; cada botón añade una unidad completa.</p>');
+  html('#tienda-ejercito', resumen.length ? resumen.map(r => filaEjercito(r, 'btn-vender', 'Devolver una unidad')).join('') : '<p class="nota">Aún no has reclutado nada. Compra unidades con los botones de arriba; cada botón añade una unidad completa.</p>');
   elemento('#btn-batalla').disabled = reino.ejercito.length === 0;
   for (const b of document.querySelectorAll('#tienda-tropas .btn-comprar')) b.disabled = precioUnidad(reino.rama, b.dataset.tipo, +b.dataset.nivel) > reino.oro || !puedeAnadirTropa(reino.ejercito, b.dataset.tipo);
 }
@@ -137,19 +156,19 @@ elementoListo(() => {
 
 /* ----- pantalla 3b: batalla personalizada (rama y ejército de la IA a elección, sin límite de oro) ----- */
 function configuracionPersonalizada() {
-  if (!reino.personalizada || !RAMAS[reino.personalizada.rama]) reino.personalizada = { rama: Object.keys(RAMAS).find(k => k !== reino.rama) || 'cristiano', ejercito: [] };
+  if (!reino.personalizada || !RAMAS[reino.personalizada.rama]) reino.personalizada = { rama: Object.keys(RAMAS).find(k => k !== reino.rama) || RAMA_POR_DEFECTO, ejercito: [] };
   return reino.personalizada;
 }
 function iniciarPantallaPersonalizada() {
   const config = configuracionPersonalizada();
   const selector = elemento('#sel-rama-ia');
-  selector.replaceChildren(...Object.entries(RAMAS).map(([clave, rama]) => { const opcion = document.createElement('option'); opcion.value = clave; opcion.textContent = rama.nombre; return opcion; }));
+  rellenarSelector(selector, Object.entries(RAMAS).map(([clave, rama]) => [clave, rama.nombre]));
   selector.value = config.rama;
   const selectorClima = elemento('#sel-clima');
-  selectorClima.replaceChildren(...[['azar', 'Al azar']].concat(Object.entries(CLIMAS).map(([k, c]) => [k, c.nombre])).map(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; return o; }));
+  rellenarSelector(selectorClima, [OPCION_AL_AZAR, ...Object.entries(CLIMAS).map(([k, c]) => [k, c.nombre])]);
   selectorClima.value = config.clima || 'azar';
   const selectorMapa = elemento('#sel-mapa');
-  selectorMapa.replaceChildren(...[['azar', 'Al azar']].concat(Object.entries(TIPOS_MAPA).map(([k, m]) => [k, m.nombre])).map(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; if (TIPOS_MAPA[v]) o.title = TIPOS_MAPA[v].descripcion; return o; }));
+  rellenarSelector(selectorMapa, [OPCION_AL_AZAR, ...Object.entries(TIPOS_MAPA).map(([k, m]) => [k, m.nombre])], v => TIPOS_MAPA[v] && TIPOS_MAPA[v].descripcion);
   selectorMapa.value = config.mapa || 'azar';
   pintarTropasPersonalizadas();
 }
@@ -159,9 +178,9 @@ function pintarTropasPersonalizadas() {
   html('#personalizada-rama-nota', `${textoEsc(rama.descripcion)} ${(rama.ventajas || []).map(textoEsc).join(' · ')}`);
   html('#personalizada-tropas', tiposDisponibles(config.rama).map(tipo => {
     const datos = TIPOS[TIPO[tipo]];
-    return `<div class="tropa"><span class="retrato-tropa" data-tipo="${tipo}" data-rama="${config.rama}" data-nivel="1"></span><div class="tropa-nombre"><strong>${textoEsc(datos.nombre)}</strong><span>${soldadosDeUnidad(config.rama, tipo)} soldados por unidad · vida ${datos.vida}, daño ${datos.dano}, velocidad ${datos.velocidad}</span>${maximoDeTropa(tipo) < Infinity ? `<span class="tropa-limite">Máximo ${maximoDeTropa(tipo)} por ejército</span>` : ''}</div><div class="niveles">${NIVELES.map((n, i) => !nivelesDeTropa(tipo).includes(i) ? '' : `<button class="btn-comprar btn-anadir-ia" data-tipo="${tipo}" data-nivel="${i}" title="Añadir una unidad de ${textoEsc(n.nombre.toLowerCase())}">${galones(i)}${textoEsc(n.nombre)}<br><small>${precioUnidad(config.rama, tipo, i).toLocaleString('es-ES')}</small></button>`).join('')}</div></div>`;
+    return tarjetaTropa(config.rama, tipo, ` · vida ${datos.vida}, daño ${datos.dano}, velocidad ${datos.velocidad}`, n => ({ clase: 'btn-comprar btn-anadir-ia', titulo: `Añadir una unidad de ${textoEsc(n.nombre.toLowerCase())}` }));
   }).join(''));
-  pintarRetratosConBlason(elemento('#personalizada-tropas'), parseInt(rama.colores[0].slice(1), 16), parseInt(rama.colores[1].slice(1), 16), PuenteDisenador.blasonPorDefecto(rama.colores[0], rama.colores[1], rama.simbolo));
+  pintarRetratosConBlason(elemento('#personalizada-tropas'), ...coloresDeRama(config.rama), blasonDeRama(config.rama));
   pintarResumenPersonalizado();
 }
 function pintarResumenPersonalizado() {
@@ -169,8 +188,8 @@ function pintarResumenPersonalizado() {
   const resumen = resumenEjercito(config.rama, config.ejercito);
   const soldados = resumen.reduce((s, r) => s + r.soldados, 0), valor = costeEjercito(config.rama, config.ejercito);
   const propio = costeEjercito(reino.rama, reino.ejercito), soldadosPropios = resumenEjercito(reino.rama, reino.ejercito).reduce((s, r) => s + r.soldados, 0);
-  html('#personalizada-resumen', `Enemigo: ${config.ejercito.length} unidades, ${soldados} soldados, valor ${valor.toLocaleString('es-ES')} · tu ejército: ${reino.ejercito.length} unidades, ${soldadosPropios} soldados, valor ${propio.toLocaleString('es-ES')}${propio ? ` (el enemigo vale ${Math.round(valor / propio * 100)} % del tuyo)` : ''}`);
-  html('#personalizada-ejercito', resumen.length ? resumen.map(r => `<div class="fila-ejercito"><span>${r.unidades} × ${textoEsc(nombreUnidad(r.tipo, r.nivel))}</span><span>${r.soldados} soldados · ${r.precio.toLocaleString('es-ES')}</span><button class="btn-vender btn-quitar-ia" data-tipo="${r.tipo}" data-nivel="${r.nivel}" title="Quitar una unidad">−</button></div>`).join('') : '<p class="nota">Añade unidades enemigas con los botones de arriba. Además de estas, la IA siempre lleva la guardia de su general.</p>');
+  html('#personalizada-resumen', `Enemigo: ${config.ejercito.length} unidades, ${soldados} soldados, valor ${formatoNumero(valor)} · tu ejército: ${reino.ejercito.length} unidades, ${soldadosPropios} soldados, valor ${formatoNumero(propio)}${propio ? ` (el enemigo vale ${Math.round(valor / propio * 100)} % del tuyo)` : ''}`);
+  html('#personalizada-ejercito', resumen.length ? resumen.map(r => filaEjercito(r, 'btn-vender btn-quitar-ia', 'Quitar una unidad')).join('') : '<p class="nota">Añade unidades enemigas con los botones de arriba. Además de estas, la IA siempre lleva la guardia de su general.</p>');
   elemento('#btn-personalizada-batalla').disabled = config.ejercito.length === 0;
   for (const b of document.querySelectorAll('.btn-anadir-ia')) b.disabled = !puedeAnadirTropa(config.ejercito, b.dataset.tipo);
 }
@@ -186,6 +205,38 @@ elementoListo(() => {
 });
 
 /* ----- pantalla 4: batalla ----- */
+/* Bandos de una batalla, individual o en red (2026-10-19; antes, una copia en cada una): nombre y colores de cada equipo (los
+   dos esmaltes principales de su blasón), texturas de los estandartes, heráldica de los sprites y el arte propio si lo hay.
+   nombres y estados: los de los equipos 0 y 1. Devuelve { colores: [[principal, secundario] ×2], texturas, arte }. */
+async function prepararBandos(nombres, estados) {
+  const colores = estados.map(coloresDelBlason);
+  nombres.forEach((nombre, e) => { EQUIPOS[e].nombre = nombre; EQUIPOS[e].color = colores[e][0]; EQUIPOS[e].colorSecundario = colores[e][1]; });
+  let texturas = [null, null];
+  // a 256 px: el estandarte se dibuja a 8× su tamaño (con 96 px se veía borroso al acercar la cámara)
+  try { texturas = [await PuenteDisenador.renderizarBlason(estados[0], 256), await PuenteDisenador.renderizarBlason(estados[1], 256)]; } catch (e) { console.warn(e); }
+  // heráldica de los sprites: escudos con el blasón entero, sobrevestas y gualdrapas con el campo
+  try { EQUIPOS[0].blason = await blasonParaSprites(estados[0]); EQUIPOS[1].blason = await blasonParaSprites(estados[1]); } catch (e) { console.warn(e); EQUIPOS[0].blason = EQUIPOS[1].blason = null; }
+  // arte propio (arte/manifest.json), si lo hay; si no, dibujo por código
+  let arte = null;
+  try { arte = typeof cargarArte === 'function' ? await cargarArte() : null; } catch (e) { console.warn(e); }
+  return { colores, texturas, arte };
+}
+/* Pantalla de resultado (2026-10-19; antes, una copia para la batalla individual y otra para la de red). nombres: los de los
+   dos bandos (el propio primero); explicacion: texto; extra: HTML tras la unidad destacada (el general, en la individual);
+   notaMapa: HTML bajo el mapa; tituloEnemigo: texto de la tabla del rival; pie: HTML de la nota final. */
+const TEXTO_EJERCITO_PERDIDO = 'Tu ejército ha sido destruido o ha huido.';
+function pintarResultado({ titulo, explicacion, nombres, resultado, propias, enemigas, extra, notaMapa, tituloEnemigo, pie }) {
+  const mvp = propias.slice().sort((a, b) => b.bajasCausadas - a.bajasCausadas)[0], filaUnidad = filaUnidadResultado(mvp);
+  const cabeceraUnidades = '<tr><th>Unidad</th><th>En pie</th><th>Bajas</th><th>Bajas causadas</th><th>Estado</th></tr>';
+  html('#resultado', `<h2>${titulo}</h2><p>${textoEsc(explicacion)}</p>
+    <table><tr><th></th><th>${textoEsc(nombres[0])}</th><th>${textoEsc(nombres[1])}</th></tr><tr><td>Soldados</td><td>${resultado.soldadosPropios}</td><td>${resultado.soldadosEnemigos}</td></tr><tr><td>Bajas</td><td>${resultado.bajasPropias}</td><td>${resultado.bajasEnemigas}</td></tr><tr><td>Huidos</td><td>${resultado.huidasPropias}</td><td>${resultado.huidasEnemigas}</td></tr></table>
+    ${mvp && mvp.bajasCausadas ? `<p class="mvp">Unidad destacada: ${textoEsc(mvp.nombre)}, ${mvp.bajasCausadas} bajas causadas.</p>` : ''}
+    ${extra || ''}
+    <h3>Mapa de la batalla</h3><canvas id="mapa-batalla" width="660" height="480"></canvas><p class="nota">${notaMapa}</p>
+    <h3>Tus unidades</h3><table class="unidades">${cabeceraUnidades}${propias.map(filaUnidad).join('')}</table>
+    <h3>${textoEsc(tituloEnemigo)}</h3><table class="unidades">${cabeceraUnidades}${enemigas.map(filaUnidad).join('')}</table>
+    <p class="nota">${pie}</p>`);
+}
 // HUD al empezar una batalla: en red no hay control del tiempo y «comenzar» espera al rival
 function prepararHudBatalla(enRed) {
   document.body.classList.toggle('batalla-red', enRed);
@@ -217,22 +268,8 @@ async function empezarBatalla(personalizada) {
   }
   ultimaBatalla = { ramaIA, ejercitoIA: ejercitoIA.map(e => Object.assign({}, e)), personalizada: !!personalizada };
   prepararHudBatalla(false);
-  elemento('#ayuda-completa').classList.add('oculto'); elemento('#aviso-pausa').classList.add('oculto');
-  elemento('#hud-despliegue').classList.remove('oculto');
-  const estadoIA = PuenteDisenador.blasonPorDefecto(RAMAS[ramaIA].colores[0], RAMAS[ramaIA].colores[1], RAMAS[ramaIA].simbolo);
-  // colores del equipo según el blasón y texturas de estandarte
-  const estadoJugador = estadoBlason(reino);
-  const [c0, c0b] = coloresDelBlason(estadoJugador), [c1, c1b] = coloresDelBlason(estadoIA);
-  EQUIPOS[0].nombre = reino.nombre; EQUIPOS[0].color = c0; EQUIPOS[0].colorSecundario = c0b;
-  EQUIPOS[1].nombre = RAMAS[ramaIA].nombre; EQUIPOS[1].color = c1; EQUIPOS[1].colorSecundario = c1b;
-  let texturas = [null, null];
-  // a 256 px: el estandarte se dibuja a 8× su tamaño (con 96 px se veía borroso al acercar la cámara)
-  try { texturas = [await PuenteDisenador.renderizarBlason(estadoJugador, 256), await PuenteDisenador.renderizarBlason(estadoIA, 256)]; } catch (e) { console.warn(e); }
-  // heráldica de los sprites: escudos con el blasón entero, sobrevestas y gualdrapas con el campo
-  try { EQUIPOS[0].blason = await blasonParaSprites(estadoJugador); EQUIPOS[1].blason = await blasonParaSprites(estadoIA); } catch (e) { console.warn(e); EQUIPOS[0].blason = EQUIPOS[1].blason = null; }
-  // arte propio (arte/manifest.json), si lo hay; si no, dibujo por código
-  let arte = null;
-  try { arte = typeof cargarArte === 'function' ? await cargarArte() : null; } catch (e) { console.warn(e); }
+  const { colores, texturas, arte } = await prepararBandos([reino.nombre, RAMAS[ramaIA].nombre], [estadoBlason(reino), blasonDeRama(ramaIA)]);
+  const [c0, c1] = [colores[0][0], colores[1][0]];
   mostrar('batalla');
   html('#hud-batalla-titulo', `Contra <strong>${textoEsc(RAMAS[ramaIA].nombre)}</strong> (${personalizada ? 'ejército elegido, IA ' + textoEsc(dificultad.nombre.toLowerCase()) : textoEsc(dificultad.nombre)}, actitud ${textoEsc(ACTITUDES_IA[reino.actitudIA === 'defensiva' ? 'defensiva' : 'ofensiva'].nombre.toLowerCase())}) · ${ejercitoIA.length} unidades enemigas${arte ? ' · arte propio: ' + Object.keys(arte.tipos).length + ' tipos' : ''}`);
   const efectos = efectosGeneral(reino);
@@ -247,16 +284,13 @@ async function empezarBatalla(personalizada) {
       guardarReino(reino);
       batalla.detener(); batalla = null; modoResultado(false);
       const propias = resultado.unidades.filter(u => u.equipo === 0), enemigas = resultado.unidades.filter(u => u.equipo === 1);
-      const mvp = propias.slice().sort((a, b) => b.bajasCausadas - a.bajasCausadas)[0];
-      const filaUnidad = filaUnidadResultado(mvp);
-      html('#resultado', `<h2>${resultado.victoria ? '¡Victoria!' : 'Derrota'}</h2><p>${resultado.victoria ? 'El enemigo ha sido destruido o ha huido del campo.' : 'Tu ejército ha sido destruido o ha huido.'}</p>
-        <table><tr><th></th><th>${textoEsc(reino.nombre)}</th><th>${textoEsc(RAMAS[ramaIA].nombre)}</th></tr><tr><td>Soldados</td><td>${resultado.soldadosPropios}</td><td>${resultado.soldadosEnemigos}</td></tr><tr><td>Bajas</td><td>${resultado.bajasPropias}</td><td>${resultado.bajasEnemigas}</td></tr><tr><td>Huidos</td><td>${resultado.huidasPropias}</td><td>${resultado.huidasEnemigas}</td></tr></table>
-        ${mvp && mvp.bajasCausadas ? `<p class="mvp">Unidad destacada: ${textoEsc(mvp.nombre)}, ${mvp.bajasCausadas} bajas causadas.</p>` : ''}
-        <h3>${textoEsc(reino.rey)}</h3><p class="rasgos-general">${rasgosNuevos.length ? rasgosNuevos.map(r => `<span class="rasgo nuevo${r.negativo ? ' negativo' : ''}">Nuevo rasgo: ${textoEsc(r.nombre)}</span>`).join(' ') + ' ' : ''}${textoRasgos(reino) || 'Sin rasgos todavía.'}${resultado.general && resultado.general.enemigoAbatido ? ' · <strong>El general enemigo cayó.</strong>' : ''}</p>
-        <h3>Mapa de la batalla</h3><canvas id="mapa-batalla" width="660" height="480"></canvas><p class="nota">El campo tal y como quedó: sangre, cadáveres y restos. Puntos: muertos de cada bando (claros los tuyos, rojos los enemigos). Marca final de cada unidad: punto si quedó en pie, aspa si fue aniquilada, flecha si huyó; ★ la guardia del general.</p>
-        <h3>Tus unidades</h3><table class="unidades"><tr><th>Unidad</th><th>En pie</th><th>Bajas</th><th>Bajas causadas</th><th>Estado</th></tr>${propias.map(filaUnidad).join('')}</table>
-        <h3>Enemigo</h3><table class="unidades"><tr><th>Unidad</th><th>En pie</th><th>Bajas</th><th>Bajas causadas</th><th>Estado</th></tr>${enemigas.map(filaUnidad).join('')}</table>
-        <p class="nota">Duración: ${resultado.duracion} s · semilla ${resultado.semilla} · marcador del reino: ${reino.victorias} victorias, ${reino.derrotas} derrotas</p>`);
+      pintarResultado({
+        titulo: resultado.victoria ? '¡Victoria!' : 'Derrota', explicacion: resultado.victoria ? 'El enemigo ha sido destruido o ha huido del campo.' : TEXTO_EJERCITO_PERDIDO,
+        nombres: [reino.nombre, RAMAS[ramaIA].nombre], resultado, propias, enemigas, tituloEnemigo: 'Enemigo',
+        extra: `<h3>${textoEsc(reino.rey)}</h3><p class="rasgos-general">${rasgosNuevos.length ? rasgosNuevos.map(r => `<span class="rasgo nuevo${r.negativo ? ' negativo' : ''}">Nuevo rasgo: ${textoEsc(r.nombre)}</span>`).join(' ') + ' ' : ''}${textoRasgos(reino) || 'Sin rasgos todavía.'}${resultado.general && resultado.general.enemigoAbatido ? ' · <strong>El general enemigo cayó.</strong>' : ''}</p>`,
+        notaMapa: 'El campo tal y como quedó: sangre, cadáveres y restos. Puntos: muertos de cada bando (claros los tuyos, rojos los enemigos). Marca final de cada unidad: punto si quedó en pie, aspa si fue aniquilada, flecha si huyó; ★ la guardia del general.',
+        pie: `Duración: ${resultado.duracion} s · semilla ${resultado.semilla} · marcador del reino: ${reino.victorias} victorias, ${reino.derrotas} derrotas`,
+      });
       mostrar('resultado');
       if (resultado.mapa) dibujarMapaBatalla(elemento('#mapa-batalla'), resultado.mapa, c0, c1);
     },
@@ -278,6 +312,8 @@ function montarBarraUnidades(unidades, alReordenar) {
   });
   barraUnidades.actualizar([]);
 }
+// por qué la IA defensiva pasa al ataque (estadoIA.motivoCambio, 09b-ia-batalla.js)
+const TEXTO_CAMBIO_ACTITUD = { bajas: 'no aguanta más tus andanadas', ventaja: 'se ve vencedor', tiempo: 'se cansa de esperar' };
 /* HUD de la batalla (individual o en red); equipoPropio: el bando del jugador (en red puede ser el 1, a la derecha) */
 function actualizarHudBatalla(sim, seleccion, equipoPropio) {
   const e = sim.estadisticas, propio = equipoPropio || 0;
@@ -291,10 +327,10 @@ function actualizarHudBatalla(sim, seleccion, equipoPropio) {
     elemento('#marcador-' + lado).title = `${k === propio ? 'Tus soldados' : 'Soldados enemigos'} en el campo / al empezar\n${enPie} en pie${e.retirada && e.retirada[k] ? ', ' + e.retirada[k] + ' en retirada' : ''}${e.huyendo[k] ? ', ' + e.huyendo[k] + ' huyendo' : ''}\n${e.muertos[k]} muertos${e.huidos[k] ? ', ' + e.huidos[k] + ' escapados del campo' : ''}`;
   });
   const segundos = Math.floor(sim.tiempo);
-  elemento('#hud-reloj').textContent = Math.floor(segundos / 60) + ':' + String(segundos % 60).padStart(2, '0');
+  elemento('#hud-reloj').textContent = minutosYSegundos(segundos);
   // aviso cuando la IA defensiva espera o pierde la paciencia y pasa al ataque (en la línea de información)
   const actitud = batalla && !batalla.enRed && batalla.actitudIA ? batalla.actitudIA() : null;
-  const avisoActitud = actitud && actitud.motivo ? `el enemigo ${actitud.motivo === 'bajas' ? 'no aguanta más tus andanadas' : actitud.motivo === 'ventaja' ? 'se ve vencedor' : 'se cansa de esperar'} y pasa al ataque` : actitud && actitud.actual === 'defensiva' ? 'el enemigo espera tu ataque' : '';
+  const avisoActitud = actitud && actitud.motivo ? `el enemigo ${TEXTO_CAMBIO_ACTITUD[actitud.motivo] || TEXTO_CAMBIO_ACTITUD.tiempo} y pasa al ataque` : actitud && actitud.actual === 'defensiva' ? 'el enemigo espera tu ataque' : '';
   const huecoAviso = elemento('#hud-aviso-actitud');
   if (huecoAviso) { huecoAviso.textContent = avisoActitud ? ' · ' + avisoActitud : ''; huecoAviso.className = actitud && actitud.motivo ? 'aviso-actitud' : 'nota'; }
   // control de tiempo: el botón activo dice el estado (pausa, normal o ×2)
@@ -360,17 +396,20 @@ function dibujarMapaBatalla(lienzo, mapa, colorPropio, colorEnemigo, equipoPropi
     c.globalAlpha = 1;
     // nombre corto junto al final
     c.font = (t.esGeneral ? 'bold ' : '') + '10px system-ui, sans-serif'; c.fillStyle = propia ? '#f4f0e6' : '#ffb0a4'; c.strokeStyle = '#1a1410'; c.lineWidth = 3; c.lineJoin = 'round';
-    const etiqueta = t.esGeneral ? '★' : (NOMBRE_CORTO_TIPO[t.tipo] || t.tipo);
+    const etiqueta = t.esGeneral ? '★' : ((TIPO[t.tipo] !== undefined && TIPOS[TIPO[t.tipo]].nombreCorto) || t.tipo);
     const desplazamiento = ((indice % 3) - 1) * 11;                                   // etiquetas escalonadas para que no se pisen
     c.strokeText(etiqueta, X(x1) + 7, Y(y1) + 4 + desplazamiento); c.fillText(etiqueta, X(x1) + 7, Y(y1) + 4 + desplazamiento);
   });
 }
 /* Moral con lo que más pesa ahora: «moral 62 (bajas −18, flanco −10)»; el título lleva todos los factores */
+// factores de la moral de una unidad, de más a menos peso, y uno con su signo («bajas −18»)
+const factoresMoralOrdenados = u => (u.factoresMoral || []).slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+const firmar = v => (v > 0 ? '+' : '−') + Math.abs(v);
+const textoFactor = f => f[0] + ' ' + firmar(f[1]);
 function textoMoral(u) {
-  const factores = (u.factoresMoral || []).slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-  const firmar = v => (v > 0 ? '+' : '−') + Math.abs(v);
-  const principales = factores.slice(0, 2).map(f => f[0] + ' ' + firmar(f[1])).join(', ');
-  const todos = 'Moral ' + Math.round(u.moral) + ' de ' + Math.round(u.moralMax) + ' (huye por debajo de ' + MORAL_HUIDA + '; ' + MORAL_HUIDA_CON_GENERAL + ' con el general cerca).\n' + (factores.length ? factores.map(f => '· ' + f[0] + ' ' + firmar(f[1])).join('\n') : 'Sin nada que la afecte.');
+  const factores = factoresMoralOrdenados(u);
+  const principales = factores.slice(0, 2).map(textoFactor).join(', ');
+  const todos = 'Moral ' + Math.round(u.moral) + ' de ' + Math.round(u.moralMax) + ' (huye por debajo de ' + MORAL_HUIDA + '; ' + MORAL_HUIDA_CON_GENERAL + ' con el general cerca).\n' + (factores.length ? factores.map(f => '· ' + textoFactor(f)).join('\n') : 'Sin nada que la afecte.');
   return `<span class="texto-moral" title="${textoEsc(todos)}">moral ${Math.round(u.moral)}${principales ? ' (' + textoEsc(principales) + ')' : ''}</span>`;
 }
 /* Discurso del general antes del despliegue: retrato, rasgos y frases según el enemigo, el ejército y los rasgos */
@@ -397,7 +436,7 @@ function pintarPanelSeleccion(seleccion) {
   const textoMunicion = u => TIPOS[u.tipo].alcanceTiro ? (u.sinMunicion ? ' · sin flechas (cuerpo a cuerpo)' : ' · ' + u.municion + ' andanadas') : '';
   // resumen de una línea; el detalle de cada unidad (moral con sus factores, fatiga, cohesión, orden, formación, terreno) va
   // en el título, al pasar el ratón (2026-10-13: el panel lateral con todo el texto tapaba la batalla)
-  const detalleUnidad = u => `${u.nombre}${u.esGeneral ? ' ★' : ''}: ${u.vivos}/${u.total} · moral ${Math.round(u.moral)}${(u.factoresMoral || []).length ? ' (' + u.factoresMoral.slice().sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 3).map(f => f[0] + ' ' + (f[1] > 0 ? '+' : '−') + Math.abs(f[1])).join(', ') + ')' : ''} · fatiga ${Math.round(u.fatiga * 100)} % · cohesión ${Math.round(u.cohesion)} %${textoMunicion(u)} · ${textoOrden(u)} · ${FORMACIONES[u.formacion.clave].nombre.toLowerCase()}${batalla && batalla.sim.terreno ? ' · ' + NOMBRE_TERRENO[batalla.sim.terreno.tipoEn(u.centroX, u.centroY)] : ''}`;
+  const detalleUnidad = u => `${u.nombre}${u.esGeneral ? ' ★' : ''}: ${u.vivos}/${u.total} · moral ${Math.round(u.moral)}${(u.factoresMoral || []).length ? ' (' + factoresMoralOrdenados(u).slice(0, 3).map(textoFactor).join(', ') + ')' : ''} · fatiga ${Math.round(u.fatiga * 100)} % · cohesión ${Math.round(u.cohesion)} %${textoMunicion(u)} · ${textoOrden(u)} · ${FORMACIONES[u.formacion.clave].nombre.toLowerCase()}${batalla && batalla.sim.terreno ? ' · ' + NOMBRE_TERRENO[batalla.sim.terreno.tipoEn(u.centroX, u.centroY)] : ''}`;
   const resumen = seleccion.length === 1
     ? `<strong>${textoEsc(TIPOS[seleccion[0].tipo].nombre)}</strong> ${seleccion[0].vivos}/${seleccion[0].total} · ${textoMoral(seleccion[0]).replace(/ title="[^"]*"/, '')} · ${textoOrden(seleccion[0])}`
     : `<strong>${seleccion.length} unidades</strong> · ${seleccion.reduce((s, u) => s + u.vivos, 0)} soldados`;

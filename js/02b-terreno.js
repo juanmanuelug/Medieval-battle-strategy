@@ -9,12 +9,19 @@
    (un cauce sinuoso de lado a lado entre los dos ejércitos, con dos o tres vados). El agua frena muchísimo, impide cargar y se
    pelea mal dentro; los vados frenan menos. `mapaDesdeSemilla(semilla)` elige uno al azar (igual en el servidor y en los
    navegadores). */
-const TERRENO = { LLANO: 0, BOSQUE: 1, COLINA: 2, AGUA: 3, VADO: 4, PROFUNDA: 5, RISCO: 6 };
-const NOMBRE_TERRENO = ['llano', 'bosque', 'colina', 'río', 'vado', 'agua profunda', 'risco'];
-// freno a la marcha según el terreno (llano, bosque, colina, agua, vado; agua profunda y risco no se pisan)
-const FRENO_TERRENO = [1, 0.7, 1, 0.35, 0.65, 0.2, 0.2];
+const TERRENO = { LLANO: 0, BOSQUE: 1, COLINA: 2, AGUA: 3, VADO: 4, PROFUNDA: 5, RISCO: 6, CAMINO: 7, PUENTE: 8 };
+const NOMBRE_TERRENO = ['llano', 'bosque', 'colina', 'río', 'vado', 'agua profunda', 'risco', 'camino', 'puente'];
+// freno a la marcha según el terreno (llano, bosque, colina, agua, vado; agua profunda y risco no se pisan; por el camino se va
+// un 15 % más deprisa; el puente, como el llano)
+const FRENO_TERRENO = [1, 0.7, 1, 0.35, 0.65, 0.2, 0.2, 1.15, 1];
 // fase A de los pasos (2026-10-18): qué tipos no se pisan, ancho mínimo de un paso, rejilla y holguras de las rutas
-const BLOQUEA_PASO = [0, 0, 0, 0, 0, 1, 1];
+const BLOQUEA_PASO = [0, 0, 0, 0, 0, 1, 1, 0, 0];
+/* Fase 3 del terreno (2026-10-20): puentes y caminos. Puentes de ANCHO_PUENTE m sobre el río (en el profundo, uno de los dos
+   vados es un puente), con el tablero ALTURA_PUENTE m sobre la orilla: son más estrechos que PASO_MINIMO a propósito (un cuello
+   de botella), así que la zona jugable los incluye aparte (calcularPaso). Caminos de ANCHO_CAMINO m de borde a borde del campo,
+   por los puentes, los vados y los pasos de la cordillera; en el bosque cerrado, senderos de ANCHO_SENDERO m. El camino gana al
+   llano, al bosque (un claro) y a la colina (sigue su altura); el agua, la roca y el puente se quedan. */
+const ANCHO_PUENTE = [10, 14], ALTURA_PUENTE = 0.35, ANCHO_CAMINO = 6, ANCHO_SENDERO = 3;
 const INTENTOS_RISCOS = 12;    // variantes de los riscos que se prueban hasta que el mapa es válido (si ninguna, sin riscos)
 const ESTRUCTURA = { PISABLE: 1, PARED: 2 };          // para los asedios (tipoEstructura): adarve que se pisa o pared que no
 const PASO_MINIMO = 35, PASO_RUTA = 4, HOLGURA_RUTA_MINIMA = 4, HOLGURA_RECTA = 3;   // holguras en m (una celda son 2 m: con 2 m de holgura una recta podía cortar la esquina de una celda)
@@ -22,16 +29,17 @@ const VECINOS_4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const VECINOS_8 = [[1, 0, 3], [-1, 0, 3], [0, 1, 3], [0, -1, 3], [1, 1, 4], [-1, 1, 4], [1, -1, 4], [-1, -1, 4]];
 const TIPOS_MAPA = {
   // (fase B de los pasos, 2026-10-19) todos los mapas llevan riscos: peñascos y escarpes en la franja central, nunca en los despliegues
-  mixto: { nombre: 'Campo variado', descripcion: 'Bosques, colinas y algún peñasco repartidos por el campo.', bosques: [6, 11], colinas: [4, 8], riscos: { penascos: [1, 2], escarpes: [0, 1] }, peso: 30 },
-  abierto: { nombre: 'Campo abierto', descripcion: 'Llanura casi despejada: manda la caballería.', bosques: [1, 3], colinas: [1, 2], riscos: { penascos: [0, 1] }, peso: 15 },
-  bosque: { nombre: 'Bosque cerrado', descripcion: 'Mucho bosque, también en el centro: se pelea entre los árboles, sin cargas y con poca puntería.', bosques: [16, 22], colinas: [1, 3], radioBosque: [14, 30], bosqueEnElCentro: true, riscos: { penascos: [1, 2] }, peso: 15 },
-  colinas: { nombre: 'Tierra de colinas', descripcion: 'Muchas colinas grandes y escarpes de roca: quien gane las alturas tiene ventaja.', bosques: [3, 5], colinas: [10, 14], radioColina: [22, 40], riscos: { penascos: [1, 2], escarpes: [1, 2] }, peso: 15 },
-  valle: { nombre: 'Valle', descripcion: 'Dos cordilleras a lo largo de los bordes y un valle llano en medio.', bosques: [3, 6], colinas: [0, 0], cordilleras: true, riscos: { penascos: [1, 2] }, peso: 13 },
-  rio: { nombre: 'Río con vados', descripcion: 'Un río cruza el campo entre los dos ejércitos: el agua frena muchísimo y no deja cargar; los vados son el paso.', bosques: [4, 7], colinas: [2, 4], rio: true, riscos: { penascos: [0, 1] }, peso: 12 },
-  // fase A de los pasos (2026-10-18): el agua es profunda y no se cruza; solo los dos vados, anchos (40-48 m)
-  rioProfundo: { nombre: 'Río profundo', descripcion: 'Un río profundo que no se puede cruzar a nado: solo hay dos vados. Quien los domine controla la batalla.', bosques: [4, 7], colinas: [2, 4], rio: true, profundo: true, vados: [2, 2], anchoVado: [40, 48], amplitudRio: [6, 12], riscos: { penascos: [0, 1] }, peso: 12 },
+  mixto: { nombre: 'Campo variado', descripcion: 'Bosques, colinas y algún peñasco repartidos por el campo.', bosques: [6, 11], colinas: [4, 8], riscos: { penascos: [1, 2], escarpes: [0, 1] }, caminos: [1, 2], peso: 30 },
+  abierto: { nombre: 'Campo abierto', descripcion: 'Llanura casi despejada: manda la caballería.', bosques: [1, 3], colinas: [1, 2], riscos: { penascos: [0, 1] }, caminos: [1, 2], peso: 15 },
+  bosque: { nombre: 'Bosque cerrado', descripcion: 'Mucho bosque, también en el centro: se pelea entre los árboles, sin cargas y con poca puntería.', bosques: [16, 22], colinas: [1, 3], radioBosque: [14, 30], bosqueEnElCentro: true, riscos: { penascos: [1, 2] }, senderos: [1, 1], peso: 15 },
+  colinas: { nombre: 'Tierra de colinas', descripcion: 'Muchas colinas grandes y escarpes de roca: quien gane las alturas tiene ventaja.', bosques: [3, 5], colinas: [10, 14], radioColina: [22, 40], riscos: { penascos: [1, 2], escarpes: [1, 2] }, caminos: [1, 2], peso: 15 },
+  valle: { nombre: 'Valle', descripcion: 'Dos cordilleras a lo largo de los bordes y un valle llano en medio.', bosques: [3, 6], colinas: [0, 0], cordilleras: true, riscos: { penascos: [1, 2] }, caminos: [1, 2], peso: 13 },
+  rio: { nombre: 'Río con vados', descripcion: 'Un río cruza el campo entre los dos ejércitos: el agua frena muchísimo y no deja cargar; los vados son el paso.', bosques: [4, 7], colinas: [2, 4], rio: true, puentes: 1, riscos: { penascos: [0, 1] }, caminos: [1, 2], peso: 12 },
+  // fase A de los pasos (2026-10-18): el agua es profunda y no se cruza; solo los dos vados, anchos (40-48 m); desde la fase 3
+  // del terreno (2026-10-20) uno de los dos es un puente estrecho
+  rioProfundo: { nombre: 'Río profundo', descripcion: 'Un río profundo que no se puede cruzar a nado: solo hay dos vados. Quien los domine controla la batalla.', bosques: [4, 7], colinas: [2, 4], rio: true, profundo: true, vados: [2, 2], puentes: 1, anchoVado: [40, 48], amplitudRio: [6, 12], riscos: { penascos: [0, 1] }, caminos: [1, 2], peso: 12 },
   // (fase B) una cordillera de roca parte el campo de arriba abajo; solo se cruza por uno o dos pasos de 47-57 m
-  pasoMontana: { nombre: 'Paso de montaña', descripcion: 'Una cordillera de roca parte el campo: solo se cruza por uno o dos pasos. Defiéndelos o fuérzalos.', bosques: [4, 7], colinas: [2, 4], riscos: { cordillera: [1, 2] }, peso: 12 },
+  pasoMontana: { nombre: 'Paso de montaña', descripcion: 'Una cordillera de roca parte el campo: solo se cruza por uno o dos pasos. Defiéndelos o fuérzalos.', bosques: [4, 7], colinas: [2, 4], riscos: { cordillera: [1, 2] }, caminos: [1, 2], peso: 12 },
 };
 function mapaDesdeSemilla(semilla) {
   const azar = crearAleatorio(semilla + 23), total = Object.values(TIPOS_MAPA).reduce((s, m) => s + m.peso, 0);
@@ -39,6 +47,12 @@ function mapaDesdeSemilla(semilla) {
   for (const [clave, m] of Object.entries(TIPOS_MAPA)) { r -= m.peso; if (r <= 0) return clave; }
   return 'mixto';
 }
+// altura de una parábola de flecha con ese ápice a la fracción u del vuelo (0 al salir, 1 al llegar), sobre la recta
+const alturaParabola = (apice, u) => 4 * apice * u * (1 - u);
+// a · suavizado de s (0 → 0, 1 → a, con tangente horizontal en los dos extremos): el perfil de colinas y riscos
+const escalaSuave = (a, s) => a * s * s * (3 - 2 * s);
+// celdas (de tamaño celda, `cuantas` en total) que cubren de minimo a maximo, más `extra` por cada lado, sin salirse
+const celdasEntre = (minimo, maximo, celda, cuantas, extra = 0) => [Math.max(0, Math.floor(minimo / celda) - extra), Math.min(cuantas - 1, Math.ceil(maximo / celda) + extra)];
 class Terreno {
   constructor(semilla, opciones) {
     const mapa = TIPOS_MAPA[opciones && opciones.mapa] ? opciones.mapa : 'mixto', T = TIPOS_MAPA[mapa];
@@ -80,8 +94,17 @@ class Terreno {
       const anchoVado = T.anchoVado ? azar.entre(T.anchoVado[0], T.anchoVado[1]) : 9;
       // con vados anchos, que no se salgan del campo ni se junten
       if (T.anchoVado) for (let k = 0; k < vados.length; k++) vados[k] = limitar(vados[k], anchoVado / 2 + 12, CAMPO.alto - anchoVado / 2 - 12);
-      const enVado = y => vados.some(v => Math.abs(y - v) <= anchoVado / 2);
-      this.rio = { centroX, ancho: anchoRio, vados, anchoVado, profundo: !!T.profundo, enVado, tipoAgua: y => enVado(y) ? TERRENO.VADO : T.profundo ? TERRENO.PROFUNDA : TERRENO.AGUA };
+      // puentes (fase 3 del terreno): en el río profundo, el último vado pasa a ser un puente; en el de vados, uno más, lejos de ellos
+      const azarPuentes = crearAleatorio(semilla * 13 + 4441), puentes = [];
+      for (let k = 0; k < (T.puentes || 0); k++) {
+        const ancho = azarPuentes.entre(ANCHO_PUENTE[0], ANCHO_PUENTE[1]);
+        if (T.profundo && vados.length > 1) { puentes.push({ y: vados.pop(), ancho }); continue; }
+        let y = CAMPO.alto / 2;
+        for (let intento = 0; intento < 20; intento++) { y = azarPuentes.entre(40, CAMPO.alto - 40); if (vados.every(v => Math.abs(y - v) > anchoVado / 2 + ancho / 2 + 25)) break; }
+        puentes.push({ y, ancho });
+      }
+      const enVado = y => vados.some(v => Math.abs(y - v) <= anchoVado / 2), enPuente = (y, margen = 0) => puentes.some(p => Math.abs(y - p.y) <= p.ancho / 2 + margen);
+      this.rio = { centroX, ancho: anchoRio, vados, anchoVado, puentes, profundo: !!T.profundo, enVado, enPuente, tipoAgua: y => enPuente(y) ? TERRENO.PUENTE : enVado(y) ? TERRENO.VADO : T.profundo ? TERRENO.PROFUNDA : TERRENO.AGUA };
     }
     // riscos (fase B de los pasos): con un azar propio (el resto del mapa sale igual que antes) y, si el mapa no vale, otra variante
     this.riscos = [];
@@ -93,7 +116,63 @@ class Terreno {
         if (intento === INTENTOS_RISCOS - 1) { this.riscos = []; this.rasterizar(); }
       }
     } else this.rasterizar();
+    this.caminos = [];
+    if ((T.caminos || T.senderos) && !(opciones && opciones.sinCaminos)) this.trazarCaminos(T, crearAleatorio(semilla * 17 + 2027));
   }
+  /* Caminos (fase 3 del terreno, 2026-10-20): de un borde del campo al otro (de izquierda a derecha, entre los dos ejércitos), cada
+     uno por un cruce si lo hay (el primero por el puente, el segundo por un vado; en la cordillera, por sus pasos) y, si no, por un
+     punto al azar del centro; entre punto y punto, la ruta que rodea lo que no se pisa (buscarRuta) o la recta, y después se
+     suaviza. Se pinta en las celdas que no son agua, roca ni puente. this.caminos: [{ puntos, ancho }] para el dibujo. */
+  trazarCaminos(T, azar) {
+    if (!this.jugable) this.calcularPaso();
+    const senderos = !!T.senderos, [minimo, maximo] = T.caminos || T.senderos, cuantos = azar.entero(minimo, maximo), ancho = senderos ? ANCHO_SENDERO : ANCHO_CAMINO;
+    // cruces: [x, y, medio largo del tramo recto] (2026-10-21, lo pidió el usuario: el camino tiene que cuadrar con el puente):
+    // el camino entra y sale en recta, de través, por el centro del cruce (el puente con sus estribos y unos metros de acceso)
+    const cruces = [];
+    if (this.rio) { for (const p of this.rio.puentes) cruces.push([this.rio.centroX(p.y), p.y, this.rio.ancho / 2 + 10]); for (const v of this.rio.vados) cruces.push([this.rio.centroX(v), v, this.rio.ancho / 2 + 8]); }
+    for (const risco of this.riscos) if (risco.pasos) cruces.push(...risco.pasos.map(([x, y]) => [x, y, 16]));
+    const suavizar = puntos => {           // Chaikin, dos pasadas: las esquinas se redondean; los extremos no se mueven
+      let suave = puntos;
+      for (let pasada = 0; pasada < 2; pasada++) {
+        const nuevo = [suave[0]];
+        for (let s = 0; s < suave.length - 1; s++) { const [ax, ay] = suave[s], [bx, by] = suave[s + 1]; nuevo.push([ax * 0.75 + bx * 0.25, ay * 0.75 + by * 0.25], [ax * 0.25 + bx * 0.75, ay * 0.25 + by * 0.75]); }
+        nuevo.push(suave[suave.length - 1]); suave = nuevo;
+      }
+      return suave;
+    };
+    // de un punto a otro: la ruta que rodea lo que no se pisa, o la recta
+    const tramo = (desde, hasta) => { const ruta = this.buscarRuta(desde[0], desde[1], hasta[0], hasta[1]); return [desde, ...(ruta || [hasta])]; };
+    for (let k = 0; k < cuantos; k++) {
+      const yA = azar.entre(30, CAMPO.alto - 30), yB = azar.entre(30, CAMPO.alto - 30);
+      const cruce = cruces[k], medio = cruce || [CAMPO.ancho / 2 + azar.entre(-40, 40), azar.entre(50, CAMPO.alto - 50), 0];
+      // un recodo al azar a cada lado del cruce, para que no sea una recta
+      const recodo = (x0, y0, x1, y1) => [(x0 + x1) / 2 + azar.entre(-10, 10), (y0 + y1) / 2 + azar.entre(-25, 25)];
+      const entrada = [medio[0] - medio[2], medio[1]], salida = [medio[0] + medio[2], medio[1]], inicio = [1, yA], fin = [CAMPO.ancho - 1, yB];
+      const recodoIda = recodo(...inicio, ...entrada), recodoVuelta = recodo(...salida, ...fin);
+      const ida = [...tramo(inicio, recodoIda), ...tramo(recodoIda, entrada).slice(1)];
+      const vuelta = [...tramo(salida, recodoVuelta), ...tramo(recodoVuelta, fin).slice(1)];
+      // con cruce: lo de antes y lo de después, suavizados por separado, y entre medias el tramo recto por el centro del cruce
+      const suave = cruce ? [...suavizar(ida), ...suavizar(vuelta)] : suavizar([...ida, ...vuelta.slice(1)]);
+      this.caminos.push({ puntos: suave, ancho, sendero: senderos });
+      this.pintarCamino(suave, ancho);
+    }
+    if (this.caminos.length) { this.jugable = null; this.holgura = null; }      // el coste de las rutas cambia con el camino
+  }
+  pintarCamino(puntos, ancho) {
+    const C = this.columnas, F = this.filas, celda = this.celda, media = ancho / 2;
+    for (let s = 0; s < puntos.length - 1; s++) {
+      const [ax, ay] = puntos[s], [bx, by] = puntos[s + 1], largo2 = (bx - ax) * (bx - ax) + (by - ay) * (by - ay);
+      const [c0, c1] = celdasEntre(Math.min(ax, bx) - media, Math.max(ax, bx) + media, celda, C), [f0, f1] = celdasEntre(Math.min(ay, by) - media, Math.max(ay, by) + media, celda, F);
+      for (let fila = f0; fila <= f1; fila++) for (let col = c0; col <= c1; col++) {
+        const x = col * celda, y = fila * celda, u = largo2 > 0 ? limitar(((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / largo2, 0, 1) : 0;
+        if (Math.hypot(x - (ax + (bx - ax) * u), y - (ay + (by - ay) * u)) > media) continue;
+        const k = fila * C + col, tipo = this.celdas[k];
+        if (tipo === TERRENO.LLANO || tipo === TERRENO.BOSQUE || tipo === TERRENO.COLINA) this.celdas[k] = TERRENO.CAMINO;
+      }
+    }
+  }
+  // punto al azar dentro de la mancha m (repartido por el área: raíz del azar), hasta factor × su borde
+  puntoAlAzarEnMancha(m, azar, factor = 1) { const a = azar.entre(-Math.PI, Math.PI), r = Math.sqrt(azar.numero()) * this.radioEn(m, a) * factor; return [m.x + Math.cos(a) * r, m.y + Math.sin(a) * r]; }
   radioEn(mancha, angulo) {
     const n = mancha.lobulos.length, t = ((angulo + Math.PI) / (2 * Math.PI)) * n;
     const i = Math.floor(t) % n, j = (i + 1) % n, f = t - Math.floor(t);
@@ -127,19 +206,19 @@ class Terreno {
     // depende del orden); (2) la roca, una vez por celda, solo en las celdas de las cajas de los riscos; (3) el río, en todas
     const C = this.columnas, F = this.filas, celda = this.celda, colinasMax = new Float64Array(C * F);
     for (const { m, altura, alcance } of colinas) {
-      const c0 = Math.max(0, Math.floor((m.x - alcance) / celda) - 1), c1 = Math.min(C - 1, Math.ceil((m.x + alcance) / celda) + 1);
-      const f0 = Math.max(0, Math.floor((m.y - alcance) / celda) - 1), f1 = Math.min(F - 1, Math.ceil((m.y + alcance) / celda) + 1);
+      const [c0, c1] = celdasEntre(m.x - alcance, m.x + alcance, celda, C, 1), [f0, f1] = celdasEntre(m.y - alcance, m.y + alcance, celda, F, 1);
       for (let fila = f0; fila <= f1; fila++) for (let col = c0; col <= c1; col++) {
         const x = col * celda, y = fila * celda, dx = x - m.x, dy = y - m.y; if (Math.abs(dx) > alcance || Math.abs(dy) > alcance) continue;
         const d = Math.hypot(dx, dy), radio = this.radioEn(m, Math.atan2(dy, dx)) * BORDE_COLINA;
         const s = 1 - d / radio; if (s <= 0) continue;
-        const v = altura * s * s * (3 - 2 * s), k = fila * C + col; if (v > colinasMax[k]) colinasMax[k] = v;
+        const v = escalaSuave(altura, s), k = fila * C + col; if (v > colinasMax[k]) colinasMax[k] = v;
       }
     }
     const conRoca = new Uint8Array(C * F);
     for (const risco of this.riscos) {
       const [x0, y0, x1, y1] = risco.caja;
-      for (let fila = Math.max(0, Math.floor((y0 - 5) / celda)); fila <= Math.min(F - 1, Math.ceil((y1 + 5) / celda)); fila++) for (let col = Math.max(0, Math.floor((x0 - 5) / celda)); col <= Math.min(C - 1, Math.ceil((x1 + 5) / celda)); col++) conRoca[fila * C + col] = 1;
+      const [c0, c1] = celdasEntre(x0 - 5, x1 + 5, celda, C), [f0, f1] = celdasEntre(y0 - 5, y1 + 5, celda, F);
+      for (let fila = f0; fila <= f1; fila++) for (let col = c0; col <= c1; col++) conRoca[fila * C + col] = 1;
     }
     for (let fila = 0; fila < F; fila++) for (let col = 0; col < C; col++) {
       const x = col * celda, y = fila * celda, k = fila * C + col;
@@ -151,14 +230,19 @@ class Terreno {
           let risco = null, mejor = -Infinity;
           for (const rr of this.riscos) { const [x0, y0, x1, y1] = rr.caja; if (x < x0 - 1 || x > x1 + 1 || y < y0 - 1 || y > y1 + 1) continue; for (const [cx, cy, rad] of rr.circulos) { const p = rad - Math.hypot(x - cx, y - cy); if (p > mejor) { mejor = p; risco = rr; } } }
           const s = limitar((dentro + 0.5) / 3.5, 0, 1), rugosidad = 0.85 + 0.3 * (((Math.imul(col * 73856093 ^ fila * 19349663, 2654435761) >>> 0) % 1000) / 1000);
-          if (risco) h += risco.alto * s * s * (3 - 2 * s) * rugosidad;
+          if (risco) h += escalaSuave(risco.alto, s) * rugosidad;
         }
       }
-      if (this.rio) {
+      if (this.rio && this.rio.enPuente(y)) {
+        // puente (fase 3): el tablero, ALTURA_PUENTE m sobre lo que haya en la orilla, sin bajar al cauce
+        if (Math.abs(x - this.rio.centroX(y)) - this.rio.ancho / 2 <= 0) h += ALTURA_PUENTE;
+      } else if (this.rio) {
         const fuera = Math.abs(x - this.rio.centroX(y)) - this.rio.ancho / 2;
         if (fuera < ORILLA) {
           const hondo = this.rio.profundo && !this.rio.enVado(y) ? 2.2 : 1;
-          h = Math.min(h, fuera <= 0 ? -PROFUNDIDAD_RIO * hondo : -PROFUNDIDAD_RIO * hondo * (1 - fuera / ORILLA));
+          // junto a un puente (fase 3), la orilla baja poco a poco en los 4 m a cada lado del tablero (si no, un corte en el relieve)
+          let junto = 1; for (const p of this.rio.puentes) junto = Math.min(junto, limitar((Math.abs(y - p.y) - p.ancho / 2) / 4, 0, 1));
+          h = Math.min(h, fuera <= 0 ? -PROFUNDIDAD_RIO * hondo : -PROFUNDIDAD_RIO * hondo * (1 - fuera / ORILLA) * junto);
         }
       }
       this.alturas[k] = h;
@@ -220,7 +304,7 @@ class Terreno {
     const pasos = Math.ceil(d / PASO_TRAYECTORIA);
     for (let k = 1; k < pasos; k++) {
       const u = k / pasos; if (u * d < 1 || (1 - u) * d < 1) continue;
-      if (z0 + (z1 - z0) * u + 4 * apice * u * (1 - u) < this.obstaculoEn(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u)) return u;
+      if (z0 + (z1 - z0) * u + alturaParabola(apice, u) < this.obstaculoEn(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u)) return u;
     }
     return 1;
   }
@@ -269,7 +353,8 @@ class Terreno {
       const amplitud = azar.entre(4, 10), frecuencia = azar.entre(0.01, 0.02), fase = azar.entre(0, Math.PI * 2);
       const xEn = y => CAMPO.ancho / 2 + amplitud * Math.sin(y * frecuencia + fase), radioMaximo = 10;
       const cuantos = azar.entero(R.cordillera[0], R.cordillera[1]);
-      const pasos = cuantos === 1 ? [azar.entre(130, 190)] : [azar.entre(70, 110), azar.entre(210, 250)];
+      // pasos en fracciones del alto (13/32-19/32; con dos, 7/32-11/32 y 21/32-25/32): con 320 m, 130-190, 70-110 y 210-250 m
+      const A = CAMPO.alto, pasos = cuantos === 1 ? [azar.entre(A * 13 / 32, A * 19 / 32)] : [azar.entre(A * 7 / 32, A * 11 / 32), azar.entre(A * 21 / 32, A * 25 / 32)];
       const mitad = azar.entre(PASO_MINIMO / 2 + 6, PASO_MINIMO / 2 + 11) + radioMaximo;     // hueco de borde a borde de roca: 47-57 m
       const circulos = [];
       for (let y = -6; y <= CAMPO.alto + 6; y += 3) if (!pasos.some(p => Math.abs(y - p) < mitad)) circulos.push([xEn(y) + azar.entre(-1.5, 1.5), y, azar.entre(7, radioMaximo)]);
@@ -300,15 +385,14 @@ class Terreno {
     const C = this.columnas, F = this.filas, celda = this.celda, base = new Uint8Array(C * F);       // 0 = TERRENO.LLANO
     for (const m of this.manchas) {
       const radio = m.r * Math.max(...m.lobulos) + celda;
-      const c0 = Math.max(0, Math.floor((m.x - radio) / celda)), c1 = Math.min(C - 1, Math.ceil((m.x + radio) / celda));
-      const f0 = Math.max(0, Math.floor((m.y - radio) / celda)), f1 = Math.min(F - 1, Math.ceil((m.y + radio) / celda));
+      const [c0, c1] = celdasEntre(m.x - radio, m.x + radio, celda, C), [f0, f1] = celdasEntre(m.y - radio, m.y + radio, celda, F);
       for (let fila = f0; fila <= f1; fila++) for (let col = c0; col <= c1; col++) if (this.dentro(m, col * celda, fila * celda)) base[fila * C + col] = m.tipo;
     }
     if (this.rio) {
       const rio = this.rio;
       for (let fila = 0; fila < F; fila++) {
         const y = fila * celda, centro = rio.centroX(y);
-        const c0 = Math.max(0, Math.floor((centro - rio.ancho / 2) / celda) - 1), c1 = Math.min(C - 1, Math.ceil((centro + rio.ancho / 2) / celda) + 1);
+        const [c0, c1] = celdasEntre(centro - rio.ancho / 2, centro + rio.ancho / 2, celda, C, 1);
         for (let col = c0; col <= c1; col++) {
           const x = col * celda;
           if (Math.abs(x - rio.centroX(y)) <= rio.ancho / 2) base[fila * C + col] = rio.tipoAgua(y);
@@ -342,16 +426,18 @@ class Terreno {
     const pasos = this.pasosClave();
     const largoRuta = (x0, y0, x1, y1) => { const ruta = this.buscarRuta(x0, y0, x1, y1); if (!ruta) return distancia(x0, y0, x1, y1); let largo = 0, px = x0, py = y0; for (const [x, y] of ruta) { largo += distancia(px, py, x, y); px = x; py = y; } return largo; };
     for (const [px, py] of pasos) {
+      // (sin redondear, a diferencia del constructor: unificarlo cambia los mapas de cada semilla; ver README «duplicados que se dejaron aparte»)
       const frente0 = CAMPO.ancho * FRENTE_DESPLIEGUE, frente1 = CAMPO.ancho * (1 - FRENTE_DESPLIEGUE);
       const d0 = largoRuta(frente0, py, px, py), d1 = largoRuta(frente1, py, px, py);
       if (Math.max(d0, d1) > Math.min(d0, d1) * 1.2 + 10) return false;
     }
     return true;
   }
-  // los pasos que hay que cruzar para llegar al otro lado: vados del río profundo y pasos de la cordillera ([x, y] de su centro)
+  // los pasos que hay que cruzar para llegar al otro lado: vados y puentes del río profundo y pasos de la cordillera ([x, y] de su centro)
   pasosClave() {
     const pasos = [];
     if (this.rio && this.rio.profundo) for (const v of this.rio.vados) pasos.push([this.rio.centroX(v), v]);
+    if (this.rio && this.rio.profundo) for (const p of this.rio.puentes) pasos.push([this.rio.centroX(p.y), p.y]);   // fase 3
     for (const risco of this.riscos || []) if (risco.pasos) pasos.push(...risco.pasos);
     return pasos;
   }
@@ -412,6 +498,14 @@ class Terreno {
         }
       }
       for (let k = 0; k < n; k++) this.jugable[k] = alcance[k] !== 65535 ? 1 : 0;
+      // puentes (fase 3 del terreno): más estrechos que PASO_MINIMO a propósito, la apertura los dejaría fuera; se añaden sus celdas
+      // alcanzables desde lo jugable de las orillas (siempre igual en el despliegue y en la batalla: nadie llega a lo que no se puede)
+      const colaPuente = [];
+      for (let k = 0; k < n; k++) if (this.jugable[k]) colaPuente.push(k);
+      for (let q = 0; q < colaPuente.length; q++) {
+        const k = colaPuente[q], c = k % C, f = (k - c) / C;
+        for (const [dc, df] of VECINOS_4) { const cc = c + dc, ff = f + df; if (cc < 0 || ff < 0 || cc >= C || ff >= F) continue; const v = ff * C + cc; if (!this.jugable[v] && this.celdas[v] === TERRENO.PUENTE) { this.jugable[v] = 1; colaPuente.push(v); } }
+      }
     }
     // holgura (m) hasta lo no jugable (el borde del campo no cuenta: se puede ir pegado a él)
     const noJugable = new Uint8Array(n); for (let k = 0; k < n; k++) noJugable[k] = this.jugable[k] ? 0 : 1;
@@ -423,7 +517,7 @@ class Terreno {
     this.nodoPasable = new Uint8Array(RC * RF); this.nodoCoste = new Uint16Array(RC * RF);
     for (let k = 0; k < RC * RF; k++) {
       const x = (k % RC) * PASO_RUTA, y = Math.floor(k / RC) * PASO_RUTA, h = this.holgura[this.indiceCelda(x, y)];
-      this.nodoPasable[k] = h >= HOLGURA_RUTA_MINIMA ? 1 : 0;
+      this.nodoPasable[k] = h >= HOLGURA_RUTA_MINIMA || (h >= 2 && this.tipoEn(x, y) === TERRENO.PUENTE) ? 1 : 0;   // en el puente, con 2 m basta
       this.nodoCoste[k] = Math.round(10 / Math.max(0.2, FRENO_TERRENO[this.tipoEn(x, y)] || 1)) + (h < 10 ? Math.round((10 - h) * 2) : 0);
     }
   }

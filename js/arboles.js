@@ -3,12 +3,13 @@
    Mismo estilo que los muñecos (sprites-munecos.js): contorno oscuro, dos tonos y algún brillo. Se dibujan a S px por metro en
    un canvas; el renderizador los reduce. Cada árbol se dibuja con su propio azar (variantes de copa) y, con nieve, lleva
    nieve encima. Devuelven { canvas, anclaX, anclaY }: el ancla es el pie del tronco. Solo estética: no afecta a la simulación. */
+const CONTORNO_ARBOL = '#17200e';      // contorno de árboles y arbustos
 function dibujarArbol(o) {
   const S = o.S || 32, azar = o.azar, nieve = !!o.nieve;
   const ancho = Math.ceil(4 * S), alto = Math.ceil(7 * S);
   const canvas = document.createElement('canvas'); canvas.width = ancho; canvas.height = alto;
   const c = canvas.getContext('2d'), ax = ancho / 2, ay = alto - 0.35 * S;
-  const CONTORNO = '#17200e', grosor = Math.max(1.5, 0.1 * S);
+  const CONTORNO = CONTORNO_ARBOL, grosor = Math.max(1.5, 0.1 * S);
   c.lineJoin = 'round'; c.lineCap = 'round';
   // tronco: algo más ancho abajo, con el lado derecho en sombra
   const tronco = (altura, anchoBase) => {
@@ -51,7 +52,7 @@ function dibujarArbusto(o) {
   const canvas = document.createElement('canvas'); canvas.width = Math.ceil(2.4 * S); canvas.height = Math.ceil(1.6 * S);
   const c = canvas.getContext('2d'), ax = canvas.width / 2, ay = canvas.height - 0.15 * S, grosor = Math.max(1.5, 0.09 * S);
   const bolas = []; for (let k = 0; k < 5; k++) bolas.push({ x: ax + azar.entre(-0.6, 0.6) * S, y: ay - azar.entre(0.35, 0.65) * S, r: azar.entre(0.3, 0.45) * S });
-  for (const b of bolas) { c.beginPath(); c.arc(b.x, b.y, b.r + grosor, 0, Math.PI * 2); c.fillStyle = '#17200e'; c.fill(); }
+  for (const b of bolas) { c.beginPath(); c.arc(b.x, b.y, b.r + grosor, 0, Math.PI * 2); c.fillStyle = CONTORNO_ARBOL; c.fill(); }
   for (const b of bolas) { c.beginPath(); c.arc(b.x, b.y, b.r, 0, Math.PI * 2); c.fillStyle = '#30582a'; c.fill(); }
   for (const b of bolas) { c.beginPath(); c.arc(b.x - b.r * 0.25, b.y - b.r * 0.3, b.r * 0.55, 0, Math.PI * 2); c.fillStyle = nieve ? '#e6edf2' : '#457a36'; c.fill(); }
   return { canvas, anclaX: ax, anclaY: ay };

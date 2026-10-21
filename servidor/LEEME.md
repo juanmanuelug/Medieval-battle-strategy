@@ -98,6 +98,12 @@ Coste: reproducir hasta 10 s de batalla (unos 300 pasos: de 0,3 s de cálculo en
 - **Reconexión en el relevo**: quien vuelve a una batalla recibe el estado que reproduce el servidor desde su último punto de control hasta el turno actual (`reincorporarDesdeControl`, con la batalla congelada mientras); antes lo daba el otro navegador, que podía mandar uno trucado. Si no hay punto de control utilizable, como antes. Si el estado no llega en 90 s, la batalla se anula.
 Prueba: `prueba-trampas-relevo.js` (casos 9 a 11).
 
+### Motor del juego en el servidor (2026-10-20)
+`motor.js` carga los scripts del juego juntos dentro de una sola función en un contexto `vm` (no uno a uno como scripts del contexto): así las constantes y funciones del juego son variables locales y la simulación va como en un navegador (5,1 ms por paso en una batalla grande, antes 12,5). `ejecutar(código)` evalúa dentro de esa función; `crearMotor({ extras: [rutas] })` añade scripts (las pruebas de la IA).
+
+### Protocolo (2026-10-19)
+Lo que comparten servidor y navegadores (pasos por turno, cada cuántos turnos va un resumen, unidades por orden y por ejército, oro por defecto, puerto, nombre por defecto y su largo, tiempo de despliegue, regla del final de la batalla) está en el código del juego (`js/04-ordenes.js`, `09-ejercito.js`, `07-ramas-y-niveles.js`, `10-batalla.js`) y el servidor lo lee con `motor.ejecutar`. `prueba-protocolo.js` (sin red) comprueba que el servidor atiende todo lo que manda el navegador, que cada acción tiene su límite en `LIMITE_MENSAJES` y que los textos que manda el servidor tienen traducción al inglés.
+
 ## Publicar en Render (gratis, encendido 24/7)
 
 Un solo servicio de Render sirve el juego y las partidas en red; un «despertador» externo gratuito evita que se duerma.

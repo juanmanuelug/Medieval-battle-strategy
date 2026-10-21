@@ -6,8 +6,9 @@
    (lockstep con el servidor como árbitro). Lo usan el juego (js/juego/10-batalla.js) y el servidor (servidor/motor.js).
 
    Órdenes ({ a: acción, u: [ids de unidad], ... }):
-     mover      { d: [[x, y, rumboFinal|null], …] (una por unidad), m: 'andar'|'correr' }
-     recolocar  { d: [[x, y, rumbo], …] }               solo en el despliegue; se recorta a la zona del equipo
+     mover      { d: [[x, y, rumboFinal|null, frente?], …] (una por unidad), m: 'andar'|'correr' }
+     recolocar  { d: [[x, y, rumbo, frente?], …] }      solo en el despliegue; se recorta a la zona del equipo
+                (frente, opcional desde el 2026-10-20: soldados por fila, dibujando el frente al arrastrar; ver fijarFrente)
      atacar     { objetivo: id de unidad enemiga, m }
      orden      { orden: 'avanzar'|'formar'|'cargar'|'disparar', m }
      formar     { clave }                                 en el despliegue además recoloca en el sitio
@@ -18,6 +19,9 @@ const ORDENES_SIMPLES = ['avanzar', 'formar', 'cargar', 'disparar'];
 const MAX_UNIDADES_ORDEN = 40;
 // red (los lee también el servidor, vía motor.js): pasos de simulación por turno y cada cuántos turnos se manda el resumen de estado
 const PASOS_POR_TURNO_RED = 3, TURNOS_ENTRE_RESUMENES = 10;
+// lobby: puerto por defecto del servidor, nombre de quien no da ninguno, largo máximo de un nombre (el del rey es el del jugador
+// en red) y segundos de despliegue (el servidor manda los suyos en la ficha; este, si no)
+const PUERTO_POR_DEFECTO = 8787, NOMBRE_JUGADOR_POR_DEFECTO = 'Jugador', LARGO_MAXIMO_NOMBRE = 40, TIEMPO_DESPLIEGUE = 120;
 
 // la zona de despliegue de cada bando (zonaDespliegue) está en 01-datos-unidades.js
 
@@ -25,7 +29,7 @@ function aplicarOrden(sim, equipo, orden, contexto) {
   if (!orden || typeof orden !== 'object' || !Array.isArray(orden.u) || orden.u.length > MAX_UNIDADES_ORDEN) return false;
   const desplegando = !!(contexto && contexto.desplegando);
   const numero = v => typeof v === 'number' && isFinite(v);
-  const marcha = orden.m === 'correr' ? 'correr' : 'andar';
+  const marcha = marchaValida(orden.m);
   // solo unidades propias, vivas y (salvo la orden de alto a una retirada ordenada) que no huyan
   const unidades = [];
   for (const id of orden.u) {
@@ -41,14 +45,14 @@ function aplicarOrden(sim, equipo, orden, contexto) {
     case 'mover': {
       if (desplegando || !Array.isArray(orden.d)) return false;
       let alguna = false;
-      unidades.forEach((u, k) => { const d = orden.d[orden.u.indexOf(u.id)]; if (!d || !numero(d[0]) || !numero(d[1])) return; const rumbo = numero(d[2]) ? d[2] : null; sim.ordenar(u, 'mover', limitar(d[0], 3, CAMPO.ancho - 3), limitar(d[1], 3, CAMPO.alto - 3), rumbo, marcha); alguna = true; });
+      unidades.forEach((u, k) => { const d = orden.d[orden.u.indexOf(u.id)]; if (!d || !numero(d[0]) || !numero(d[1])) return; const rumbo = numero(d[2]) ? d[2] : null; sim.fijarFrente(u, d[3]); sim.ordenar(u, 'mover', limitar(d[0], 3, CAMPO.ancho - 3), limitar(d[1], 3, CAMPO.alto - 3), rumbo, marcha); alguna = true; });
       return alguna;
     }
     case 'recolocar': {
       if (!desplegando || !Array.isArray(orden.d)) return false;
       let alguna = false;
       // (fase A de los pasos) el sitio pedido o el válido más cercano: ningún soldado en terreno que no se pisa ni en un bolsillo
-      unidades.forEach(u => { const d = orden.d[orden.u.indexOf(u.id)]; if (!d || !numero(d[0]) || !numero(d[1])) return; const rumbo = numero(d[2]) ? d[2] : u.rumbo; const sitio = sim.posicionDespliegue(u, d[0], d[1], rumbo, zona); if (!sitio) return; sim.recolocarUnidad(u, sitio[0], sitio[1], rumbo); alguna = true; });
+      unidades.forEach(u => { const d = orden.d[orden.u.indexOf(u.id)]; if (!d || !numero(d[0]) || !numero(d[1])) return; const rumbo = numero(d[2]) ? d[2] : u.rumbo; sim.fijarFrente(u, d[3]); const sitio = sim.posicionDespliegue(u, d[0], d[1], rumbo, zona); if (!sitio) return; sim.recolocarUnidad(u, sitio[0], sitio[1], rumbo); alguna = true; });
       return alguna;
     }
     case 'atacar': {
@@ -67,13 +71,14 @@ function aplicarOrden(sim, equipo, orden, contexto) {
       if (!FORMACIONES[orden.clave]) return false;
       let alguna = false;
       for (const u of unidades) {
-        const previa = u.formacion && u.formacion.clave;
-        if (!sim.formar(u, orden.clave)) continue;
+        const previa = u.formacion && u.formacion.clave, frentePrevio = u.frente;
+        u.frente = null;          // (2026-10-20) la formación nueva con su fondo propio: el frente dibujado era para la anterior
+        if (!sim.formar(u, orden.clave)) { u.frente = frentePrevio; continue; }
         alguna = true;
         if (!desplegando) continue;
         // en el despliegue, la nueva forma tiene que caber en terreno jugable; si no cabe en ningún sitio cercano, se deshace
         const sitio = sim.posicionDespliegue(u, u.origenX, u.origenY, u.rumbo, zona);
-        if (sitio) sim.recolocarUnidad(u, sitio[0], sitio[1]); else { sim.formar(u, previa); sim.recolocarUnidad(u, u.origenX, u.origenY); }
+        if (sitio) sim.recolocarUnidad(u, sitio[0], sitio[1]); else { u.frente = frentePrevio; sim.formar(u, previa); sim.recolocarUnidad(u, u.origenX, u.origenY); }
       }
       return alguna;
     }

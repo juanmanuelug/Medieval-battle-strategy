@@ -19,12 +19,14 @@ const CLAVE_SERVIDOR = 'batallas.servidor.v1';
 const CLAVE_RECONEXION = 'batallas.reconexion.v1';
 const ESPERA_RECONEXION = 60;          // s, si el servidor no dice los suyos (ficha.esperaReconexion)
 const VIGENCIA_CLAVE = 15 * 60 * 1000; // una clave de reconexión de hace más de 15 min ya no sirve
-const guardarReconexion = (servidor, clave) => { try { localStorage.setItem(CLAVE_RECONEXION, JSON.stringify({ servidor, clave, hora: Date.now() })); } catch (e) {} };
-const borrarReconexion = () => { try { localStorage.removeItem(CLAVE_RECONEXION); } catch (e) {} };
+const guardarReconexion = (servidor, clave) => guardarLocal(CLAVE_RECONEXION, { servidor, clave, hora: Date.now() });
+const borrarReconexion = () => borrarLocal(CLAVE_RECONEXION);
 function leerReconexion(servidor) {
-  try { const r = JSON.parse(localStorage.getItem(CLAVE_RECONEXION) || 'null'); return r && r.servidor === servidor && Date.now() - r.hora < VIGENCIA_CLAVE ? r.clave : null; } catch (e) { return null; }
+  const r = leerLocalJSON(CLAVE_RECONEXION); return r && r.servidor === servidor && Date.now() - r.hora < VIGENCIA_CLAVE ? r.clave : null;
 }
-const SERVIDOR_POR_DEFECTO = 'ws://localhost:8787';
+const SERVIDOR_POR_DEFECTO = 'ws://localhost:' + PUERTO_POR_DEFECTO;
+// el nombre con el que se entra en el lobby: el del rey del reino
+const nombreEnRed = () => reino ? reino.rey : NOMBRE_JUGADOR_POR_DEFECTO;
 
 /* Conexión con el servidor de lobby: envía órdenes y reparte los mensajes recibidos a quien se suscriba (al.tipo) */
 class ClienteLobby {
@@ -66,8 +68,8 @@ let inicioBusqueda = 0, relojBusqueda = null;
 // Si el juego se ha abierto desde el propio servidor (http://IP:8787/), el lobby está en esa misma dirección y es lo que se
 // propone; abierto como archivo local, la última dirección usada o ws://localhost:8787
 const servidorDeLaPagina = () => (location.protocol === 'http:' || location.protocol === 'https:') ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host : null;
-const leerServidor = () => { const propio = servidorDeLaPagina(); if (propio) return propio; try { return localStorage.getItem(CLAVE_SERVIDOR) || SERVIDOR_POR_DEFECTO; } catch (e) { return SERVIDOR_POR_DEFECTO; } };
-const guardarServidor = url => { try { localStorage.setItem(CLAVE_SERVIDOR, url); } catch (e) {} };
+const leerServidor = () => servidorDeLaPagina() || leerLocal(CLAVE_SERVIDOR) || SERVIDOR_POR_DEFECTO;
+const guardarServidor = url => guardarLocal(CLAVE_SERVIDOR, url);
 
 function iniciarPantallaMultijugador() {
   elemento('#in-servidor').value = leerServidor();
@@ -79,7 +81,7 @@ function pintarMultijugador() {
   elemento('#mj-conexion').classList.toggle('oculto', conectado);
   elemento('#mj-lobby').classList.toggle('oculto', !conectado || enSala);
   elemento('#mj-sala').classList.toggle('oculto', !conectado || !enSala);
-  elemento('#mj-estado').textContent = conectado ? 'Conectado como ' + (reino ? reino.rey : 'Jugador') + ' · ' + leerServidor() : 'Sin conexión';
+  elemento('#mj-estado').textContent = conectado ? 'Conectado como ' + nombreEnRed() + ' · ' + leerServidor() : 'Sin conexión';
   elemento('#mj-estado').classList.toggle('conectado', conectado);
   const btnBuscar = elemento('#btn-mj-buscar');
   btnBuscar.textContent = lobby.buscando ? 'Cancelar búsqueda' : 'Buscar partida';
@@ -102,7 +104,7 @@ function pintarSala(sala) {
   btnListo.classList.toggle('oculto', sala.fase !== 'espera');
   // opciones: el presupuesto lo cambia el anfitrión mientras la sala espera; el clima se conoce al empezar la preparación
   const selector = elemento('#sel-mj-presupuesto'), soyAnfitrion = sala.jugadores[0] && sala.jugadores[0].id === lobby.id;
-  if (selector.options.length !== (sala.presupuestos || []).length) html('#sel-mj-presupuesto', (sala.presupuestos || []).map(p => `<option value="${p}">${p.toLocaleString('es-ES')} de oro</option>`).join(''));
+  if (selector.options.length !== (sala.presupuestos || []).length) rellenarSelector(selector, (sala.presupuestos || []).map(p => [p, formatoNumero(p) + ' de oro']));
   selector.value = String(sala.presupuesto); selector.disabled = !soyAnfitrion || sala.fase !== 'espera';
   selector.title = soyAnfitrion ? 'Oro de cada jugador para su ejército' : 'Lo elige el anfitrión';
   elemento('#mj-sala-clima').textContent = sala.clima ? 'Clima: ' + nombreClima(sala.clima) + (sala.mapa && TIPOS_MAPA[sala.mapa] ? ' · Mapa: ' + TIPOS_MAPA[sala.mapa].nombre : '') : '';
@@ -115,24 +117,23 @@ function pintarSala(sala) {
 }
 const nombreClima = clave => (typeof CLIMAS !== 'undefined' && CLIMAS[clave] && CLIMAS[clave].nombre) || clave;
 // Blasón con el que se juega: el importado del reino, o el de la rama elegida
-const blasonParaMultijugador = rama => (reino && reino.blason && reino.blason.modo === 'importado' && reino.blason.estado) ? reino.blason.estado : PuenteDisenador.blasonPorDefecto(RAMAS[rama].colores[0], RAMAS[rama].colores[1], RAMAS[rama].simbolo);
+const blasonParaMultijugador = rama => (reino && reino.blason && reino.blason.modo === 'importado' && reino.blason.estado) ? reino.blason.estado : blasonDeRama(rama);
 
 /* ----- paso 2: tienda de preparación ----- */
 function pintarPreparacion() {
   // el aviso de la sala en preparación puede llegar un instante antes que «salaLista»: valores por defecto mientras tanto
-  if (!preparacion.rama || !RAMAS[preparacion.rama]) preparacion.rama = (reino && RAMAS[reino.rama]) ? reino.rama : 'cristiano';
+  if (!preparacion.rama || !RAMAS[preparacion.rama]) preparacion.rama = (reino && RAMAS[reino.rama]) ? reino.rama : RAMA_POR_DEFECTO;
   if (lobby.sala && lobby.sala.presupuesto) preparacion.presupuesto = lobby.sala.presupuesto;
   const rama = preparacion.rama, gastado = costeEjercito(rama, preparacion.ejercito), restante = preparacion.presupuesto - gastado;
   const selectorRama = elemento('#sel-mj-rama');
-  if (!selectorRama.options.length) html('#sel-mj-rama', Object.entries(RAMAS).map(([k, r]) => `<option value="${k}">${textoEsc(r.nombre)}</option>`).join(''));
+  if (!selectorRama.options.length) rellenarSelector(selectorRama, Object.entries(RAMAS).map(([k, r]) => [k, r.nombre]));
   selectorRama.value = rama; selectorRama.disabled = preparacion.confirmado;
   html('#mj-rama-nota', textoEsc(RAMAS[rama].descripcion));
-  elemento('#mj-oro').textContent = gastado.toLocaleString('es-ES') + ' de ' + preparacion.presupuesto.toLocaleString('es-ES') + ' de oro gastado · quedan ' + restante.toLocaleString('es-ES');
+  elemento('#mj-oro').textContent = formatoNumero(gastado) + ' de ' + formatoNumero(preparacion.presupuesto) + ' de oro gastado · quedan ' + formatoNumero(restante);
   elemento('#mj-barra-oro').style.width = Math.min(100, 100 * gastado / preparacion.presupuesto).toFixed(1) + '%';
   const llenoDeUnidades = preparacion.ejercito.length >= MAX_UNIDADES_EJERCITO;
-  html('#mj-tropas', tiposDisponibles(rama).map(tipo => { const datos = TIPOS[TIPO[tipo]]; return `<div class="tropa"><span class="retrato-tropa" data-tipo="${tipo}" data-rama="${rama}" data-nivel="1"></span><div class="tropa-nombre"><strong>${textoEsc(datos.nombre)}</strong><span>${soldadosDeUnidad(rama, tipo)} soldados por unidad</span>${maximoDeTropa(tipo) < Infinity ? `<span class="tropa-limite">Máximo ${maximoDeTropa(tipo)} por ejército</span>` : ''}</div><div class="niveles">${NIVELES.map((n, i) => { if (!nivelesDeTropa(tipo).includes(i)) return ''; const precio = precioUnidad(rama, tipo, i); return `<button class="btn-comprar btn-mj-comprar" data-tipo="${tipo}" data-nivel="${i}" ${preparacion.confirmado || precio > restante || llenoDeUnidades || !puedeAnadirTropa(preparacion.ejercito, tipo) ? 'disabled' : ''} title="${textoEsc(n.nombre)}">${galones(i)}${textoEsc(n.nombre)}<br><small>${precio.toLocaleString('es-ES')}</small></button>`; }).join('')}</div></div>`; }).join(''));
-  const colores = RAMAS[rama].colores.map(c => parseInt(c.slice(1), 16));
-  pintarRetratos(elemento('#mj-tropas'), colores[0], colores[1]);
+  html('#mj-tropas', tiposDisponibles(rama).map(tipo => tarjetaTropa(rama, tipo, '', (n, i, precio) => ({ clase: 'btn-comprar btn-mj-comprar', titulo: textoEsc(n.nombre), desactivado: preparacion.confirmado || precio > restante || llenoDeUnidades || !puedeAnadirTropa(preparacion.ejercito, tipo) }))).join(''));
+  pintarRetratos(elemento('#mj-tropas'), ...coloresDeRama(rama));
   html('#mj-mi-ejercito', preparacion.ejercito.length ? preparacion.ejercito.map((e, k) => `<span class="unidad-reclutada">${galones(e.nivel)} ${textoEsc(nombreUnidad(e.tipo, e.nivel))}${preparacion.confirmado ? '' : ` <button class="btn-quitar" data-indice="${k}" title="Quitar">×</button>`}</span>`).join('') : '<p class="nota">Todavía no has reclutado ninguna unidad.</p>');
   elemento('#btn-mj-confirmar').classList.toggle('oculto', preparacion.confirmado);
   elemento('#btn-mj-confirmar').disabled = !preparacion.ejercito.length;
@@ -143,7 +144,7 @@ function pintarPreparacion() {
 // Ficha de la batalla: los dos ejércitos (se conocen cuando los dos han confirmado), clima y lados
 function pintarFicha(f) {
   const lado = j => j.equipo === 0 ? 'izquierda' : 'derecha';
-  html('#mj-ficha', `<h2>Batalla preparada</h2><p class="nota">Clima: ${textoEsc(nombreClima(f.clima))} · ${f.presupuesto.toLocaleString('es-ES')} de oro por jugador · semilla ${f.semilla}</p><div class="ficha-ejercitos">${f.jugadores.map(j => `<div class="ficha-ejercito${j.equipo === preparacion.equipo ? ' yo' : ''}"><strong>${textoEsc(j.nombre)}</strong> <span class="nota">(${lado(j)}) · ${textoEsc(RAMAS[j.rama].nombre)} · ${j.coste.toLocaleString('es-ES')} de oro</span><ul>${resumenEjercito(j.rama, j.ejercito).map(r => `<li>${r.unidades} × ${textoEsc(nombreUnidad(r.tipo, r.nivel))} <span class="nota">(${r.soldados} soldados)</span></li>`).join('')}</ul></div>`).join('')}</div><p class="nota">Preparando el campo de batalla…</p>`);
+  html('#mj-ficha', `<h2>Batalla preparada</h2><p class="nota">Clima: ${textoEsc(nombreClima(f.clima))} · ${formatoNumero(f.presupuesto)} de oro por jugador · semilla ${f.semilla}</p><div class="ficha-ejercitos">${f.jugadores.map(j => `<div class="ficha-ejercito${j.equipo === preparacion.equipo ? ' yo' : ''}"><strong>${textoEsc(j.nombre)}</strong> <span class="nota">(${lado(j)}) · ${textoEsc(RAMAS[j.rama].nombre)} · ${formatoNumero(j.coste)} de oro</span><ul>${resumenEjercito(j.rama, j.ejercito).map(r => `<li>${r.unidades} × ${textoEsc(nombreUnidad(r.tipo, r.nivel))} <span class="nota">(${r.soldados} soldados)</span></li>`).join('')}</ul></div>`).join('')}</div><p class="nota">Preparando el campo de batalla…</p>`);
 }
 function anadirChat(m) {
   const caja = elemento('#mj-chat-mensajes');
@@ -165,12 +166,12 @@ lobby.al('emparejado', () => { pararReloj(); html('#mj-chat-mensajes', ''); anad
 lobby.al('error', m => avisoMultijugador(m.mensaje, true));
 lobby.al('salaLista', m => {
   // empieza la preparación: el borrador parte de la rama del reino (o cristiano), vacío
-  Object.assign(preparacion, { rama: (reino && reino.rama) || preparacion.rama || 'cristiano', ejercito: [], confirmado: false, equipo: m.equipo, clima: m.clima, presupuesto: m.presupuesto, ficha: null });
-  anadirChat({ de: null, texto: `Los dos estáis listos. Juegas en el lado ${m.equipo === 0 ? 'izquierdo' : 'derecho'}; clima: ${nombreClima(m.clima)}. Elegid rama y ejército con ${m.presupuesto.toLocaleString('es-ES')} de oro.` });
+  Object.assign(preparacion, { rama: (reino && reino.rama) || preparacion.rama || RAMA_POR_DEFECTO, ejercito: [], confirmado: false, equipo: m.equipo, clima: m.clima, presupuesto: m.presupuesto, ficha: null });
+  anadirChat({ de: null, texto: `Los dos estáis listos. Juegas en el lado ${m.equipo === 0 ? 'izquierdo' : 'derecho'}; clima: ${nombreClima(m.clima)}. Elegid rama y ejército con ${formatoNumero(m.presupuesto)} de oro.` });
   pintarMultijugador();
 });
 lobby.al('ejercitoAceptado', () => { preparacion.confirmado = true; pintarMultijugador(); });
-lobby.al('batallaLista', m => { if (m.claveReconexion) guardarReconexion(lobby.url, m.claveReconexion); fijarRelojDespliegue((m.tiempoDespliegue || 120) * 1000); preparacion.ficha = m; pintarFicha(m); anadirChat({ de: null, texto: 'Los dos ejércitos están confirmados. ¡A la batalla!' }); pintarMultijugador(); empezarBatallaRed(m); });
+lobby.al('batallaLista', m => { if (m.claveReconexion) guardarReconexion(lobby.url, m.claveReconexion); fijarRelojDespliegue((m.tiempoDespliegue || TIEMPO_DESPLIEGUE) * 1000); preparacion.ficha = m; pintarFicha(m); anadirChat({ de: null, texto: 'Los dos ejércitos están confirmados. ¡A la batalla!' }); pintarMultijugador(); empezarBatallaRed(m); });
 // «perdida» solo si llegó a estar conectado; si el intento de conexión falla, el aviso lo da el formulario de conexión
 lobby.al('cerrado', m => {
   pararReloj();
@@ -204,7 +205,7 @@ lobby.al('despliegue', m => { mostrarRivalListo(m.listos); fijarRelojDespliegue(
 /* ----- cuenta atrás del despliegue -----
    Lo que queda lo dice el servidor (al empezar y cada vez que cambia algo); aquí se descuenta. Se congela mientras se espera
    a un desconectado, porque el servidor tampoco lo cuenta. */
-const relojDespliegue = { quedanMs: 120000, desde: Date.now(), congelado: false };
+const relojDespliegue = { quedanMs: TIEMPO_DESPLIEGUE * 1000, desde: Date.now(), congelado: false };
 const quedanDespliegueAhora = () => Math.max(0, relojDespliegue.quedanMs - (relojDespliegue.congelado ? 0 : Date.now() - relojDespliegue.desde));
 function fijarRelojDespliegue(quedanMs) { if (typeof quedanMs === 'number') { relojDespliegue.quedanMs = quedanMs; relojDespliegue.desde = Date.now(); } relojDespliegue.congelado = false; }
 function congelarRelojDespliegue() { if (!relojDespliegue.congelado) { relojDespliegue.quedanMs = quedanDespliegueAhora(); relojDespliegue.congelado = true; } }
@@ -212,10 +213,13 @@ setInterval(() => {
   const hueco = document.getElementById('hud-despliegue-reloj'); if (!hueco) return;
   if (!batalla || !batalla.enRed || !batalla.enDespliegue()) { if (hueco.textContent) hueco.textContent = ''; return; }
   const segundos = Math.ceil(quedanDespliegueAhora() / 1000);
-  hueco.textContent = 'Quedan ' + Math.floor(segundos / 60) + ':' + String(segundos % 60).padStart(2, '0') + (relojDespliegue.congelado ? ' (en espera)' : '');
+  hueco.textContent = 'Quedan ' + minutosYSegundos(segundos) + (relojDespliegue.congelado ? ' (en espera)' : '');
   hueco.title = 'Al acabar el tiempo de despliegue la batalla empieza aunque no hayáis pulsado «Comenzar»';
   hueco.classList.toggle('urgente', segundos <= 15);
 }, 250);
+
+// cuenta atrás que se repinta cada medio segundo hasta `hasta` (ms): pintar(segundos que quedan); devuelve el intervalo
+function cuentaAtras(hasta, pintar) { const repintar = () => pintar(Math.max(0, Math.ceil((hasta - Date.now()) / 1000))); repintar(); return setInterval(repintar, 500); }
 
 /* ----- pausa de común acuerdo ----- */
 // aviso que se quita solo a los pocos segundos (si no lo ha sustituido otro)
@@ -228,9 +232,7 @@ function pararRelojPausa() { clearInterval(relojPausa); relojPausa = null; const
 // pausa en vigor: quién la pidió y cuánto falta para que la batalla siga sola
 function mostrarPausa(por, quedanMs) {
   pararRelojPausa();
-  const hasta = Date.now() + quedanMs;
-  const pintar = () => { const s = Math.max(0, Math.ceil((hasta - Date.now()) / 1000)); elemento('#aviso-pausa-detalle').textContent = `Pausa pedida por ${por}. Sigue sola en ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}; cualquiera puede quitarla con P o ▶.`; };
-  pintar(); relojPausa = setInterval(pintar, 500);
+  relojPausa = cuentaAtras(Date.now() + quedanMs, s => { elemento('#aviso-pausa-detalle').textContent = `Pausa pedida por ${por}. Sigue sola en ${minutosYSegundos(s)}; cualquiera puede quitarla con P o ▶.`; });
 }
 lobby.al('pausaSolicitada', () => avisoRed(TEXTO_PAUSA_PEDIDA));
 lobby.al('pausaPedida', m => {
@@ -258,9 +260,7 @@ function avisoRed(texto) { const a = elemento('#aviso-red'); if (!a) return; a.t
 let esperaRival = null;
 lobby.al('rivalDesconectado', m => {
   clearInterval(esperaRival); congelarRelojDespliegue();
-  const hasta = Date.now() + m.espera * 1000;
-  const pintar = () => { const quedan = Math.max(0, Math.ceil((hasta - Date.now()) / 1000)); avisoRed(`${m.nombre} se ha desconectado. Se le espera ${quedan} s; si no vuelve, ganas la batalla.`); };
-  pintar(); esperaRival = setInterval(pintar, 500);
+  esperaRival = cuentaAtras(Date.now() + m.espera * 1000, quedan => avisoRed(`${m.nombre} se ha desconectado. Se le espera ${quedan} s; si no vuelve, ganas la batalla.`));
 });
 lobby.al('rivalVuelto', m => { clearInterval(esperaRival); esperaRival = null; avisoRed(''); fijarRelojDespliegue(m.quedanDespliegue); });
 // conexión propia perdida: reintentos cada 2 s; al conectar, el servidor manda reanudarBatalla y la batalla se vuelve a montar
@@ -302,15 +302,9 @@ async function empezarBatallaRed(ficha, reanudacion) {
   const jugadores = [0, 1].map(e => ficha.jugadores.find(j => j.equipo === e));
   const yo = jugadores[equipo], rival = jugadores[1 - equipo];
   // blasón de cada jugador (el que mandó al confirmar o el de su rama), colores y texturas, como en la batalla individual
-  const estados = jugadores.map(j => j.blason && PuenteDisenador.esEstadoValido(j.blason) ? j.blason : PuenteDisenador.blasonPorDefecto(RAMAS[j.rama].colores[0], RAMAS[j.rama].colores[1], RAMAS[j.rama].simbolo));
+  const estados = jugadores.map(j => j.blason && PuenteDisenador.esEstadoValido(j.blason) ? j.blason : blasonDeRama(j.rama));
   estados[1] = blasonDistinguible(estados[0], estados[1], jugadores[1].rama);
-  const colores = estados.map(coloresDelBlason);
-  jugadores.forEach((j, e) => { EQUIPOS[e].nombre = j.nombre; EQUIPOS[e].color = colores[e][0]; EQUIPOS[e].colorSecundario = colores[e][1]; });
-  let texturas = [null, null];
-  try { texturas = [await PuenteDisenador.renderizarBlason(estados[0], 256), await PuenteDisenador.renderizarBlason(estados[1], 256)]; } catch (e) { console.warn(e); }
-  try { EQUIPOS[0].blason = await blasonParaSprites(estados[0]); EQUIPOS[1].blason = await blasonParaSprites(estados[1]); } catch (e) { console.warn(e); EQUIPOS[0].blason = EQUIPOS[1].blason = null; }
-  let arte = null;
-  try { arte = typeof cargarArte === 'function' ? await cargarArte() : null; } catch (e) { console.warn(e); }
+  const { colores, texturas, arte } = await prepararBandos(jugadores.map(j => j.nombre), estados);
   if (!lobby.conectado()) return;            // se perdió la conexión mientras se preparaba
   prepararHudBatalla(true);
   mostrar('batalla');
@@ -353,9 +347,21 @@ function blasonDistinguible(estadoIzquierda, estadoDerecha, ramaDerecha) {
   const [a1, a2] = coloresDelBlason(estadoIzquierda), [b1, b2] = coloresDelBlason(estadoDerecha);
   const parecidos = JSON.stringify(estadoIzquierda) === JSON.stringify(estadoDerecha) || (distanciaColor(a1, b1) < 90 && distanciaColor(a2, b2) < 120);
   if (!parecidos) return estadoDerecha;
-  const par = COLORES_ALTERNATIVOS.find(([c1]) => distanciaColor(parseInt(c1.slice(1), 16), a1) > 160 && distanciaColor(parseInt(c1.slice(1), 16), a2) > 120) || COLORES_ALTERNATIVOS[0];
+  const par = COLORES_ALTERNATIVOS.find(([c1]) => distanciaColor(hexAEntero(c1), a1) > 160 && distanciaColor(hexAEntero(c1), a2) > 120) || COLORES_ALTERNATIVOS[0];
   return PuenteDisenador.blasonPorDefecto(par[0], par[1], RAMAS[ramaDerecha].simbolo);
 }
+/* Por qué acabó una batalla en red (el `motivo` que manda el servidor, servidor-lobby.js: terminarBatalla) → explicación para
+   quien la ve (ganaste: victoria; rival: su nombre). Un motivo desconocido se explica como una derrota normal. */
+const EXPLICACION_FIN_RED = {
+  derrota: (victoria, rival) => victoria ? 'El ejército de ' + rival + ' ha sido destruido o ha huido del campo.' : TEXTO_EJERCITO_PERDIDO,
+  rendicion: (victoria, rival) => victoria ? rival + ' se ha rendido.' : 'Te has rendido.',
+  abandono: (victoria, rival) => victoria ? rival + ' ha abandonado la batalla.' : 'Has abandonado la batalla.',
+  error: () => 'La batalla se ha anulado por un error del servidor.',
+  disputa: () => 'La batalla se ha anulado: no se pudo comprobar el resultado.',
+  trampa: (victoria, rival) => victoria ? rival + ' ha anunciado dos veces un resultado falso.' : 'Has anunciado dos veces un resultado falso.',
+  desvio: (victoria, rival) => victoria ? 'La partida de ' + rival + ' se ha desviado de la del servidor varias veces.' : 'Tu partida se ha desviado de la del servidor varias veces.',
+};
+const MOTIVOS_ANULADA = ['error', 'disputa'];       // sin ganador
 // Resultado de una batalla en red: no cambia el reino (ni victorias ni rasgos); se vuelve a la sala para otra
 function terminarBatallaRed(resultado, jugadores, colores) {
   batalla.detener(); batalla = null; document.body.classList.remove('batalla-red');
@@ -363,22 +369,14 @@ function terminarBatallaRed(resultado, jugadores, colores) {
   modoResultado(true);
   const propio = resultado.equipoPropio, yo = jugadores[propio], rival = jugadores[1 - propio];
   const motivo = resultado.red ? resultado.red.motivo : 'derrota';
-  const explicacion = motivo === 'rendicion' ? (resultado.victoria ? rival.nombre + ' se ha rendido.' : 'Te has rendido.')
-    : motivo === 'abandono' ? (resultado.victoria ? rival.nombre + ' ha abandonado la batalla.' : 'Has abandonado la batalla.')
-    : motivo === 'error' ? 'La batalla se ha anulado por un error del servidor.'
-    : motivo === 'disputa' ? 'La batalla se ha anulado: no se pudo comprobar el resultado.'
-    : motivo === 'trampa' ? (resultado.victoria ? rival.nombre + ' ha anunciado dos veces un resultado falso.' : 'Has anunciado dos veces un resultado falso.')
-    : motivo === 'desvio' ? (resultado.victoria ? 'La partida de ' + rival.nombre + ' se ha desviado de la del servidor varias veces.' : 'Tu partida se ha desviado de la del servidor varias veces.')
-    : resultado.victoria ? 'El ejército de ' + rival.nombre + ' ha sido destruido o ha huido del campo.' : 'Tu ejército ha sido destruido o ha huido.';
+  const explicacion = (EXPLICACION_FIN_RED[motivo] || EXPLICACION_FIN_RED.derrota)(resultado.victoria, rival.nombre);
   const propias = resultado.unidades.filter(u => u.equipo === propio), enemigas = resultado.unidades.filter(u => u.equipo !== propio);
-  const mvp = propias.slice().sort((a, b) => b.bajasCausadas - a.bajasCausadas)[0], filaUnidad = filaUnidadResultado(mvp);
-  html('#resultado', `<h2>${motivo === 'error' || motivo === 'disputa' ? 'Batalla anulada' : resultado.victoria ? '¡Victoria!' : 'Derrota'}</h2><p>${textoEsc(explicacion)}</p>
-    <table><tr><th></th><th>${textoEsc(yo.nombre)}</th><th>${textoEsc(rival.nombre)}</th></tr><tr><td>Soldados</td><td>${resultado.soldadosPropios}</td><td>${resultado.soldadosEnemigos}</td></tr><tr><td>Bajas</td><td>${resultado.bajasPropias}</td><td>${resultado.bajasEnemigas}</td></tr><tr><td>Huidos</td><td>${resultado.huidasPropias}</td><td>${resultado.huidasEnemigas}</td></tr></table>
-    ${mvp && mvp.bajasCausadas ? `<p class="mvp">Unidad destacada: ${textoEsc(mvp.nombre)}, ${mvp.bajasCausadas} bajas causadas.</p>` : ''}
-    <h3>Mapa de la batalla</h3><canvas id="mapa-batalla" width="660" height="480"></canvas><p class="nota">Puntos: muertos de cada bando (claros los tuyos, rojos los de ${textoEsc(rival.nombre)}). Marca final de cada unidad: punto si quedó en pie, aspa si fue aniquilada, flecha si huyó; ★ la guardia del general.</p>
-    <h3>Tus unidades</h3><table class="unidades"><tr><th>Unidad</th><th>En pie</th><th>Bajas</th><th>Bajas causadas</th><th>Estado</th></tr>${propias.map(filaUnidad).join('')}</table>
-    <h3>${textoEsc(rival.nombre)}</h3><table class="unidades"><tr><th>Unidad</th><th>En pie</th><th>Bajas</th><th>Bajas causadas</th><th>Estado</th></tr>${enemigas.map(filaUnidad).join('')}</table>
-    <p class="nota">Partida en red · duración: ${resultado.duracion} s · semilla ${resultado.semilla}. Las partidas en red no cambian tu reino.</p>`);
+  pintarResultado({
+    titulo: MOTIVOS_ANULADA.includes(motivo) ? 'Batalla anulada' : resultado.victoria ? '¡Victoria!' : 'Derrota', explicacion,
+    nombres: [yo.nombre, rival.nombre], resultado, propias, enemigas, tituloEnemigo: rival.nombre,
+    notaMapa: `Puntos: muertos de cada bando (claros los tuyos, rojos los de ${textoEsc(rival.nombre)}). Marca final de cada unidad: punto si quedó en pie, aspa si fue aniquilada, flecha si huyó; ★ la guardia del general.`,
+    pie: `Partida en red · duración: ${resultado.duracion} s · semilla ${resultado.semilla}. Las partidas en red no cambian tu reino.`,
+  });
   mostrar('resultado');
   if (resultado.mapa) dibujarMapaBatalla(elemento('#mapa-batalla'), resultado.mapa, colores[propio][0], colores[1 - propio][0], propio);
 }
@@ -390,7 +388,7 @@ elementoListo(() => {
     e.preventDefault();
     const url = elemento('#in-servidor').value.trim() || SERVIDOR_POR_DEFECTO;
     guardarServidor(url); avisoMultijugador('Conectando…');
-    try { await lobby.conectar(url, reino ? reino.rey : 'Jugador'); avisoMultijugador(''); }
+    try { await lobby.conectar(url, nombreEnRed()); avisoMultijugador(''); }
     catch (err) { avisoMultijugador(err.message + ' ¿Está encendido el servidor? (cd servidor && npm start)', true); }
     pintarMultijugador();
   });
@@ -398,7 +396,7 @@ elementoListo(() => {
   elemento('#form-mj-crear').addEventListener('submit', e => {
     e.preventDefault(); avisoMultijugador('');
     html('#mj-chat-mensajes', '');
-    lobby.enviar({ tipo: 'crearSala', nombre: elemento('#in-mj-nombre-sala').value.trim() || ('Sala de ' + (reino ? reino.rey : 'Jugador')), privada: elemento('#in-mj-privada').checked });
+    lobby.enviar({ tipo: 'crearSala', nombre: elemento('#in-mj-nombre-sala').value.trim() || ('Sala de ' + nombreEnRed()), privada: elemento('#in-mj-privada').checked });
   });
   elemento('#form-mj-codigo').addEventListener('submit', e => { e.preventDefault(); avisoMultijugador(''); html('#mj-chat-mensajes', ''); lobby.enviar({ tipo: 'unirse', codigo: elemento('#in-mj-codigo').value }); });
   elemento('#mj-lista-salas').addEventListener('click', e => { const b = e.target.closest('.btn-mj-unirse'); if (!b) return; avisoMultijugador(''); html('#mj-chat-mensajes', ''); lobby.enviar({ tipo: 'unirse', salaId: b.dataset.sala }); });

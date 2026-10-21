@@ -3,6 +3,12 @@
    Un canvas con la hierba de base sobre el que se acumulan las manchas; los renderizadores lo usan como textura y la
    actualizan solo cuando cambia (version). Las manchas, gotas, charcos y restos son permanentes; las partículas de sangre
    en el aire viven en el renderizador y al caer dejan una gota aquí. */
+// caja [x0, y0, x1, y1] del tablero de un puente: de orilla a orilla (con 2 m de estribo a cada lado) y de su ancho
+function puenteCaja(rio, puente) {
+  let xMin = Infinity, xMax = -Infinity;
+  for (let y = puente.y - puente.ancho / 2; y <= puente.y + puente.ancho / 2; y += 1) { const cx = rio.centroX(y); xMin = Math.min(xMin, cx - rio.ancho / 2); xMax = Math.max(xMax, cx + rio.ancho / 2); }
+  return [xMin - 2, puente.y - puente.ancho / 2, xMax + 2, puente.y + puente.ancho / 2];
+}
 class LienzoSangre {
   constructor(anchoMetros, altoMetros, pixelesPorMetro) {
     this.pixelesPorMetro = pixelesPorMetro;
@@ -62,12 +68,44 @@ class LienzoSangre {
         c.save(); c.filter = 'blur(' + Math.round(1.2 * ppm) + 'px)'; trazar(m, 1.02); c.fillStyle = nieve ? '#4a5e48' : '#3b5626'; c.fill(); c.restore();
         const azar = crearAleatorio(Math.round(m.x * 31 + m.y * 17)), area = Math.PI * m.r * m.r;
         for (let k = 0; k < area * 0.6; k++) {
-          const a = azar.entre(-Math.PI, Math.PI), r = Math.sqrt(azar.numero()) * terreno.radioEn(m, a) * 0.95;
+          const [px, py] = terreno.puntoAlAzarEnMancha(m, azar, 0.95);
           c.globalAlpha = 0.35; c.fillStyle = nieve ? (azar.numero() < 0.5 ? '#dfe6ec' : '#6a7a62') : (azar.numero() < 0.4 ? '#5a4a26' : azar.numero() < 0.6 ? '#2c4019' : '#4b6a2c');
-          c.fillRect((m.x + Math.cos(a) * r) * ppm, (m.y + Math.sin(a) * r) * ppm, (0.15 + azar.numero() * 0.3) * ppm, (0.1 + azar.numero() * 0.2) * ppm);
+          c.fillRect(px * ppm, py * ppm, (0.15 + azar.numero() * 0.3) * ppm, (0.1 + azar.numero() * 0.2) * ppm);
         }
         c.globalAlpha = 1;
       }
+    }
+    // caminos (fase 3 del terreno, 2026-10-20): tierra apisonada con el borde difuminado, dos roderas y piedrecitas; con nieve,
+    // nieve pisada y sucia. Los senderos, más estrechos y claros, sin roderas. Antes que el río: el agua y los vados van encima
+    for (const camino of terreno.caminos || []) {
+      const puntos = camino.puntos, ancho = camino.ancho;
+      const linea = (desplazamiento, grosor, color, alfa) => {
+        c.beginPath();
+        puntos.forEach(([x, y], k) => {
+          const [ax, ay] = puntos[Math.max(0, k - 1)], [bx, by] = puntos[Math.min(puntos.length - 1, k + 1)], largo = Math.hypot(bx - ax, by - ay) || 1;
+          const px = (x - (by - ay) / largo * desplazamiento) * ppm, py = (y + (bx - ax) / largo * desplazamiento) * ppm;
+          if (k) c.lineTo(px, py); else c.moveTo(px, py);
+        });
+        c.lineWidth = grosor * ppm; c.strokeStyle = color; c.globalAlpha = alfa; c.stroke();
+      };
+      c.save(); c.lineJoin = 'round'; c.lineCap = 'round';
+      c.filter = 'blur(' + Math.max(1, Math.round(0.5 * ppm)) + 'px)';
+      linea(0, ancho + 1.4, nieve ? '#b9b3a6' : '#6e6040', 0.55);                                   // borde pisado
+      linea(0, ancho, camino.sendero ? (nieve ? '#d6d0c4' : '#94825a') : (nieve ? '#c8c0b0' : '#8a7550'), 0.95);
+      c.filter = 'none';
+      if (!camino.sendero) for (const lado of [-1, 1]) linea(lado * ancho * 0.22, 0.45, nieve ? '#a39a88' : '#6b5a3a', 0.6);   // roderas
+      linea(0, ancho * 0.35, nieve ? '#d8d2c6' : '#9b8660', 0.35);                                     // el centro, más seco
+      c.restore();
+      const azar = crearAleatorio(Math.round(puntos[0][1] * 131) + puntos.length);
+      for (let s = 0; s < puntos.length - 1; s++) {
+        const [ax, ay] = puntos[s], [bx, by] = puntos[s + 1], largo = Math.hypot(bx - ax, by - ay);
+        for (let k = 0; k < largo * ancho * 0.25; k++) {
+          const u = azar.numero(), lado = azar.entre(-0.45, 0.45) * ancho, x = ax + (bx - ax) * u - (by - ay) / (largo || 1) * lado, y = ay + (by - ay) * u + (bx - ax) / (largo || 1) * lado;
+          c.globalAlpha = 0.6; c.fillStyle = nieve ? '#8d8a84' : (azar.numero() < 0.5 ? '#6f6450' : '#a39274');
+          c.fillRect(x * ppm, y * ppm, azar.entre(0.06, 0.16) * ppm, azar.entre(0.05, 0.12) * ppm);
+        }
+      }
+      c.globalAlpha = 1;
     }
     // río (2026-10-13): franja de agua con orillas y vados de grava; con nieve, el agua se ve más fría
     if (terreno.rio) {
@@ -100,6 +138,23 @@ class LienzoSangre {
           c.globalAlpha = 0.6; c.fillStyle = '#e4e0d4'; c.beginPath(); c.ellipse((x - radio * 0.3) * ppm, (y - radio * 0.3) * ppm, radio * 0.3 * ppm, radio * 0.2 * ppm, giro, 0, Math.PI * 2); c.fill();
         }
         c.globalAlpha = 1;
+      }
+      // puentes (fase 3 del terreno): tablero de tablones de lado a lado del cauce, con vigas en los bordes y barandillas con
+      // postes; con nieve, nieve en los bordes. Se pinta aquí y el renderizador lo pone sobre el agua (mallaPuentes)
+      for (const p of rio.puentes || []) {
+        const caja = puenteCaja(rio, p), [x0, y0, x1, y1] = caja;
+        c.save();
+        c.fillStyle = '#2e2216'; c.globalAlpha = 0.9; c.fillRect((x0 - 0.3) * ppm, (y0 - 0.3) * ppm, (x1 - x0 + 0.6) * ppm, (y1 - y0 + 0.6) * ppm);   // sombra y contorno
+        c.globalAlpha = 1; c.fillStyle = nieve ? '#8a7860' : '#7a5a36'; c.fillRect(x0 * ppm, y0 * ppm, (x1 - x0) * ppm, (y1 - y0) * ppm);
+        const azar = crearAleatorio(Math.round(p.y * 53) + 7);
+        for (let x = x0; x < x1; x += 0.45) {                                                               // tablones, de través
+          c.fillStyle = azar.numero() < 0.5 ? (nieve ? '#9a876c' : '#8a6842') : (nieve ? '#7c6a52' : '#6c4e2e'); c.fillRect(x * ppm, (y0 + 0.6) * ppm, 0.4 * ppm, (y1 - y0 - 1.2) * ppm);
+          c.fillStyle = '#3a2a1a'; c.globalAlpha = 0.5; c.fillRect((x + 0.4) * ppm, (y0 + 0.6) * ppm, 0.05 * ppm, (y1 - y0 - 1.2) * ppm); c.globalAlpha = 1;
+        }
+        for (const y of [y0, y1 - 0.6]) { c.fillStyle = '#4a3420'; c.fillRect(x0 * ppm, y * ppm, (x1 - x0) * ppm, 0.6 * ppm); }      // vigas de los bordes
+        for (const y of [y0 + 0.15, y1 - 0.45]) for (let x = x0 + 0.2; x <= x1 - 0.2; x += 2.2) { c.fillStyle = '#2e2014'; c.fillRect((x - 0.15) * ppm, y * ppm, 0.3 * ppm, 0.3 * ppm); }   // postes
+        if (nieve) { c.fillStyle = '#eef2f6'; c.globalAlpha = 0.8; for (const y of [y0 + 0.6, y1 - 1.0]) c.fillRect(x0 * ppm, y * ppm, (x1 - x0) * ppm, 0.4 * ppm); }
+        c.restore();
       }
     }
     this.version++;
@@ -237,7 +292,7 @@ class LienzoSangre {
     for (let k = 0; k < candidatos; k++) {
       const x = azar.entre(2, CAMPO.ancho - 2), y = azar.entre(2, CAMPO.alto - 2), suerte = azar.numero(), tamano = azar.entre(0.35, 0.85), giro = azar.entre(0, Math.PI);
       const h = terreno.alturaEn(x, y);
-      const tipo = terreno.tipoEn(x, y); if (tipo === TERRENO.BOSQUE || tipo === TERRENO.AGUA || tipo === TERRENO.VADO || tipo === TERRENO.PROFUNDA || tipo === TERRENO.RISCO) continue;
+      const tipo = terreno.tipoEn(x, y); if (tipo === TERRENO.BOSQUE || tipo === TERRENO.AGUA || tipo === TERRENO.VADO || tipo === TERRENO.PROFUNDA || tipo === TERRENO.RISCO || tipo === TERRENO.CAMINO || tipo === TERRENO.PUENTE) continue;
       // al pie de los riscos (fase B), pedregal: piedras caídas a menos de 3,5 m de la roca
       const alPieDeRoca = terreno.profundidadRisco && terreno.riscos && terreno.riscos.length ? terreno.profundidadRisco(x, y) > -3.5 : false;
       if (h < 0.8 && !alPieDeRoca) continue;
@@ -295,7 +350,7 @@ class LienzoSangre {
   // resto en el campo: escudo, yelmo, espada, lanza o arco caídos junto a un muerto
   resto(x, y, tipo, color, colorSecundario, azar) {
     const c = this.contexto, ppm = this.pixelesPorMetro;
-    const hex = n => '#' + (n >>> 0).toString(16).padStart(6, '0');
+    const hex = enteroAHex;
     c.save(); c.translate(x * ppm, y * ppm); c.rotate(azar.entre(0, Math.PI * 2)); c.globalAlpha = 0.95;
     c.lineWidth = 1; c.strokeStyle = '#1a1410';
     if (tipo === 'escudo') {

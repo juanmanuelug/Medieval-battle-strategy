@@ -12,7 +12,8 @@ function zonaDespliegue(equipo) {
 }
 // aura del general sin rasgos (radio en m, moral que suma por segundo a las unidades dentro); los rasgos amplían el radio
 const AURA_GENERAL = { radio: 35, moral: 1.5 };
-const PASO_SIMULACION = 1 / 30;                 // segundos por paso fijo
+const PASOS_POR_SEGUNDO = 30;
+const PASO_SIMULACION = 1 / PASOS_POR_SEGUNDO;   // segundos por paso fijo
 const GRAVEDAD = 9.8;
 
 const ESTADO = { MUERTO: 0, FORMADO: 1, AVANZANDO: 2, LUCHANDO: 3, VOLANDO: 4, CADAVER: 5, AUSENTE: 6 };   // AUSENTE: huyó por el borde del campo
@@ -20,33 +21,33 @@ const ESTADO = { MUERTO: 0, FORMADO: 1, AVANZANDO: 2, LUCHANDO: 3, VOLANDO: 4, C
 // Índice de tipo → estadísticas. "alcance" es cuerpo a cuerpo; los tiradores tienen además alcanceTiro, munición (andanadas)
 // y `cuerpoACuerpoComo`: el tipo de tropa al que equivalen en el cuerpo a cuerpo (dos niveles por debajo del suyo).
 const TIPOS = [
-  { clave: 'infanteriaLigera', nombre: 'Infantería ligera', velocidad: 2.2, vida: 100, dano: 12, alcance: 1.1, intervalo: 1.0, masa: 1.0, radio: 0.35, proteccionFlechas: 0.15 },
-  { clave: 'infanteriaPesada', nombre: 'Infantería pesada', velocidad: 1.6, vida: 170, dano: 17, alcance: 1.1, intervalo: 1.1, masa: 1.4, radio: 0.38, proteccionFlechas: 0.25 },
-  { clave: 'lanceros', nombre: 'Lanceros', velocidad: 1.9, vida: 110, dano: 11, alcance: 2.0, intervalo: 1.0, masa: 1.0, radio: 0.35, antiCaballeria: true, proteccionFlechas: 0.15 },
-  { clave: 'arqueros', nombre: 'Arqueros', velocidad: 2.3, vida: 70, dano: 6, alcance: 1.0, intervalo: 1.2, masa: 0.8, radio: 0.33, alcanceTiro: 85, cadenciaTiro: 5.5, danoFlecha: 36, velocidadFlecha: 28, dispersion: 0.07, municion: 20, cuerpoACuerpoComo: 'infanteriaLigera' },
-  { clave: 'caballeriaPesada', nombre: 'Caballería pesada', velocidad: 6.5, vida: 215, dano: 18, alcance: 1.2, intervalo: 1.0, masa: 4.0, radio: 0.6, montado: true, umbralCarga: 4.0, energiaCarga: 10, danoCarga: 58, velocidadCarga: 10.5 },   // 2026-10-13, tras la prueba con amigos (arrasaba): antes vida 230, daño 22, alcance 1,6, impulso 14, carga 75
+  { clave: 'infanteriaLigera', nombre: 'Infantería ligera', nombreCorto: 'Inf. ligera', velocidad: 2.2, vida: 100, dano: 12, alcance: 1.1, intervalo: 1.0, masa: 1.0, radio: 0.35, proteccionFlechas: 0.15 },
+  { clave: 'infanteriaPesada', nombre: 'Infantería pesada', nombreCorto: 'Inf. pesada', velocidad: 1.6, vida: 170, dano: 17, alcance: 1.1, intervalo: 1.1, masa: 1.4, radio: 0.38, proteccionFlechas: 0.25 },
+  { clave: 'lanceros', nombre: 'Lanceros', nombreCorto: 'Lanceros', velocidad: 1.9, vida: 110, dano: 11, alcance: 2.0, intervalo: 1.0, masa: 1.0, radio: 0.35, antiCaballeria: true, proteccionFlechas: 0.15 },
+  { clave: 'arqueros', nombre: 'Arqueros', nombreCorto: 'Arqueros', velocidad: 2.3, vida: 70, dano: 6, alcance: 1.0, intervalo: 1.2, masa: 0.8, radio: 0.33, alcanceTiro: 85, cadenciaTiro: 5.5, danoFlecha: 36, velocidadFlecha: 28, dispersion: 0.07, municion: 20, cuerpoACuerpoComo: 'infanteriaLigera' },
+  { clave: 'caballeriaPesada', nombre: 'Caballería pesada', nombreCorto: 'Cab. pesada', velocidad: 6.5, vida: 215, dano: 18, alcance: 1.2, intervalo: 1.0, masa: 4.0, radio: 0.6, montado: true, umbralCarga: 4.0, energiaCarga: 10, danoCarga: 58, velocidadCarga: 10.5 },   // 2026-10-13, tras la prueba con amigos (arrasaba): antes vida 230, daño 22, alcance 1,6, impulso 14, carga 75
   // Tropas exclusivas de algunas ramas (ver RAMAS.exclusivas)
-  { clave: 'caballeriaLigera', nombre: 'Caballería ligera', velocidad: 7.6, vida: 150, dano: 16, alcance: 1.5, intervalo: 1.0, masa: 2.8, radio: 0.55, montado: true, umbralCarga: 4.5, energiaCarga: 7, danoCarga: 45, velocidadCarga: 11.0 },
-  { clave: 'arquerosACaballo', nombre: 'Arqueros a caballo', velocidad: 7.0, vida: 120, dano: 10, alcance: 1.2, intervalo: 1.1, masa: 2.5, radio: 0.55, montado: true, alcanceTiro: 60, cadenciaTiro: 5.0, danoFlecha: 30, velocidadFlecha: 28, dispersion: 0.09, disparaEnMovimiento: true, municion: 16, cuerpoACuerpoComo: 'caballeriaLigera' },
+  { clave: 'caballeriaLigera', nombre: 'Caballería ligera', nombreCorto: 'Cab. ligera', velocidad: 7.6, vida: 150, dano: 16, alcance: 1.5, intervalo: 1.0, masa: 2.8, radio: 0.55, montado: true, umbralCarga: 4.5, energiaCarga: 7, danoCarga: 45, velocidadCarga: 11.0 },
+  { clave: 'arquerosACaballo', nombre: 'Arqueros a caballo', nombreCorto: 'Arq. a caballo', velocidad: 7.0, vida: 120, dano: 10, alcance: 1.2, intervalo: 1.1, masa: 2.5, radio: 0.55, montado: true, alcanceTiro: 60, cadenciaTiro: 5.0, danoFlecha: 30, velocidadFlecha: 28, dispersion: 0.09, disparaEnMovimiento: true, municion: 16, cuerpoACuerpoComo: 'caballeriaLigera' },
   // cadencia de arqueros 4 → 5,5 s y de ballesteros 7,5 → 10 s entre andanadas (2026-10-12, pedido: disparaban demasiado rápido)
   // ballesteros (2026-10-12, a petición del usuario: «no son rentables»): vida 100 (antes 80), virote 80 (70) y TIRO APUNTADO
   // (cada ballestero apunta a un soldado, no a la zona: la precisión cuenta) con dispersión 0,06 alrededor de él
-  { clave: 'ballesteros', nombre: 'Ballesteros', velocidad: 2.0, vida: 100, dano: 7, alcance: 1.0, intervalo: 1.2, masa: 0.9, radio: 0.33, alcanceTiro: 70, cadenciaTiro: 10.0, danoFlecha: 80, velocidadFlecha: 40, dispersion: 0.06, apuntado: true, perforante: true, municion: 14, cuerpoACuerpoComo: 'infanteriaLigera' },
+  { clave: 'ballesteros', nombre: 'Ballesteros', nombreCorto: 'Ballesteros', velocidad: 2.0, vida: 100, dano: 7, alcance: 1.0, intervalo: 1.2, masa: 0.9, radio: 0.33, alcanceTiro: 70, cadenciaTiro: 10.0, danoFlecha: 80, velocidadFlecha: 40, dispersion: 0.06, apuntado: true, perforante: true, municion: 14, cuerpoACuerpoComo: 'infanteriaLigera' },
   // Exclusivas de rama (2026-10-13, tras la prueba con amigos: una por rama y ligada a su ventaja, sin repetir)
   // caballeros (cristiano): caballería de choque, la carga más fuerte del juego; unidades pequeñas y caras
-  { clave: 'caballeros', nombre: 'Caballeros', velocidad: 6.2, vida: 250, dano: 20, alcance: 1.2, intervalo: 1.0, masa: 4.4, radio: 0.6, montado: true, umbralCarga: 4.0, energiaCarga: 10, danoCarga: 72, velocidadCarga: 10.2, moralBase: 1.15 },
+  { clave: 'caballeros', nombre: 'Caballeros', nombreCorto: 'Caballeros', velocidad: 6.2, vida: 250, dano: 20, alcance: 1.2, intervalo: 1.0, masa: 4.4, radio: 0.6, montado: true, umbralCarga: 4.0, energiaCarga: 10, danoCarga: 72, velocidadCarga: 10.2, moralBase: 1.15 },
   // Propiedades de las tropas: escudo: false → no forma muro de escudos; proteccionFlechas → fracción del daño de las flechas
   // no perforantes que para (0,25 la armadura pesada, 0,15 el escudo solo; los virotes de ballesta hacen el daño entero)
   // guardia varega (ortodoxo): infantería pesada de hacha a dos manos; mucho daño, sin escudo (no forma muro) pero con armadura pesada
-  { clave: 'guardiaVarega', nombre: 'Guardia varega', velocidad: 1.6, vida: 195, dano: 28, alcance: 1.25, intervalo: 1.25, masa: 1.5, radio: 0.38, escudo: false, proteccionFlechas: 0.25, moralBase: 1.2 },
+  { clave: 'guardiaVarega', nombre: 'Guardia varega', nombreCorto: 'Varegos', velocidad: 1.6, vida: 195, dano: 28, alcance: 1.25, intervalo: 1.25, masa: 1.5, radio: 0.38, escudo: false, proteccionFlechas: 0.25, moralBase: 1.2 },
   // templarios (cruzado): infantería de élite con escudo; moral base ×1,4 (además de la de la rama)
-  { clave: 'templarios', nombre: 'Templarios', velocidad: 1.6, vida: 220, dano: 21, alcance: 1.1, intervalo: 1.05, masa: 1.5, radio: 0.38, moralBase: 1.4, proteccionFlechas: 0.25 },
+  { clave: 'templarios', nombre: 'Templarios', nombreCorto: 'Templarios', velocidad: 1.6, vida: 220, dano: 21, alcance: 1.1, intervalo: 1.05, masa: 1.5, radio: 0.38, moralBase: 1.4, proteccionFlechas: 0.25 },
   // berserkers (tribus): infantería ligera feroz y barata; golpea muy seguido, sin escudo ni armadura; moral base ×1,25
   // Artillería (2026-10-13, tras la prueba con amigos): cada «soldado» es un mangonel con su dotación. Lanza piedras en
   // parábola alta (alcance 160 m, mínimo 35 m) que hacen daño en un radio (radioImpacto) a todo el que pillen, también a los
   // propios; desordenan y asustan más que las flechas. Solo dispara parado, casi no se defiende y no se puede arrollar.
-  { clave: 'mangoneles', nombre: 'Mangoneles', velocidad: 0.9, vida: 320, dano: 3, alcance: 1.2, intervalo: 1.5, masa: 3.0, radio: 0.9, alcanceTiro: 160, alcanceMinimo: 35, cadenciaTiro: 12, danoFlecha: 95, radioImpacto: 3.2, velocidadFlecha: 30, dispersion: 0.05, municion: 15, artilleria: true, escudo: false, separacionMinima: 7 },
-  { clave: 'berserkers', nombre: 'Berserkers', velocidad: 2.5, vida: 110, dano: 19, alcance: 1.1, intervalo: 0.8, masa: 1.1, radio: 0.36, escudo: false, moralBase: 1.25 },
+  { clave: 'mangoneles', nombre: 'Mangoneles', nombreCorto: 'Mangoneles', velocidad: 0.9, vida: 320, dano: 3, alcance: 1.2, intervalo: 1.5, masa: 3.0, radio: 0.9, alcanceTiro: 160, alcanceMinimo: 35, cadenciaTiro: 12, danoFlecha: 95, radioImpacto: 3.2, velocidadFlecha: 30, dispersion: 0.05, municion: 15, artilleria: true, escudo: false, separacionMinima: 7 },
+  { clave: 'berserkers', nombre: 'Berserkers', nombreCorto: 'Berserkers', velocidad: 2.5, vida: 110, dano: 19, alcance: 1.1, intervalo: 0.8, masa: 1.1, radio: 0.36, escudo: false, moralBase: 1.25 },
 ];
 const TIPO = Object.fromEntries(TIPOS.map((t, i) => [t.clave, i]));
 
@@ -108,6 +109,7 @@ const CLIMAS = {
   nieve: { nombre: 'Nieve', descripcion: 'Campo nevado: todos más lentos, más fatiga y cargas más flojas.', velocidad: 0.85, velocidadMontado: 0.8, danoFlecha: 1, alcanceTiro: 0.95, cadencia: 1.1, fatiga: 1.4, carga: 0.75, lluvia: false, barro: false, nieve: true },
 };// Clima al azar desde la semilla (el mismo en el servidor y en los navegadores): despejado 50 %, lluvia 18 %, barro 12 %,
 // tormenta 10 %, nieve 10 %
+// (umbrales acumulados, no la tabla de pesos de mapaDesdeSemilla: cambiarlo cambia el clima de algunas semillas; ver README)
 function climaDesdeSemilla(semilla) {
   const tirada = crearAleatorio(semilla + 7).numero();
   return tirada < 0.5 ? 'despejado' : tirada < 0.68 ? 'lluvia' : tirada < 0.8 ? 'barro' : tirada < 0.9 ? 'tormenta' : 'nieve';
