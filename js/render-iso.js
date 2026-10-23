@@ -382,6 +382,44 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   // despliega (no hay pasos) y ahí también hay que ver a las tropas dentro de los bosques
   const CELDA_ARBOLES = 4, rejillaArboles = new RejillaEspacial(CAMPO.ancho, CAMPO.alto, CELDA_ARBOLES, sim.cantidad), cercaDelArbol = new Int32Array(sim.cantidad);
   let fotogramaArboles = 0;
+  /* Incendios (flechas de fuego, 2026-10-21): una llama animada por celda que arde (con muchas, una de cada dos), brasas y humo que
+     suben, los árboles de una celda que arde en naranja y los de una quemada, negros. Solo dibujo: lee sim.ardiendo y sim.quemadas. */
+  const texturaLlama = (() => {
+    const lienzo = document.createElement('canvas'); lienzo.width = 32; lienzo.height = 56; const c = lienzo.getContext('2d');
+    const capa = (radio, alto, color0, color1) => { const g = c.createRadialGradient(16, 46, 1, 16, 40, radio); g.addColorStop(0, color0); g.addColorStop(1, color1); c.fillStyle = g; c.beginPath(); c.moveTo(16, 56 - alto); c.quadraticCurveTo(16 + radio, 40, 16, 54); c.quadraticCurveTo(16 - radio, 40, 16, 56 - alto); c.fill(); };
+    capa(15, 56, 'rgba(255,120,20,0.85)', 'rgba(200,40,0,0)'); capa(10, 42, 'rgba(255,190,60,0.95)', 'rgba(255,110,20,0)'); capa(5, 26, 'rgba(255,250,200,1)', 'rgba(255,200,80,0)');
+    return PIXI.Texture.from(lienzo);
+  })();
+  const llamas = [], arbolesPorCelda = new Map();
+  const texturasQuemado = typeof dibujarArbolQuemado === 'function' ? [0, 1, 2].map(k => texturaDesdeDibujo(dibujarArbolQuemado({ S: RESOLUCION_ARBOL, azar: crearAleatorio(733 + k), nieve: conNieve }))) : [PIXI.Texture.EMPTY];
+  let quemadasVistas = 0, arbolesIndexados = false;
+  const celdaDe = (x, y) => opciones.terreno ? opciones.terreno.indiceCelda(x, y) : -1;
+  function animarIncendios(tiempo) {
+    const terreno = opciones.terreno; if (!terreno || !sim.ardiendo) return;
+    if (!arbolesIndexados) { arbolesIndexados = true; for (const arbol of arbolesBosque) { const k = celdaDe(arbol.x, arbol.y); if (!arbolesPorCelda.has(k)) arbolesPorCelda.set(k, []); arbolesPorCelda.get(k).push(arbol); } }
+    const ardiendo = sim.ardiendo, cada = ardiendo.length > 260 ? 2 : 1, C = terreno.columnas, celda = terreno.celda;
+    let usadas = 0;
+    for (let q = 0; q < ardiendo.length; q += cada) {
+      const k = ardiendo[q][0], semilla = (k * 2654435761) >>> 0, jx = ((semilla % 100) / 100 - 0.5) * celda, jy = (((semilla >> 8) % 100) / 100 - 0.5) * celda;
+      const x = (k % C) * celda + jx, y = Math.floor(k / C) * celda + jy;
+      let s = llamas[usadas]; if (!s) { s = new PIXI.Sprite(texturaLlama); s.anchor.set(0.5, 1); capaEscena.addChild(s); llamas.push(s); }
+      const fase = (semilla % 628) / 100, vivo = Math.min(1, ardiendo[q][1] / 10);                  // al apagarse, más pequeña
+      s.visible = true; s.position.set(aPantallaX(x, y), aPantallaY(x, y));
+      // llama de unos 3,5 m de alto (la textura mide 56 px): late a lo ancho y a lo alto, y al apagarse encoge
+      s.scale.set((0.5 + 0.1 * Math.sin(tiempo * 7 + fase)) * vivo * ESCALA / 10, (0.62 + 0.18 * Math.sin(tiempo * 11 + fase * 1.7)) * vivo * ESCALA / 10);
+      s.alpha = 0.85 + 0.15 * Math.sin(tiempo * 13 + fase); s.zIndex = profundidad(x, y) + 0.4; usadas++;
+      for (const arbol of arbolesPorCelda.get(k) || []) if (!arbol.quemado) arbol.s.tint = Math.sin(tiempo * 9 + fase) > 0 ? 0xffa070 : 0xff8050;
+      if (Math.random() < 0.05) particulas.push({ x, y, z: 1.2, vx: (Math.random() - 0.5) * 0.6, vy: (Math.random() - 0.5) * 0.6, vz: Math.random() * 2.5 + 1, tam: 0.05, vida: 0.8, color: Math.random() < 0.5 ? 0xffc050 : 0xff8030 });    // brasas
+      if (Math.random() < 0.07) { const vida = 3 + Math.random() * 2; particulas.push({ humo: true, x, y, z: 2, vx: 0.4 + Math.random() * 0.4, vy: -0.2 + Math.random() * 0.4, vz: 1 + Math.random() * 0.6, vida, vidaInicial: vida, color: Math.random() < 0.5 ? 0x4a4644 : 0x6a6662 }); }
+    }
+    for (let q = usadas; q < llamas.length; q++) if (llamas[q].visible) llamas[q].visible = false;
+    // árboles quemados (y, si un estado restaurado tiene menos quemado, se rehace todo)
+    if (sim.quemadas.length !== quemadasVistas) {
+      if (sim.quemadas.length < quemadasVistas) { for (const arbol of arbolesBosque) { arbol.s.tint = 0xffffff; if (arbol.texturaViva) arbol.s.texture = arbol.texturaViva; arbol.quemado = false; } quemadasVistas = 0; }
+      for (let q = quemadasVistas; q < sim.quemadas.length; q++) for (const arbol of arbolesPorCelda.get(sim.quemadas[q]) || []) { if (!arbol.texturaViva) arbol.texturaViva = arbol.s.texture; arbol.s.texture = texturasQuemado[(sim.quemadas[q] >>> 0) % texturasQuemado.length]; arbol.s.tint = 0xffffff; arbol.quemado = true; }
+      quemadasVistas = sim.quemadas.length;
+    }
+  }
   function transparentarArboles() {
     if (!arbolesBosque.length || (fotogramaArboles++ % 3)) return;
     rejillaArboles.limpiar();
@@ -434,6 +472,8 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
   function sangrar(evento) {
     const tipo = evento.tipo || 'golpe', rumbo = evento.rumbo || 0;
     if (tipo === 'impacto') reventar(evento.x, evento.y);
+    else if (tipo === 'quemado') sangre.cenizas(evento.x, evento.y, azarGore);                    // flechas de fuego (2026-10-21)
+    else if (tipo === 'prende') for (let k = 0; k < 14; k++) { const ang = azarGore.entre(-Math.PI, Math.PI), v = azarGore.entre(0.6, 2.2); particulas.push({ x: evento.x, y: evento.y, z: 0.5, vx: Math.cos(ang) * v, vy: Math.sin(ang) * v, vz: azarGore.entre(2, 4.5), tam: azarGore.entre(0.05, 0.1), vida: 0.9, color: azarGore.numero() < 0.5 ? 0xffb040 : 0xff7020 }); }
     else if (tipo === 'golpe') salpicar(evento.x, evento.y, evento.montado ? 1.4 : 1.0, rumbo, 5, 2.5, 0.7);
     else if (tipo === 'flecha') salpicar(evento.x, evento.y, 1.1, rumbo, 4, 1.8, 0.9);
     else if (tipo === 'atropello') salpicar(evento.x, evento.y, 0.9, rumbo, 16, 4.5, 1.1);
@@ -454,6 +494,12 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     const escalaMundo = mundo.scale.x;
     for (let k = particulas.length - 1; k >= 0; k--) {
       const p = particulas[k];
+      if (p.humo) {           // humo de un incendio (2026-10-21): sin gravedad, sube despacio, crece y se desvanece
+        p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vida -= dt;
+        if (p.vida <= 0) { particulas[k] = particulas[particulas.length - 1]; particulas.pop(); continue; }
+        capaParticulas.beginFill(p.color, 0.42 * Math.min(1, p.vida / 1.5)).drawCircle(aPantallaX(p.x, p.y), aPantallaY(p.x, p.y, p.z), (0.6 + (p.vidaInicial - p.vida) * 0.45) * ESCALA).endFill();
+        continue;
+      }
       p.vz -= 9.8 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vida -= dt;
       if (p.z <= 0 || p.vida <= 0) { if (!p.color) sangre.gota(limitar(p.x, 0.5, CAMPO.ancho - 0.5), limitar(p.y, 0.5, CAMPO.alto - 0.5), p.tam * 1.6, azarGore.numero() < 0.4); particulas[k] = particulas[particulas.length - 1]; particulas.pop(); continue; }
       const radio = Math.max(0.8, p.tam * ESCALA * escalaMundo) / escalaMundo;
@@ -862,7 +908,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
     const dt = tiempoAnterior ? Math.max(0, tiempoRender - tiempoAnterior) : 0; tiempoAnterior = tiempoRender;
     // la textura del suelo se sube a la GPU como mucho ocho veces por segundo (con las gotas cambia casi cada fotograma)
     if (sangre.version !== versionSuelo && tiempoRender - ultimaSubidaSuelo > 0.12) { texturaSuelo.update(); versionSuelo = sangre.version; ultimaSubidaSuelo = tiempoRender; }
-    animarParticulas(dt); animarLluvia(dt); transparentarArboles(); animarRio(dt);
+    animarParticulas(dt); animarLluvia(dt); transparentarArboles(); animarRio(dt); animarIncendios(tiempoRender);
     const a = alpha, b = 1 - alpha;
     let luchando = 0, galopando = 0;
     for (let i = 0; i < n; i++) {
@@ -973,6 +1019,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
       const piedra = sim.flechaArea[f] > 0, texturaProyectil = piedra ? texturaPiedra : texturaFlecha;
       if (s.texture !== texturaProyectil) { s.texture = texturaProyectil; s.anchor.set(piedra ? 0.5 : 0, 0.5); if (piedra) s.scale.set(1); }
       if (!piedra) s.scale.set(escalaFlecha, escalaFlecha * grosorFlecha);
+      s.tint = sim.flechaFuego && sim.flechaFuego[f] ? 0xffa050 : 0xffffff;                         // flecha de fuego (2026-10-21)
       const giro = girada ? -1 : 1, dx = (sim.flechaX1[f] - sim.flechaX0[f]) * giro, dy = (sim.flechaY1[f] - sim.flechaY0[f]) * giro;
       const [haciaX, haciaY] = direccionEnPantalla(dx, dy), anguloPantalla = Math.atan2(haciaY, haciaX);
       if (estado === 1) {
@@ -986,6 +1033,7 @@ function crearRenderizadorIso(contenedor, sim, sangre, opciones) {
         const alturaRecta = alturaSalida + (alturaLlegada - alturaSalida) * posFlecha[3];
         s.position.set(aPantallaX(posFlecha[0], posFlecha[1]), aPantallaY(posFlecha[0], posFlecha[1], posFlecha[2] + alturaRecta - alturaSuelo(posFlecha[0], posFlecha[1])));
         s.rotation = anguloPantalla - Math.atan(pendiente) * 0.8; s.alpha = 1; s.zIndex = profundidad(posFlecha[0], posFlecha[1]) + 2;
+        if (sim.flechaFuego && sim.flechaFuego[f] && Math.random() < 0.35) particulas.push({ x: posFlecha[0], y: posFlecha[1], z: posFlecha[2] + alturaRecta - alturaSuelo(posFlecha[0], posFlecha[1]), vx: 0, vy: 0, vz: 0.4, tam: 0.05, vida: 0.35, color: Math.random() < 0.5 ? 0xffc050 : 0xff7020 });   // estela de la flecha de fuego
         if (!piedra && s.anchor.x !== 0) s.anchor.set(0, 0.5);
       } else {
         let x = sim.flechaX1[f], y = sim.flechaY1[f], altura = 0;

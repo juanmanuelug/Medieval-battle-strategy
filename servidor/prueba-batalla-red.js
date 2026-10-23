@@ -127,6 +127,12 @@ const alaPar = async (a, b) => { for (let k = 0; k < 40 && a.sim.paso !== b.sim.
     ana.enviar({ tipo: 'orden', orden: { a: 'mover', u: [unidadFrente.id], d: [[150, 160, 0, 14, 'basura']] } });   // con frente (y un quinto dato que el servidor quita)
     await esperar(3000);
     comprobar(beto.sim.unidades[unidadFrente.id].frente === 14 && resumenDe(ana.sim) === resumenDe(beto.sim), 'un frente nuevo al mover, en combate, llega igual al rival y las dos siguen idénticas');
+    // flechas de fuego (2026-10-21): la orden llega igual al rival
+    const arquerosAna = ana.propias().find(u => u.stats.flechasFuego);
+    if (arquerosAna) {
+      ana.enviar({ tipo: 'orden', orden: { a: 'fuego', u: [arquerosAna.id], activa: true } }); await esperar(1500);
+      comprobar(ana.sim.unidades[arquerosAna.id].fuego === true && beto.sim.unidades[arquerosAna.id].fuego === true && resumenDe(ana.sim) === resumenDe(beto.sim), 'las flechas de fuego encendidas llegan igual al rival y las dos siguen idénticas');
+    } else comprobar(false, 'el ejército de la prueba tiene arqueros para las flechas de fuego');
     // pausa de común acuerdo: Ana la pide, Beto la rechaza; la vuelve a pedir y Beto la acepta
     ana.limpiar('pausaRechazada'); ana.enviar({ tipo: 'pedirPausa' });
     await ana.espera('pausaSolicitada'); await beto.espera('pausaPedida');

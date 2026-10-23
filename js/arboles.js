@@ -47,6 +47,32 @@ function dibujarArbol(o) {
   }
   return { canvas, anclaX: ax, anclaY: ay };
 }
+/* Árbol quemado (flechas de fuego, 2026-10-21): tronco ennegrecido con ramas rotas y sin hojas, alguna brasa; con nieve, un poco
+   de nieve en las ramas. Mismo tamaño y ancla que dibujarArbol, para cambiar la textura del árbol sin moverlo. */
+function dibujarArbolQuemado(o) {
+  const S = o.S || 32, azar = o.azar, nieve = !!o.nieve;
+  const ancho = Math.ceil(4 * S), alto = Math.ceil(7 * S);
+  const canvas = document.createElement('canvas'); canvas.width = ancho; canvas.height = alto;
+  const c = canvas.getContext('2d'), ax = ancho / 2, ay = alto - 0.35 * S;
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  const altoTronco = azar.entre(3.2, 4.6) * S;
+  const rama = (x0, y0, angulo, largo, grueso, nivel) => {
+    const x1 = x0 + Math.cos(angulo) * largo, y1 = y0 + Math.sin(angulo) * largo;
+    c.strokeStyle = CONTORNO_ARBOL; c.lineWidth = grueso + Math.max(1.5, 0.08 * S); c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+    c.strokeStyle = nivel ? '#2a221c' : '#3a2e24'; c.lineWidth = grueso; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke();
+    if (nieve && nivel > 0) { c.strokeStyle = 'rgba(240,244,248,0.85)'; c.lineWidth = grueso * 0.5; c.beginPath(); c.moveTo(x0, y0 - grueso * 0.3); c.lineTo(x1, y1 - grueso * 0.3); c.stroke(); }
+    if (nivel < 2) for (let k = 0; k < 2; k++) if (azar.numero() < 0.8) rama(x1, y1, angulo + azar.entre(-0.9, 0.9), largo * azar.entre(0.45, 0.7), grueso * 0.6, nivel + 1);
+  };
+  // sombra en el suelo y tronco
+  c.globalAlpha = 0.35; c.fillStyle = '#121010'; c.beginPath(); c.ellipse(ax, ay, 0.6 * S, 0.22 * S, 0, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1;
+  rama(ax, ay, -Math.PI / 2 + azar.entre(-0.08, 0.08), altoTronco, 0.32 * S, 0);
+  const copaX = ax, copaY = ay - altoTronco;
+  for (let k = 0; k < 3; k++) rama(copaX + azar.entre(-0.1, 0.1) * S, copaY + azar.entre(0, 1.2) * S, -Math.PI / 2 + azar.entre(-1.1, 1.1), azar.entre(0.9, 1.6) * S, 0.16 * S, 1);
+  // alguna brasa en el tronco
+  for (let k = 0; k < 2; k++) { c.fillStyle = azar.numero() < 0.5 ? '#ff7a20' : '#c84a10'; c.globalAlpha = 0.8; c.beginPath(); c.arc(ax + azar.entre(-0.08, 0.08) * S, ay - azar.entre(0.3, 2.2) * S, 0.05 * S, 0, Math.PI * 2); c.fill(); }
+  c.globalAlpha = 1;
+  return { canvas, anclaX: ax, anclaY: ay };
+}
 function dibujarArbusto(o) {
   const S = o.S || 32, azar = o.azar, nieve = !!o.nieve;
   const canvas = document.createElement('canvas'); canvas.width = Math.ceil(2.4 * S); canvas.height = Math.ceil(1.6 * S);

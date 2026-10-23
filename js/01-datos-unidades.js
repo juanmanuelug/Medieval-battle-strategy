@@ -24,7 +24,7 @@ const TIPOS = [
   { clave: 'infanteriaLigera', nombre: 'Infantería ligera', nombreCorto: 'Inf. ligera', velocidad: 2.2, vida: 100, dano: 12, alcance: 1.1, intervalo: 1.0, masa: 1.0, radio: 0.35, proteccionFlechas: 0.15 },
   { clave: 'infanteriaPesada', nombre: 'Infantería pesada', nombreCorto: 'Inf. pesada', velocidad: 1.6, vida: 170, dano: 17, alcance: 1.1, intervalo: 1.1, masa: 1.4, radio: 0.38, proteccionFlechas: 0.25 },
   { clave: 'lanceros', nombre: 'Lanceros', nombreCorto: 'Lanceros', velocidad: 1.9, vida: 110, dano: 11, alcance: 2.0, intervalo: 1.0, masa: 1.0, radio: 0.35, antiCaballeria: true, proteccionFlechas: 0.15 },
-  { clave: 'arqueros', nombre: 'Arqueros', nombreCorto: 'Arqueros', velocidad: 2.3, vida: 70, dano: 6, alcance: 1.0, intervalo: 1.2, masa: 0.8, radio: 0.33, alcanceTiro: 85, cadenciaTiro: 5.5, danoFlecha: 36, velocidadFlecha: 28, dispersion: 0.07, municion: 20, cuerpoACuerpoComo: 'infanteriaLigera' },
+  { clave: 'arqueros', nombre: 'Arqueros', nombreCorto: 'Arqueros', flechasFuego: true, velocidad: 2.3, vida: 70, dano: 6, alcance: 1.0, intervalo: 1.2, masa: 0.8, radio: 0.33, alcanceTiro: 85, cadenciaTiro: 5.5, danoFlecha: 36, velocidadFlecha: 28, dispersion: 0.07, municion: 20, cuerpoACuerpoComo: 'infanteriaLigera' },
   { clave: 'caballeriaPesada', nombre: 'Caballería pesada', nombreCorto: 'Cab. pesada', velocidad: 6.5, vida: 215, dano: 18, alcance: 1.2, intervalo: 1.0, masa: 4.0, radio: 0.6, montado: true, umbralCarga: 4.0, energiaCarga: 10, danoCarga: 58, velocidadCarga: 10.5 },   // 2026-10-13, tras la prueba con amigos (arrasaba): antes vida 230, daño 22, alcance 1,6, impulso 14, carga 75
   // Tropas exclusivas de algunas ramas (ver RAMAS.exclusivas)
   { clave: 'caballeriaLigera', nombre: 'Caballería ligera', nombreCorto: 'Cab. ligera', velocidad: 7.6, vida: 150, dano: 16, alcance: 1.5, intervalo: 1.0, masa: 2.8, radio: 0.55, montado: true, umbralCarga: 4.5, energiaCarga: 7, danoCarga: 45, velocidadCarga: 11.0 },
@@ -100,13 +100,15 @@ function formacionDisponible(unidad, clave) {
 const QUIEN_PUEDE_FORMACION = { todas: 'todas las unidades', infanteriaEscudo: 'infantería cuerpo a cuerpo con escudo', infanteria: 'infantería cuerpo a cuerpo', caballeria: 'caballería cuerpo a cuerpo' };
 
 // Clima de la batalla: multiplicadores sobre velocidad, flechas, fatiga y cargas (idea de la comunidad de Total War: Agincourt)
+// fuego (2026-10-21): parte de las flechas de fuego que salen encendidas (la lluvia y la humedad apagan muchas) y freno a que el
+// bosque prenda y se extienda
 const CLIMAS = {
-  despejado: { nombre: 'Despejado', descripcion: 'Sin efectos.', velocidad: 1, velocidadMontado: 1, danoFlecha: 1, alcanceTiro: 1, cadencia: 1, fatiga: 1, carga: 1, lluvia: false, barro: false },
-  lluvia: { nombre: 'Lluvia', descripcion: 'Las cuerdas se mojan: flechas con menos alcance, daño y cadencia.', velocidad: 1, velocidadMontado: 1, danoFlecha: 0.7, alcanceTiro: 0.85, cadencia: 1.25, fatiga: 1.1, carga: 1, lluvia: true, barro: false },
-  barro: { nombre: 'Barro', descripcion: 'Ha llovido días: todos más lentos, la caballería mucho, cargas débiles y más fatiga.', velocidad: 0.8, velocidadMontado: 0.65, danoFlecha: 1, alcanceTiro: 1, cadencia: 1, fatiga: 1.5, carga: 0.6, lluvia: false, barro: true },
-  tormenta: { nombre: 'Tormenta', descripcion: 'Lluvia y barro a la vez.', velocidad: 0.8, velocidadMontado: 0.65, danoFlecha: 0.7, alcanceTiro: 0.85, cadencia: 1.25, fatiga: 1.5, carga: 0.6, lluvia: true, barro: true },
+  despejado: { nombre: 'Despejado', descripcion: 'Sin efectos.', velocidad: 1, velocidadMontado: 1, danoFlecha: 1, alcanceTiro: 1, cadencia: 1, fatiga: 1, carga: 1, lluvia: false, barro: false , fuego: 1 },
+  lluvia: { nombre: 'Lluvia', descripcion: 'Las cuerdas se mojan: flechas con menos alcance, daño y cadencia.', velocidad: 1, velocidadMontado: 1, danoFlecha: 0.7, alcanceTiro: 0.85, cadencia: 1.25, fatiga: 1.1, carga: 1, lluvia: true, barro: false , fuego: 0.45 },
+  barro: { nombre: 'Barro', descripcion: 'Ha llovido días: todos más lentos, la caballería mucho, cargas débiles y más fatiga.', velocidad: 0.8, velocidadMontado: 0.65, danoFlecha: 1, alcanceTiro: 1, cadencia: 1, fatiga: 1.5, carga: 0.6, lluvia: false, barro: true , fuego: 0.7 },
+  tormenta: { nombre: 'Tormenta', descripcion: 'Lluvia y barro a la vez.', velocidad: 0.8, velocidadMontado: 0.65, danoFlecha: 0.7, alcanceTiro: 0.85, cadencia: 1.25, fatiga: 1.5, carga: 0.6, lluvia: true, barro: true , fuego: 0.2 },
   // nieve (2026-10-13, tras la prueba con amigos): campo nevado, todo más lento y cansado, cargas más flojas
-  nieve: { nombre: 'Nieve', descripcion: 'Campo nevado: todos más lentos, más fatiga y cargas más flojas.', velocidad: 0.85, velocidadMontado: 0.8, danoFlecha: 1, alcanceTiro: 0.95, cadencia: 1.1, fatiga: 1.4, carga: 0.75, lluvia: false, barro: false, nieve: true },
+  nieve: { nombre: 'Nieve', descripcion: 'Campo nevado: todos más lentos, más fatiga y cargas más flojas.', velocidad: 0.85, velocidadMontado: 0.8, danoFlecha: 1, alcanceTiro: 0.95, cadencia: 1.1, fatiga: 1.4, carga: 0.75, lluvia: false, barro: false, nieve: true , fuego: 0.6 },
 };// Clima al azar desde la semilla (el mismo en el servidor y en los navegadores): despejado 50 %, lluvia 18 %, barro 12 %,
 // tormenta 10 %, nieve 10 %
 // (umbrales acumulados, no la tabla de pesos de mapaDesdeSemilla: cambiarlo cambia el clima de algunas semillas; ver README)

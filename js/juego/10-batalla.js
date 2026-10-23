@@ -159,9 +159,30 @@ function iniciarBatalla(opciones) {
      primer número libre, Ctrl+número con ese número, Mayús+G saca la selección de su grupo; el número selecciona el grupo y
      pulsarlo dos veces seguidas centra la cámara en él. */
   const grupos = {};
+  // la selección es justo un grupo (sus unidades vivas, dos o más): con un clic se traslada sin girar (planMover)
+  function grupoDeLaSeleccion(lista) {
+    if (lista.length < 2) return null;
+    for (const k of Object.keys(grupos)) { const vivasGrupo = vivas(grupos[k]); if (vivasGrupo.length === lista.length && lista.every(u => vivasGrupo.includes(u))) return k; }
+    return null;
+  }
+  /* Orden de las tarjetas (2026-10-22, decisión del usuario): la fila se forma en ese orden, la primera tarjeta en el flanco
+     izquierdo de la tropa; también en un grupo. Lo fija la barra al montarse y al reordenarla. */
+  let ordenTarjetas = [];
+  const fijarOrdenTarjetas = unidades => { ordenTarjetas = unidades.slice(); };
+  const puestoEnTarjetas = u => { const k = ordenTarjetas.indexOf(u); return k < 0 ? Infinity : k; };
+  // de izquierda a derecha por las tarjetas; las que no tengan tarjeta, detrás y en el orden que traían
+  const porTarjetas = lista => lista.map((elemento, k) => [elemento, k]).sort((a, b) => puestoEnTarjetas(a[0].u) - puestoEnTarjetas(b[0].u) || a[1] - b[1]).map(par => par[0]);
+  const HUECO_FILA = 3;                                                     // metros entre unidades vecinas de una fila
+  // el frente dibujado (anchoFrente), menos los huecos y lo que ocupan las que no cambian de ancho, repartido por soldados
+  function repartirFrente(colocacion, anchoFrente) {
+    const flexibles = colocacion.filter(c => sim.dimensionesConFrente(c.u, 1).frente !== null);
+    const fijo = colocacion.filter(c => !flexibles.includes(c)).reduce((s, c) => s + c.dim.ancho, 0);
+    const libre = Math.max(0, anchoFrente - HUECO_FILA * (colocacion.length - 1) - fijo), soldados = flexibles.reduce((s, c) => s + c.u.vivos, 0) || 1;
+    for (const c of flexibles) c.dim = sim.dimensionesConFrente(c.u, libre * c.u.vivos / soldados);
+  }
   function asignarGrupo(numero, lista) {
     for (const k of Object.keys(grupos)) { grupos[k] = grupos[k].filter(u => !lista.includes(u)); if (!grupos[k].length) delete grupos[k]; }
-    if (numero !== null && lista.length) grupos[numero] = lista.slice();   // numero null = solo sacarlas de su grupo
+    if (numero !== null && lista.length) { grupos[numero] = lista.slice(); }   // numero null = solo sacarlas de su grupo
     avisar();
   }
   function crearGrupo() {
@@ -182,6 +203,28 @@ function iniciarBatalla(opciones) {
     if (!jinetes.length) return;
     despachar({ a: 'escaramuza', u: ids(jinetes), activa: jinetes.some(u => !u.escaramuza) });
     avisar();
+  }
+  // Flechas de fuego (2026-10-21) de los arqueros a pie seleccionados: si alguno las tiene apagadas, se encienden en todos; si no, se apagan
+  function alternarFuego() {
+    const arqueros = seleccion.filter(u => u.equipo === equipoPropio && u.stats.flechasFuego);
+    if (!arqueros.length) return;
+    despachar({ a: 'fuego', u: ids(arqueros), activa: arqueros.some(u => !u.fuego) });
+    avisar();
+  }
+  /* Una tarjeta soltada en el campo (2026-10-22): su unidad (o, si está seleccionada, toda la selección) va allí, o ataca a la unidad
+     enemiga que haya en ese punto. La selección no cambia. */
+  function ordenarDesdeTarjeta(unidad, clientX, clientY) {
+    if (terminada || !unidad || unidad.vivos === 0 || unidad.equipo !== equipoPropio) return false;
+    // sobre el campo: lo primero bajo el puntero es el escenario o un rótulo que no tapa el campo (el de pausa)
+    const encima = document.elementFromPoint(clientX, clientY); if (!encima || !(encima.closest('#escenario') || encima.closest('#aviso-pausa'))) return false;
+    const previa = seleccion, lista = seleccion.includes(unidad) ? vivas(seleccion) : [unidad];
+    const [x, y] = renderizador.pantallaAMundo(clientX, clientY);
+    seleccion = lista;
+    try {
+      const enemiga = desplegando ? null : buscarUnidad(equipoRival, x, y, clientX, clientY);
+      if (enemiga) atacarSeleccion(enemiga, 'andar'); else moverSeleccion(x, y, null, 'andar', false);
+    } finally { seleccion = previa; }
+    avisar(); return true;
   }
   function deshacerGrupo() { asignarGrupo(null, seleccion.slice()); }
   function grupoDe(u) { for (const k of Object.keys(grupos)) if (grupos[k].includes(u)) return k; return null; }
@@ -206,8 +249,8 @@ function iniciarBatalla(opciones) {
 
   /* ----- órdenes a la selección ----- */
   /* Mover la selección a un punto. Con varias unidades se forman en una FILA centrada en el punto y perpendicular a la
-     dirección de avance (o al rumbo arrastrado), cada una con el ancho de su frente y un hueco entre ellas, conservando el
-     orden lateral que ya tienen para que no se crucen. Con `conservarPosiciones` (Alt) se mantiene la disposición: cada unidad
+     dirección de avance (o al rumbo arrastrado), cada una con el ancho de su frente y un hueco entre ellas, de izquierda a
+     derecha en el orden de las tarjetas (también un grupo). Con `conservarPosiciones` (Alt) se mantiene la disposición: cada unidad
      conserva su sitio respecto a las demás y, si se arrastra un rumbo, el conjunto entero gira hacia él (la infantería que iba
      delante sigue delante, la caballería de los flancos sigue en los flancos) (2026-10-14). */
   // Plan de movimiento: dónde queda cada unidad y con qué rumbo. `rumboDibujo` es el rumbo con que se previsualiza la huella;
@@ -229,24 +272,22 @@ function iniciarBatalla(opciones) {
       const cosG = Math.cos(giro), senG = Math.sin(giro);
       return sel.map(u => { const dim = sim.dimensionesUnidad(u), rx = u.origenX - cx, ry = u.origenY - cy; return { u, x: limitar(x + rx * cosG - ry * senG, 3, CAMPO.ancho - 3), y: limitar(y + rx * senG + ry * cosG, 3, CAMPO.alto - 3), rumboFinal: rumbo, rumboDibujo: rumbo !== null ? rumbo : u.rumbo, ancho: dim.ancho, fondo: dim.fondo }; });
     }
-    const rumboFila = rumbo !== null ? rumbo : Math.atan2(y - cy, x - cx);
+    /* sin rumbo arrastrado, la fila mira hacia donde va; en el despliegue o si es un grupo entero, hacia donde mira ahora (un
+       clic solo la traslada). Un grupo forma en una sola fila como cualquier selección (2026-10-22, decisión del usuario: nada de
+       filas por la altura a la que estaba cada unidad) */
+    const rumboFila = rumbo !== null ? rumbo : desplegando || grupoDeLaSeleccion(sel) ? Math.atan2(sel.reduce((s, u) => s + Math.sin(u.rumbo), 0), sel.reduce((s, u) => s + Math.cos(u.rumbo), 0)) : Math.atan2(y - cy, x - cx);
     const lateralX = -Math.sin(rumboFila), lateralY = Math.cos(rumboFila);        // eje de la fila (perpendicular al avance)
-    const HUECO = 3;
-    const colocacion = sel.map(u => ({ u, dim: Object.assign({ frente: null }, sim.dimensionesUnidad(u)), lateral: (u.origenX - cx) * lateralX + (u.origenY - cy) * lateralY })).sort((a, b) => a.lateral - b.lateral);
-    if (anchoFrente) {
-      // el frente dibujado, menos los huecos y lo que ocupan las que no cambian de ancho, repartido por soldados
-      const flexibles = colocacion.filter(c => sim.dimensionesConFrente(c.u, 1).frente !== null);
-      const fijo = colocacion.filter(c => !flexibles.includes(c)).reduce((s, c) => s + c.dim.ancho, 0);
-      const libre = Math.max(0, anchoFrente - HUECO * (colocacion.length - 1) - fijo), soldados = flexibles.reduce((s, c) => s + c.u.vivos, 0) || 1;
-      for (const c of flexibles) c.dim = sim.dimensionesConFrente(c.u, libre * c.u.vivos / soldados);
-    }
-    const anchoTotal = colocacion.reduce((s, c) => s + c.dim.ancho, 0) + HUECO * (colocacion.length - 1);
+    // de izquierda a derecha (la izquierda de la tropa) en el orden de las tarjetas; sin tarjeta, por dónde está cada una
+    const colocacion = porTarjetas(sel.map(u => ({ u, dim: Object.assign({ frente: null }, sim.dimensionesUnidad(u)), lateral: (u.origenX - cx) * lateralX + (u.origenY - cy) * lateralY })).sort((a, b) => a.lateral - b.lateral));
+    if (anchoFrente) repartirFrente(colocacion, anchoFrente);
+    const anchoTotal = colocacion.reduce((s, c) => s + c.dim.ancho, 0) + HUECO_FILA * (colocacion.length - 1);
     let desplazamiento = -anchoTotal / 2;
-    return colocacion.map(c => {
+    const plan = colocacion.map(c => {
       const centro = desplazamiento + c.dim.ancho / 2;
-      desplazamiento += c.dim.ancho + HUECO;
+      desplazamiento += c.dim.ancho + HUECO_FILA;
       return { u: c.u, x: limitar(x + lateralX * centro, 3, CAMPO.ancho - 3), y: limitar(y + lateralY * centro, 3, CAMPO.alto - 3), rumboFinal: rumboFila, rumboDibujo: rumboFila, ancho: c.dim.ancho, fondo: c.dim.fondo, frente: c.dim.frente };
     });
+    return plan;
   }
   // desplegando, la fila se coloca tal cual, sin andar, recortada a la zona de despliegue (orden «recolocar»)
   function moverSeleccion(x, y, rumbo, marcha, conservarPosiciones, anchoFrente) {
@@ -332,9 +373,12 @@ function iniciarBatalla(opciones) {
     if (e.key === 'Alt') { e.preventDefault(); return; }        // Alt solo muestra los destinos (lo dibuja el renderizador)
     const k = e.key.toLowerCase();
     if (e.ctrlKey && k === 'a') { e.preventDefault(); seleccionar(vivas(unidadesJugador)); }
+    // Mayús+1…6 (2026-10-22): formación directa (línea, cuadro, columna, muro, abierta, cuña); con e.code, que no depende del teclado
+    else if (e.shiftKey && !e.ctrlKey && /^Digit[1-6]$/.test(e.code)) { formarSeleccion(FORMACION_CICLO[+e.code.slice(5) - 1]); e.preventDefault(); }
     else if (/^[1-9]$/.test(k)) { if (e.ctrlKey) { asignarGrupo(k, seleccion.filter(u => u.equipo === equipoPropio)); e.preventDefault(); } else llamarGrupo(k); }
     else if (k === 'g') { if (e.shiftKey) deshacerGrupo(); else crearGrupo(); }
     else if (k === 'e') alternarEscaramuza();
+    else if (k === 'i') alternarFuego();                          // I de incendiar (2026-10-21)
     else if (k === 'h') ordenSeleccion('formar');
     // W A S D mueven la cámara (render-iso.js); atacar va en R y disparar en T (2026-10-13, pedido tras probarlo con amigos)
     else if (k === 'r') ordenSeleccion('avanzar', e.shiftKey ? 'correr' : 'andar');    // Mayús+R: a la carrera
@@ -373,6 +417,8 @@ function iniciarBatalla(opciones) {
     if (terreno && terreno.riscos) { c.fillStyle = nevado ? '#8e959d' : '#6c665c'; for (const risco of terreno.riscos) for (const [x, y, radio] of risco.circulos) { c.beginPath(); c.arc(x * escalaMini, y * escalaMini, Math.max(1, radio * escalaMini), 0, Math.PI * 2); c.fill(); } }
     // río y vados (2026-10-13)
     if (terreno && terreno.rio) for (let y = 0; y < CAMPO.alto; y += 2) { const vado = terreno.rio.vados.some(v => Math.abs(y - v) <= terreno.rio.anchoVado / 2); c.fillStyle = vado ? '#9aa88a' : terreno.rio.profundo ? '#1f4a70' : '#3f6f9a'; c.fillRect((terreno.rio.centroX(y) - terreno.rio.ancho / 2) * escalaMini, y * escalaMini, terreno.rio.ancho * escalaMini, 2 * escalaMini + 0.5); }
+    // incendios (flechas de fuego, 2026-10-21): lo quemado, negro; lo que arde, naranja
+    if (terreno && sim.quemadas) { const C = terreno.columnas, celda = terreno.celda, lado = Math.max(1, celda * escalaMini); c.fillStyle = '#231e1a'; for (const k of sim.quemadas) c.fillRect((k % C) * celda * escalaMini, Math.floor(k / C) * celda * escalaMini, lado, lado); c.fillStyle = '#ff8a2a'; for (const [k] of sim.ardiendo) c.fillRect((k % C) * celda * escalaMini, Math.floor(k / C) * celda * escalaMini, lado, lado); }
     // caminos y puentes (fase 3 del terreno, 2026-10-20)
     if (terreno && terreno.caminos) { c.save(); c.lineJoin = 'round'; c.lineCap = 'round'; for (const camino of terreno.caminos) { c.beginPath(); camino.puntos.forEach(([x, y], k) => k ? c.lineTo(x * escalaMini, y * escalaMini) : c.moveTo(x * escalaMini, y * escalaMini)); c.lineWidth = Math.max(1, camino.ancho * escalaMini); c.strokeStyle = nevado ? '#b9b0a0' : '#9c875c'; c.stroke(); } c.restore(); }
     if (terreno && terreno.rio && terreno.rio.puentes && typeof puenteCaja === 'function') for (const p of terreno.rio.puentes) { const [x0, y0, x1, y1] = puenteCaja(terreno.rio, p); c.fillStyle = '#7a5a36'; c.fillRect(x0 * escalaMini, y0 * escalaMini, (x1 - x0) * escalaMini, (y1 - y0) * escalaMini); }
@@ -555,7 +601,7 @@ function iniciarBatalla(opciones) {
     colchonTurnos: () => colchonActual,
     terminada: () => terminada,
     // grupos de unidades (G / Mayús+G / 1-9)
-    crearGrupo, deshacerGrupo, grupoDe, llamarGrupo, grupos: () => grupos, alternarEscaramuza,
+    crearGrupo, deshacerGrupo, grupoDe, llamarGrupo, grupos: () => grupos, alternarEscaramuza, alternarFuego, ordenarDesdeTarjeta, fijarOrdenTarjetas,
     seleccion: () => seleccion, seleccionar, ordenSeleccion, formarSeleccion, atacarSeleccion, moverSeleccion,
     // las órdenes globales no mueven al general: su guardia se queda atrás salvo que se le ordene aparte
     ordenarTodas: (orden, soloTipo, marcha) => { const lista = unidadesJugador.filter(u => !u.esGeneral && u.vivos > 0 && (soloTipo === undefined || u.tipo === TIPO[soloTipo])); if (lista.length) despachar({ a: 'orden', u: ids(lista), orden, m: marcha }); avisar(); },

@@ -16,6 +16,14 @@ const separacionDe = montado => montado ? SEPARACION_FORMACION.montado : SEPARAC
 // de las coordenadas de un soldado en su formación (lx hacia delante, ly al lado) al campo, con el origen y el rumbo de la unidad
 const mundoX = (origenX, lx, ly, cos, sen) => origenX + lx * cos - ly * sen;
 const mundoY = (origenY, lx, ly, cos, sen) => origenY + lx * sen + ly * cos;
+/* Flechas de fuego e incendios (2026-10-21). Los arqueros a pie (flechasFuego en TIPOS) pueden tirar con fuego (u.fuego): cada
+   flecha sale encendida con la probabilidad clima.fuego (la lluvia apaga muchas: las apagadas son flechas normales); la encendida
+   hace FUEGO_DANO del daño pero asusta más (factor «bajo flechas de fuego»). Si cae en un bosque, lo prende con FUEGO_PRENDER ×
+   clima.fuego. Cada medio segundo el fuego pasa a las celdas de bosque vecinas (FUEGO_PROPAGACION × clima.fuego por vecina) y cada
+   celda arde FUEGO_DURACION medios segundos y queda quemada (TERRENO.QUEMADO: sin cobertura, sin freno, se carga por ella). Quien
+   está en una celda que arde pierde FUEGO_DANO_INCENDIO de vida por medio segundo (la baja se apunta a quien prendió el fuego) y
+   tiene el factor «en el incendio». Todo con el azar de la simulación y en el estado (ardiendo, quemadas): igual en red. */
+const FUEGO_DANO = 0.6, FUEGO_PRENDER = 0.04, FUEGO_PROPAGACION = 0.015, FUEGO_DURACION = [30, 60], FUEGO_DANO_INCENDIO = 4;
 const ANGULO_FLANCO = 1.05;          // rad (~60°): más allá, el golpe llega por el flanco
 const ANGULO_ESPALDA = 2.35;          // rad (~135°) entre donde mira el soldado y de donde llega el golpe: más allá, es por la espalda
 /* Altura del terreno en el combate (2026-10-16, fase 2 del terreno con volumen). Todo sale de terreno.alturaEn / pendienteEn /
@@ -89,6 +97,8 @@ const FACTORES_MORAL = {
   flanco: -10,            // atacada por el flanco (en los últimos 4 s)
   cargaTope: -25,         // atropellos recibidos: −2,5 por jinete que atropella, se olvida a 4 por segundo
   flechas: -5,            // bajo las flechas (en los últimos 3 s)
+  flechasFuego: -15,      // bajo flechas de fuego (en los últimos 4 s; 2026-10-21)
+  incendio: -25,          // con soldados dentro de un bosque en llamas
   formacionRota: -18,     // cohesión por debajo de COHESION_ROTA
   formacionDesordenada: -8, // cohesión por debajo de COHESION_BAJA
   cansancio: -15,         // × fatiga
@@ -179,8 +189,10 @@ class Simulacion {
     this.flechaDano = new Float32Array(f); this.flechaPerforante = new Uint8Array(f); this.flechaUnidad = new Int16Array(f).fill(-1);
     this.flechaSoldado = new Int32Array(f).fill(-1);
     this.flechaOffX = new Float32Array(f); this.flechaOffY = new Float32Array(f);
+    this.flechaFuego = new Uint8Array(f);            // flecha de fuego encendida (2026-10-21)
     this.flechaArea = new Float32Array(f);            // radio del impacto de las piedras de los mangoneles (0 = flecha)
     this.flechaSiguiente = 0;
+    this.ardiendo = []; this.quemadas = [];          // incendios: [celda, medios segundos que le quedan, unidad que lo prendió] y celdas ya quemadas
     this.unidades = [];
     this.sangre = [];
     this.estadisticas = { vivos: [0, 0], muertos: [0, 0], huyendo: [0, 0], retirada: [0, 0], huidos: [0, 0], flechasVolando: 0 };
@@ -463,6 +475,7 @@ class Simulacion {
       this.posX[i] = x; this.posY[i] = y;
     }
     this.actualizarFlechas();
+    if (this.ardiendo.length && this.paso % (PASOS_POR_SEGUNDO / 2) === 0) this.actualizarIncendios();   // flechas de fuego (2026-10-21)
     this.recontar();
   }
   /* margen del descarte por distancia al cuadrado en el bucle de vecinos: mil millones de veces el error de redondeo relativo
@@ -500,7 +513,8 @@ class Simulacion {
     if (u.golpesEspalda >= Math.max(2, vivos * 0.05)) u.espaldaHasta = t + 4;
     if (u.golpesFlanco >= Math.max(3, vivos * 0.08)) u.flancoHasta = t + 4;
     if (u.impactosFlecha >= Math.max(2, vivos * 0.05)) u.flechasHasta = t + 3;
-    u.golpesEspalda = u.golpesFlanco = u.impactosFlecha = 0;
+    if ((u.impactosFuego || 0) >= Math.max(1, vivos * 0.03)) u.fuegoHasta = t + 4;
+    u.golpesEspalda = u.golpesFlanco = u.impactosFlecha = 0; u.impactosFuego = 0;
     const anadir = (texto, valor) => { if (Math.abs(valor) >= 0.5) factores.push([texto, Math.round(valor)]); };
     anadir('bajas (' + Math.round(fraccionPerdida * 100) + ' %)', F.bajas * fraccionPerdida);
     anadir('bajas recientes', -Math.min(BAJAS_RECIENTES_TOPE, -F.bajasRecientes * recientes / u.total));
@@ -509,6 +523,8 @@ class Simulacion {
     if (u.choqueCarga > 0) anadir('carga recibida', Math.max(F.cargaTope, -u.choqueCarga));
     u.choqueCarga = Math.max(0, u.choqueCarga - 4);
     if (t < u.flechasHasta) anadir('bajo las flechas', F.flechas);
+    if (t < (u.fuegoHasta || 0)) anadir('bajo flechas de fuego', F.flechasFuego);
+    if (t < (u.incendioHasta || 0)) anadir('en el incendio', F.incendio);
     if (u.cohesion < COHESION_ROTA) anadir('formación rota', F.formacionRota); else if (u.cohesion < COHESION_BAJA) anadir('formación desordenada', F.formacionDesordenada);
     if (u.fatiga > 0.15) anadir('cansancio', F.cansancio * u.fatiga);
     let aliadosHuyendo = 0;
@@ -1436,6 +1452,60 @@ class Simulacion {
     this.flechaInicio[k] = this.tiempo; this.flechaDuracion[k] = duracion; this.flechaApice[k] = apiceFlecha(duracion);
     this.flechaEquipo[k] = this.equipo[i]; this.flechaSoldado[k] = -1; this.flechaDano[k] = datos.danoFlecha * (datos.artilleria ? 1 : this.clima.danoFlecha); this.flechaPerforante[k] = datos.perforante ? 1 : 0; this.flechaUnidad[k] = this.unidadDe[i];
     this.flechaArea[k] = datos.radioImpacto || 0;
+    const tirador = this.unidades[this.unidadDe[i]];
+    this.flechaFuego[k] = tirador.fuego && datos.flechasFuego && this.azar.numero() < (this.clima.fuego === undefined ? 1 : this.clima.fuego) ? 1 : 0;
+    if (this.flechaFuego[k]) this.flechaDano[k] *= FUEGO_DANO;
+  }
+  // una flecha de fuego que cae en un bosque lo puede prender (2026-10-21)
+  prenderSiBosque(x, y, unidad) {
+    if (!this.terreno || this.terreno.tipoEn(x, y) !== TERRENO.BOSQUE) return;
+    if (this.azar.numero() >= FUEGO_PRENDER * (this.clima.fuego === undefined ? 1 : this.clima.fuego)) return;
+    const k = this.terreno.indiceCelda(x, y);
+    if (this.ardiendo.some(a => a[0] === k)) return;
+    this.ardiendo.push([k, this.azar.entero(FUEGO_DURACION[0], FUEGO_DURACION[1]), unidad]);
+    this.sangre.push({ x, y, tamano: 1, tipo: 'prende', rumbo: 0 });
+  }
+  // cada medio segundo: el fuego pasa a las celdas de bosque vecinas, las que se consumen quedan quemadas, y daña a quien está dentro
+  actualizarIncendios() {
+    const terreno = this.terreno, C = terreno.columnas, F = terreno.filas, eficacia = this.clima.fuego === undefined ? 1 : this.clima.fuego;
+    const ardiendoAntes = this.ardiendo.length, enLlamas = new Set(this.ardiendo.map(a => a[0]));
+    for (let q = 0; q < ardiendoAntes; q++) {
+      const fuego = this.ardiendo[q], k = fuego[0], col = k % C, fila = (k - col) / C;
+      for (const [dc, df] of VECINOS_8) {
+        const cc = col + dc, ff = fila + df; if (cc < 0 || ff < 0 || cc >= C || ff >= F) continue;
+        const v = ff * C + cc;
+        if (terreno.celdas[v] !== TERRENO.BOSQUE || enLlamas.has(v)) continue;
+        if (this.azar.numero() < FUEGO_PROPAGACION * eficacia) { this.ardiendo.push([v, this.azar.entero(FUEGO_DURACION[0], FUEGO_DURACION[1]), fuego[2]]); enLlamas.add(v); }
+      }
+      fuego[1]--;
+    }
+    // las que se consumen quedan quemadas
+    const siguen = [];
+    for (const fuego of this.ardiendo) {
+      if (fuego[1] > 0) { siguen.push(fuego); continue; }
+      this.quemadas.push(fuego[0]); terreno.celdas[fuego[0]] = TERRENO.QUEMADO; enLlamas.delete(fuego[0]);
+      this.sangre.push({ x: (fuego[0] % C) * terreno.celda, y: Math.floor(fuego[0] / C) * terreno.celda, tamano: 1, tipo: 'quemado', rumbo: 0 });
+    }
+    this.ardiendo = siguen;
+    if (!enLlamas.size) return;
+    // daño a quien está dentro (la baja es de la unidad que prendió esa celda)
+    const quien = new Map(this.ardiendo.map(a => [a[0], a[2]]));
+    for (const u of this.unidades) u.soldadosEnLlamas = 0;
+    for (let i = 0; i < this.cantidad; i++) {
+      if (!this.vivo(i) || this.estado[i] === ESTADO.VOLANDO) continue;
+      const k = terreno.indiceCelda(this.posX[i], this.posY[i]); if (!enLlamas.has(k)) continue;
+      const u = this.unidades[this.unidadDe[i]]; u.soldadosEnLlamas++;
+      this.causante[i] = quien.get(k);
+      this.vida[i] -= FUEGO_DANO_INCENDIO;
+      if (this.vida[i] <= 0) this.matar(i, 0.4);
+    }
+    for (const u of this.unidades) if (u.soldadosEnLlamas >= Math.max(1, u.vivos * 0.05)) u.incendioHasta = this.tiempo + 1.5;
+  }
+  // tras restaurar un estado (red): el terreno vuelve a tener quemado justo lo del estado
+  aplicarQuemadas() {
+    if (!this.terreno) return;
+    const quemadas = new Set(this.quemadas || []), celdas = this.terreno.celdas;
+    for (let k = 0; k < celdas.length; k++) { if (celdas[k] === TERRENO.QUEMADO && !quemadas.has(k)) celdas[k] = TERRENO.BOSQUE; else if (quemadas.has(k)) celdas[k] = TERRENO.QUEMADO; }
   }
   actualizarFlechas() {
     for (let k = 0; k < this.maxFlechas; k++) {
@@ -1455,9 +1525,11 @@ class Simulacion {
         const dano = this.flechaDano[k] * (uAlcanzado.stats.montado ? 0.7 : 1) * (this.flechaPerforante[k] ? 1 : 1 - (uAlcanzado.stats.proteccionFlechas || 0)) * ((uAlcanzado.formacion && uAlcanzado.formacion.defensaFlecha) || 1) * (enBosque ? 0.6 : 1);
         this.causante[alcanzado] = this.flechaUnidad[k];
         uAlcanzado.impactosFlecha++;                                       // factor «bajo las flechas»
+        if (this.flechaFuego[k]) uAlcanzado.impactosFuego = (uAlcanzado.impactosFuego || 0) + 1;
         this.vida[alcanzado] -= dano;
         if (this.vida[alcanzado] <= 0) this.matar(alcanzado, 0.6); else this.sangre.push({ x: this.posX[alcanzado], y: this.posY[alcanzado], tamano: 0.3, tipo: 'flecha', rumbo: this.rumbo[alcanzado] + Math.PI });
       } else this.flechaEstado[k] = 2;
+      if (this.flechaFuego[k]) this.prenderSiBosque(x, y, this.flechaUnidad[k]);
     }
   }
   /* Piedra de mangonel (2026-10-13): daño a todos los que estén en el radio del impacto, amigos o enemigos, menor cuanto más

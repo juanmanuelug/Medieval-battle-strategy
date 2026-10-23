@@ -306,10 +306,14 @@ function montarBarraUnidades(unidades, alReordenar) {
   barraUnidades = construirBarraUnidades(elemento('#barra-unidades'), unidades, {
     retrato: u => batalla.retratoUnidad(u),
     grupoDe: u => batalla && batalla.grupoDe ? batalla.grupoDe(u) : null,
-    alReordenar: alReordenar || (() => {}),
+    alReordenar: unidades => { if (batalla && batalla.fijarOrdenTarjetas) batalla.fijarOrdenTarjetas(unidades); if (alReordenar) alReordenar(unidades); },
     seleccionar: (u, anadir) => { if (!batalla) return; const ya = batalla.seleccion().includes(u); if (anadir && ya) batalla.seleccionar(batalla.seleccion().filter(x => x !== u)); else batalla.seleccionar([u], anadir); },
     centrar: u => batalla && batalla.centrarEnUnidad(u),
+    // (2026-10-22) tarjeta soltada en el campo: mover o atacar
+    soltarEnCampo: (u, clientX, clientY) => batalla && batalla.ordenarDesdeTarjeta(u, clientX, clientY),
+    textoSoltar: () => 'Mover aquí · sobre un enemigo, atacarlo',
   });
+  if (batalla && batalla.fijarOrdenTarjetas) batalla.fijarOrdenTarjetas(unidades);
   barraUnidades.actualizar([]);
 }
 // por qué la IA defensiva pasa al ataque (estadoIA.motivoCambio, 09b-ia-batalla.js)
@@ -452,6 +456,9 @@ function pintarPanelSeleccion(seleccion) {
   // escaramuza: el botón solo aparece con arqueros a caballo; encendido (dorado) si todos la tienen activada
   const escaramuceadores = seleccion.filter(u => u.stats.disparaEnMovimiento), botonEscaramuza = elemento('#btn-escaramuza');
   if (botonEscaramuza) { botonEscaramuza.hidden = !escaramuceadores.length; const activa = escaramuceadores.length && escaramuceadores.every(u => u.escaramuza); botonEscaramuza.classList.toggle('activa', !!activa); botonEscaramuza.innerHTML = 'Escaramuza: ' + (activa ? 'sí' : 'no') + ' <kbd>E</kbd>'; }
+  // flechas de fuego (2026-10-21): el botón solo con arqueros a pie; encendido si todos las tienen
+  const arquerosFuego = seleccion.filter(u => u.stats.flechasFuego), botonFuego = elemento('#btn-fuego');
+  if (botonFuego) { botonFuego.hidden = !arquerosFuego.length; const activa = arquerosFuego.length && arquerosFuego.every(u => u.fuego); botonFuego.classList.toggle('activa', !!activa); botonFuego.innerHTML = 'Flechas de fuego: ' + (activa ? 'sí' : 'no') + ' <kbd>I</kbd>'; }
   const botonAgrupar = elemento('#btn-agrupar'); if (botonAgrupar) botonAgrupar.innerHTML = (gruposSeleccion.length === 1 && batalla.grupos()[gruposSeleccion[0]].length === seleccion.length ? 'Grupo ' + gruposSeleccion[0] : 'Agrupar') + ' <kbd>G</kbd>';
   const formaciones = new Set(seleccion.map(u => u.formacion.clave));
   for (const b of document.querySelectorAll('#panel-formaciones button')) {
@@ -469,6 +476,7 @@ elementoListo(() => {
   elemento('#btn-agrupar').addEventListener('click', () => { if (batalla) batalla.crearGrupo(); });
   elemento('#btn-desagrupar').addEventListener('click', () => { if (batalla) batalla.deshacerGrupo(); });
   elemento('#btn-escaramuza').addEventListener('click', () => { if (batalla) batalla.alternarEscaramuza(); });
+  elemento('#btn-fuego').addEventListener('click', () => { if (batalla) batalla.alternarFuego(); });
   elemento('#panel-ordenes').addEventListener('dblclick', e => { const b = e.target.closest('[data-orden]'); if (b && batalla) batalla.ordenSeleccion(b.dataset.orden, 'correr'); });
   elemento('#panel-formaciones').addEventListener('click', e => { const b = e.target.closest('[data-formacion]'); if (b && batalla) batalla.formarSeleccion(b.dataset.formacion); });
   // control de tiempo: pausa, reanudar a velocidad normal y ×2

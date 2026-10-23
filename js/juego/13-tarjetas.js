@@ -29,6 +29,17 @@ const ICONOS_TIPO = {
 // galones de un nivel (uno por nivel, desde milicia); 11-pantallas.js los envuelve para las tiendas
 const galonesHtml = nivel => '<span class="galon"></span>'.repeat(nivel + 1);
 
+// estado de una unidad para su tarjeta: [símbolo, texto]
+function estadoDeUnidad(u) {
+  if (u.vivos === 0) return ['', ''];
+  if (u.huyendo && !u.retirada) return ['✖', 'Huye'];
+  if (u.retirada) return ['↩', 'En retirada ordenada'];
+  if (u.luchando > 0) return ['⚔', 'En cuerpo a cuerpo'];
+  if (u.orden === 'cargar' || (u.stats.montado && u.energiaCarga > 0 && u.orden === 'atacar')) return ['⚡', 'Cargando'];
+  if (u.orden === 'disparar') return ['◎', 'Disparando'];
+  if (u.orden === 'mover' || u.orden === 'avanzar' || u.orden === 'atacar') return u.marcha === 'correr' ? ['»', u.orden === 'mover' ? 'Moviéndose a la carrera' : 'Atacando a la carrera'] : ['›', u.orden === 'mover' ? 'Moviéndose' : 'Atacando'];
+  return ['■', 'Alto'];
+}
 function construirBarraUnidades(contenedor, unidades, acciones) {
   contenedor.replaceChildren();
   const tarjetas = new Map();
@@ -45,6 +56,7 @@ function construirBarraUnidades(contenedor, unidades, acciones) {
       <span class="retrato"></span>
       <span class="cuenta"></span>
       <span class="municion" title="Andanadas"></span>
+      <span class="estado-orden"></span><span class="modo-unidad"></span>
       <span class="nombre-tipo">${textoEsc(unidad.esGeneral ? 'General' : TIPOS[unidad.tipo].nombreCorto || TIPOS[unidad.tipo].nombre)}</span>
       <span class="barra cohesion" title="Cohesión"><span></span></span>
       <span class="barra vida" title="Vida"><span></span></span>
@@ -55,23 +67,38 @@ function construirBarraUnidades(contenedor, unidades, acciones) {
     tarjeta.unidad = unidad;
     tarjeta.addEventListener('dblclick', () => acciones.centrar(unidad));
     contenedor.appendChild(tarjeta);
-    tarjetas.set(unidad, { tarjeta, vida: tarjeta.querySelector('.vida > span'), moral: tarjeta.querySelector('.moral > span'), cuenta: tarjeta.querySelector('.cuenta'), municion: tarjeta.querySelector('.municion'), cohesion: tarjeta.querySelector('.cohesion > span'), grupo: tarjeta.querySelector('.grupo-insignia') });
+    tarjetas.set(unidad, { tarjeta, vida: tarjeta.querySelector('.vida > span'), moral: tarjeta.querySelector('.moral > span'), cuenta: tarjeta.querySelector('.cuenta'), estadoOrden: tarjeta.querySelector('.estado-orden'), modo: tarjeta.querySelector('.modo-unidad'), municion: tarjeta.querySelector('.municion'), cohesion: tarjeta.querySelector('.cohesion > span'), grupo: tarjeta.querySelector('.grupo-insignia') });
   }
   /* Reordenar arrastrando: se pulsa una tarjeta y, al moverse más de 6 px, pasa a arrastrarse; mientras tanto se recoloca en
      vivo delante de la tarjeta cuyo centro queda a la derecha del puntero. Al soltar se avisa con el nuevo orden. El clic que
      el navegador lanza al soltar se descarta (recienSoltado) para que arrastrar no seleccione. */
-  const arrastre = { tarjeta: null, inicioX: 0, activo: false, recienSoltado: false };
+  /* (2026-10-22) arrastrar una tarjeta hacia arriba, fuera de la barra, la lleva al campo: al soltarla sobre el escenario, su unidad
+     (o la selección, si está seleccionada) va allí o ataca al enemigo que haya (acciones.soltarEnCampo); mientras, la tarjeta vuelve
+     a su sitio en la barra y un rótulo sigue al puntero */
+  const arrastre = { tarjeta: null, inicioX: 0, inicioY: 0, activo: false, recienSoltado: false, alCampo: false, ordenAntes: null };
+  const rotulo = document.createElement('div'); rotulo.className = 'rotulo-tarjeta-campo oculto'; document.body.appendChild(rotulo);
   contenedor.addEventListener('pointerdown', e => {
     const tarjeta = e.target.closest('.tarjeta-unidad');
     if (!tarjeta || e.button !== 0) return;
-    Object.assign(arrastre, { tarjeta, inicioX: e.clientX, activo: false, recienSoltado: false, puntero: e.pointerId });
+    Object.assign(arrastre, { tarjeta, inicioX: e.clientX, inicioY: e.clientY, activo: false, recienSoltado: false, alCampo: false, puntero: e.pointerId, ordenAntes: [...contenedor.querySelectorAll('.tarjeta-unidad')] });
   });
   contenedor.addEventListener('pointermove', e => {
     if (!arrastre.tarjeta || e.pointerId !== arrastre.puntero) return;
     if (!arrastre.activo) {
-      if (Math.abs(e.clientX - arrastre.inicioX) < 6) return;
+      if (Math.abs(e.clientX - arrastre.inicioX) < 6 && Math.abs(e.clientY - arrastre.inicioY) < 6) return;
       arrastre.activo = true; arrastre.tarjeta.classList.add('arrastrando'); contenedor.classList.add('reordenando');
       try { contenedor.setPointerCapture(e.pointerId); } catch (error) {}
+    }
+    const cajaContenedor = contenedor.getBoundingClientRect();
+    arrastre.alCampo = !!acciones.soltarEnCampo && e.clientY < cajaContenedor.top - 12;
+    document.body.classList.toggle('tarjeta-al-campo', arrastre.alCampo);
+    rotulo.classList.toggle('oculto', !arrastre.alCampo);
+    if (arrastre.alCampo) {
+      // al campo: la barra vuelve a su orden y el rótulo dice qué pasará al soltar
+      arrastre.ordenAntes.forEach(c => contenedor.appendChild(c));
+      rotulo.textContent = (acciones.textoSoltar && acciones.textoSoltar(arrastre.tarjeta.unidad, e.clientX, e.clientY)) || 'Mover aquí';
+      rotulo.style.left = (e.clientX + 14) + 'px'; rotulo.style.top = (e.clientY + 10) + 'px';
+      return;
     }
     const otras = [...contenedor.querySelectorAll('.tarjeta-unidad')].filter(c => c !== arrastre.tarjeta);
     const siguiente = otras.find(c => { const caja = c.getBoundingClientRect(); return e.clientX < caja.left + caja.width / 2; });
@@ -83,8 +110,14 @@ function construirBarraUnidades(contenedor, unidades, acciones) {
   });
   const soltar = e => {
     if (!arrastre.tarjeta || (e && e.pointerId !== arrastre.puntero)) return;
-    const habiaArrastre = arrastre.activo;
+    const habiaArrastre = arrastre.activo, alCampo = arrastre.alCampo, unidad = arrastre.tarjeta.unidad;
     arrastre.tarjeta.classList.remove('arrastrando'); contenedor.classList.remove('reordenando');
+    document.body.classList.remove('tarjeta-al-campo'); rotulo.classList.add('oculto'); arrastre.alCampo = false;
+    if (habiaArrastre && alCampo) {
+      arrastre.tarjeta = null; arrastre.activo = false; arrastre.recienSoltado = true; setTimeout(() => { arrastre.recienSoltado = false; }, 0);
+      if (e) acciones.soltarEnCampo(unidad, e.clientX, e.clientY);
+      return;
+    }
     arrastre.tarjeta = null; arrastre.activo = false; arrastre.recienSoltado = habiaArrastre;
     if (habiaArrastre) { setTimeout(() => { arrastre.recienSoltado = false; }, 0); if (acciones.alReordenar) acciones.alReordenar([...contenedor.querySelectorAll('.tarjeta-unidad')].map(c => c.unidad)); }
   };
@@ -103,7 +136,11 @@ function construirBarraUnidades(contenedor, unidades, acciones) {
         partes.moral.parentNode.title = 'Moral ' + Math.round(unidad.moral) + ' de ' + Math.round(unidad.moralMax) + (factores ? ': ' + factores : '');
         partes.cohesion.style.width = Math.round(unidad.cohesion === undefined ? 100 : unidad.cohesion) + '%';
         partes.cuenta.textContent = unidad.vivos;
-        partes.municion.textContent = TIPOS[unidad.tipo].alcanceTiro ? (unidad.sinMunicion ? '✕' : '➶' + unidad.municion) : '';
+        // estado de la orden (2026-10-22): qué está haciendo, de un vistazo; y sus modos (escaramuza)
+        const [simbolo, texto] = estadoDeUnidad(unidad);
+        if (partes.estadoOrden.textContent !== simbolo) { partes.estadoOrden.textContent = simbolo; partes.estadoOrden.title = texto; }
+        partes.modo.textContent = unidad.stats.disparaEnMovimiento && unidad.escaramuza ? '⇄' : ''; partes.modo.title = partes.modo.textContent ? 'Escaramuza' : '';
+        partes.municion.textContent = TIPOS[unidad.tipo].alcanceTiro ? (unidad.sinMunicion ? '✕' : (unidad.fuego ? '🔥' : '➶') + unidad.municion) : '';   // 🔥: flechas de fuego
         partes.tarjeta.classList.toggle('sin-municion', !!unidad.sinMunicion);
         partes.tarjeta.classList.toggle('seleccionada', seleccionadas.has(unidad));
         partes.tarjeta.classList.toggle('huyendo', !!unidad.huyendo && !unidad.retirada && unidad.vivos > 0);

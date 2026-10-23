@@ -13,6 +13,7 @@
      orden      { orden: 'avanzar'|'formar'|'cargar'|'disparar', m }
      formar     { clave }                                 en el despliegue además recoloca en el sitio
      encarar    { rumbo }
+     fuego      { activa } flechas de fuego (arqueros a pie; 2026-10-21)
      escaramuza { activa: true|false }
    aplicarOrden(sim, equipo, orden, { desplegando }) → true si se aplicó (con al menos una unidad válida) o false. */
 const ORDENES_SIMPLES = ['avanzar', 'formar', 'cargar', 'disparar'];
@@ -87,6 +88,11 @@ function aplicarOrden(sim, equipo, orden, contexto) {
       for (const u of unidades) { if (desplegando) { const sitio = sim.posicionDespliegue(u, u.origenX, u.origenY, orden.rumbo, zona); if (sitio) sim.recolocarUnidad(u, sitio[0], sitio[1], orden.rumbo); } else if (u.orden === 'formar') u.rumboFinal = orden.rumbo; }
       return true;
     }
+    case 'fuego': {          // flechas de fuego (2026-10-21): solo las tropas que pueden (arqueros a pie)
+      let alguna = false;
+      for (const u of unidades) if (u.stats.flechasFuego) { u.fuego = !!orden.activa; alguna = true; }
+      return alguna;
+    }
     case 'escaramuza': {
       let alguna = false;
       for (const u of unidades) if (u.stats.disparaEnMovimiento) { u.escaramuza = !!orden.activa; if (!orden.activa) u.esquiva = null; alguna = true; }
@@ -107,6 +113,8 @@ function resumenEstado(sim) {
   mezclar(sim.cantidad);
   for (let i = 0; i < sim.cantidad; i++) { mezclar(Math.round(sim.posX[i] * 100)); mezclar(Math.round(sim.posY[i] * 100)); mezclar(Math.round(sim.vida[i] * 10)); mezclar(sim.estado[i]); mezclar(sim.equipo[i]); mezclar(sim.unidadDe[i]); }
   for (const u of sim.unidades) { mezclar(Math.round(u.moral * 10)); mezclar(Math.round(u.cohesion * 10)); mezclar(Math.round(u.origenX * 100)); mezclar(Math.round(u.origenY * 100)); mezclar(u.equipo); mezclar(u.vivos); mezclar(u.huyendo ? 1 : 0); mezclar(u.retirada ? 1 : 0); mezclar(u.puedeVolver ? 1 : 0); }
+  // incendios (2026-10-21): solo si los hay, así el resumen de una batalla sin fuego es el de siempre
+  if (sim.ardiendo && (sim.ardiendo.length || sim.quemadas.length)) { mezclar(sim.ardiendo.length); mezclar(sim.quemadas.length); for (const a of sim.ardiendo) { mezclar(a[0]); mezclar(a[1]); } }
   mezclar(sim.paso);
   return h.toString(16);
 }

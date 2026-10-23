@@ -292,6 +292,8 @@ function prepararDefensaIA(sim, unidadesIA, terreno) {
       const sitio = sim.posicionDespliegue ? sim.posicionDespliegue(u, x, y, u.rumbo, zona) : [x, y];
       if (sitio) sim.recolocarUnidad(u, sitio[0], sitio[1], u.rumbo);
     }
+    // (2026-10-21) la infantería de línea, más profunda: tapa el paso con peso (FILAS_PASO_IA filas)
+    for (const u of unidadesIA) if (deLineaIA(u)) { sim.fijarFrente(u, Math.ceil(u.vivos / FILAS_PASO_IA)); u.frenteIA = 'paso'; const sitio = sim.posicionDespliegue ? sim.posicionDespliegue(u, u.origenX, u.origenY, u.rumbo, zona) : null; if (sitio) sim.recolocarUnidad(u, sitio[0], sitio[1], u.rumbo); }
     return { x: paso[0], y: paso[1], r: 25, paso: true };
   }
   let mejor = null, mejorD = Infinity;
@@ -322,6 +324,54 @@ function prepararDefensaIA(sim, unidadesIA, terreno) {
    Normal queda como estaba. Nada de esto usa sim.azar: las elecciones «al azar» salen de un número fijo por unidad y tramo. */
 const DISTANCIA_FLANQUEO = 70, HOLGURA_FLANCO = 8, AMENAZA_CARGA = { distancia: 45, velocidad: 4.5, coseno: 0.75 }, CADA_FUEGO = 90, DISTRACCION_FACIL = 15;
 const numeroFijo = (a, b, c) => (Math.imul((a + 1) * 73856093 ^ (b + 1) * 19349663 ^ (c + 1) * 83492791, 2654435761) >>> 0) / 4294967296;
+/* Flechas de fuego e incendios en la IA (2026-10-21). Sus arqueros encienden las flechas contra un blanco dentro de un bosque (para
+   quemarlo) o con la moral baja (por el susto), no con la lluvia fuerte o la tormenta (FUEGO_IA_MINIMO: casi todas se apagarían);
+   en fácil, solo a ratos. Y una unidad suya con soldados en un bosque que arde (y sin pelear) sale del fuego, hacia su lado. */
+const FUEGO_IA_MINIMO = 0.4, MORAL_BAJA_FUEGO_IA = 40, SALIR_DEL_FUEGO = 30;
+/* Frente a medida en la IA (2026-10-21, pedido del usuario: «que la IA también lo use, alargando la línea o haciéndola más
+   profunda»). Solo su infantería de línea (formaciones de filas, sin tiro), nunca trabada ni a menos de FRENTE_IA_CERCA m de un
+   enemigo (no se recoloca en mitad del choque), y no en fácil. (1) Defendiendo un paso (prepararDefensaIA): FILAS_PASO_IA filas,
+   para taparlo con peso (las filas de detrás dan moral). (2) En campo abierto, cada FRENTE_IA_CADA s: si la línea de infantería
+   del rival es FRENTE_IA_RODEO veces más ancha que la suya (la puede rodear), la alarga a 2 filas; si la suya ya es más ancha que
+   la del rival × FRENTE_IA_SOBRA, vuelve a su fondo normal. */
+const FILAS_PASO_IA = 4, FRENTE_IA_CADA = 5, FRENTE_IA_RODEO = 1.25, FRENTE_IA_SOBRA = 1.1, FRENTE_IA_CERCA = 30;
+const deLineaIA = u => unidadActiva(u) && !u.esGeneral && !u.stats.montado && !u.stats.alcanceTiro && !u.stats.artilleria && u.formacion && FORMACIONES[u.formacion.clave] && FORMACIONES[u.formacion.clave].filas;
+function frenteIA(sim, unidadesIA, estado, t) {
+  if (estado.ultimoFrenteIA !== undefined && t - estado.ultimoFrenteIA < FRENTE_IA_CADA) return;
+  estado.ultimoFrenteIA = t;
+  const equipoIA = equipoDeLaIA(unidadesIA), enemigos = enemigosActivos(sim, equipoIA);
+  const anchoDe = lista => lista.reduce((s, u) => s + sim.dimensionesUnidad(u).ancho, 0);
+  const propias = unidadesIA.filter(deLineaIA), rivales = enemigos.filter(e => !e.esGeneral && !e.stats.montado && !e.stats.alcanceTiro && !e.stats.artilleria);
+  if (!propias.length || !rivales.length) return;
+  const anchoPropio = anchoDe(propias), anchoRival = anchoDe(rivales);
+  for (const u of propias) {
+    if (u.luchando > 0 || u.frenteIA === 'paso' && estado.actitud === 'defensiva') continue;
+    if (enemigoMasCercano(enemigos, u.centroX, u.centroY).d < FRENTE_IA_CERCA) continue;
+    if (anchoRival > anchoPropio * FRENTE_IA_RODEO) sim.fijarFrente(u, Math.ceil(u.vivos / 2));                       // alargar: dos filas
+    else if (u.frente && anchoPropio > anchoRival * FRENTE_IA_SOBRA) { u.frente = null; sim.formar(u, u.formacion.clave); }   // su fondo normal
+  }
+}
+function fuegoIA(sim, unidadesIA, t, facil) {
+  const eficacia = sim.clima.fuego === undefined ? 1 : sim.clima.fuego, terreno = sim.terreno;
+  for (const u of unidadesIA) {
+    if (!unidadActiva(u)) continue;
+    if (u.stats.flechasFuego) {
+      const indice = u.objetivoFijo >= 0 ? u.objetivoFijo : u.objetivoUnidad, blanco = indice >= 0 ? sim.unidades[indice] : null;
+      const enBosque = !!(blanco && terreno && terreno.tipoEn(blanco.centroX, blanco.centroY) === TERRENO.BOSQUE);
+      const quiere = !!blanco && eficacia >= FUEGO_IA_MINIMO && (enBosque || blanco.moral < MORAL_BAJA_FUEGO_IA);
+      u.fuego = quiere && (!facil || numeroFijo(u.id, Math.floor(t / 10), 7) < 0.3);
+    }
+    // salir del fuego: lejos de las celdas que arden cerca de la unidad
+    if (u.luchando === 0 && (u.soldadosEnLlamas || 0) >= Math.max(2, u.vivos * 0.15) && sim.ardiendo.length && terreno) {
+      let sx = 0, sy = 0, n = 0;
+      for (const [k] of sim.ardiendo) { const x = (k % terreno.columnas) * terreno.celda, y = Math.floor(k / terreno.columnas) * terreno.celda; if (distancia(x, y, u.centroX, u.centroY) < 30) { sx += x; sy += y; n++; } }
+      if (!n) continue;
+      const fx = sx / n, fy = sy / n, d = distancia(u.centroX, u.centroY, fx, fy) || 1, haciaSuLado = u.equipo === 1 ? 1 : -1;
+      const x = limitar(u.centroX + ((u.centroX - fx) / d) * SALIR_DEL_FUEGO + haciaSuLado * 8, 6, CAMPO.ancho - 6), y = limitar(u.centroY + ((u.centroY - fy) / d) * SALIR_DEL_FUEGO, 6, CAMPO.alto - 6);
+      sim.ordenar(u, 'mover', x, y, null, 'correr');
+    }
+  }
+}
 function tacticasPorDificultad(sim, unidadesIA, estado, t, dificil, facil) {
   if (t < 4) return;
   const enemigos = enemigosActivos(sim, equipoDeLaIA(unidadesIA));
@@ -437,6 +487,8 @@ function inteligenciaArtificialBatalla(sim, unidadesIA, nivelIA, actitudElegida)
   if (estado.actitud === 'defensiva') iaDefensiva(sim, unidadesIA, estado, t, facil);
   else iaOfensiva(sim, unidadesIA, estado, t, dificil, facil);
   tacticasPorDificultad(sim, unidadesIA, estado, t, dificil, facil);
+  fuegoIA(sim, unidadesIA, t, facil);
+  if (!facil) frenteIA(sim, unidadesIA, estado, t);
 }
 
 function iaOfensiva(sim, unidadesIA, estado, t, dificil, facil) {

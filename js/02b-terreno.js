@@ -9,13 +9,13 @@
    (un cauce sinuoso de lado a lado entre los dos ejércitos, con dos o tres vados). El agua frena muchísimo, impide cargar y se
    pelea mal dentro; los vados frenan menos. `mapaDesdeSemilla(semilla)` elige uno al azar (igual en el servidor y en los
    navegadores). */
-const TERRENO = { LLANO: 0, BOSQUE: 1, COLINA: 2, AGUA: 3, VADO: 4, PROFUNDA: 5, RISCO: 6, CAMINO: 7, PUENTE: 8 };
-const NOMBRE_TERRENO = ['llano', 'bosque', 'colina', 'río', 'vado', 'agua profunda', 'risco', 'camino', 'puente'];
+const TERRENO = { LLANO: 0, BOSQUE: 1, COLINA: 2, AGUA: 3, VADO: 4, PROFUNDA: 5, RISCO: 6, CAMINO: 7, PUENTE: 8, QUEMADO: 9 };
+const NOMBRE_TERRENO = ['llano', 'bosque', 'colina', 'río', 'vado', 'agua profunda', 'risco', 'camino', 'puente', 'bosque quemado'];
 // freno a la marcha según el terreno (llano, bosque, colina, agua, vado; agua profunda y risco no se pisan; por el camino se va
 // un 15 % más deprisa; el puente, como el llano)
-const FRENO_TERRENO = [1, 0.7, 1, 0.35, 0.65, 0.2, 0.2, 1.15, 1];
+const FRENO_TERRENO = [1, 0.7, 1, 0.35, 0.65, 0.2, 0.2, 1.15, 1, 0.95];   // el bosque quemado (2026-10-21) casi no frena
 // fase A de los pasos (2026-10-18): qué tipos no se pisan, ancho mínimo de un paso, rejilla y holguras de las rutas
-const BLOQUEA_PASO = [0, 0, 0, 0, 0, 1, 1, 0, 0];
+const BLOQUEA_PASO = [0, 0, 0, 0, 0, 1, 1, 0, 0, 0];
 /* Fase 3 del terreno (2026-10-20): puentes y caminos. Puentes de ANCHO_PUENTE m sobre el río (en el profundo, uno de los dos
    vados es un puente), con el tablero ALTURA_PUENTE m sobre la orilla: son más estrechos que PASO_MINIMO a propósito (un cuello
    de botella), así que la zona jugable los incluye aparte (calcularPaso). Caminos de ANCHO_CAMINO m de borde a borde del campo,
@@ -518,7 +518,8 @@ class Terreno {
     for (let k = 0; k < RC * RF; k++) {
       const x = (k % RC) * PASO_RUTA, y = Math.floor(k / RC) * PASO_RUTA, h = this.holgura[this.indiceCelda(x, y)];
       this.nodoPasable[k] = h >= HOLGURA_RUTA_MINIMA || (h >= 2 && this.tipoEn(x, y) === TERRENO.PUENTE) ? 1 : 0;   // en el puente, con 2 m basta
-      this.nodoCoste[k] = Math.round(10 / Math.max(0.2, FRENO_TERRENO[this.tipoEn(x, y)] || 1)) + (h < 10 ? Math.round((10 - h) * 2) : 0);
+      const tipoRuta = this.tipoEn(x, y) === TERRENO.QUEMADO ? TERRENO.BOSQUE : this.tipoEn(x, y);   // lo quemado, como era (ver flechas de fuego)
+      this.nodoCoste[k] = Math.round(10 / Math.max(0.2, FRENO_TERRENO[tipoRuta] || 1)) + (h < 10 ? Math.round((10 - h) * 2) : 0);
     }
   }
   // distancia de chaflán 3-4 (en tercios de celda) a las celdas marcadas; con bordeObstaculo, el exterior del campo también cuenta

@@ -373,6 +373,16 @@ class LienzoSangre {
     c.restore(); this.version++;
   }
   // cráter de una piedra de mangonel (2026-10-14): tierra levantada, oscura en el centro y con terrones alrededor
+  // cenizas de una celda de bosque quemada (flechas de fuego, 2026-10-21): tierra negra y ceniza gris, de borde irregular
+  cenizas(x, y, azar) {
+    const c = this.contexto, ppm = this.pixelesPorMetro;
+    for (let k = 0; k < 4; k++) {
+      c.globalAlpha = 0.5; c.fillStyle = k % 2 ? '#2a2420' : '#1c1814';
+      c.beginPath(); c.ellipse((x + azar.entre(-0.8, 0.8)) * ppm, (y + azar.entre(-0.8, 0.8)) * ppm, azar.entre(0.9, 1.5) * ppm, azar.entre(0.7, 1.2) * ppm, azar.entre(0, Math.PI), 0, Math.PI * 2); c.fill();
+    }
+    for (let k = 0; k < 6; k++) { c.globalAlpha = 0.45; c.fillStyle = azar.numero() < 0.5 ? '#6a645c' : '#8a847a'; c.fillRect((x + azar.entre(-1.2, 1.2)) * ppm, (y + azar.entre(-1.2, 1.2)) * ppm, azar.entre(0.1, 0.3) * ppm, azar.entre(0.08, 0.2) * ppm); }
+    c.globalAlpha = 1; this.version++;
+  }
   crater(x, y, azar) {
     const c = this.contexto, ppm = this.pixelesPorMetro, px = x * ppm, py = y * ppm;
     c.globalAlpha = 0.85; c.fillStyle = '#4a3520'; c.beginPath(); c.ellipse(px, py, 1.1 * ppm, 0.75 * ppm, azar.entre(0, Math.PI), 0, Math.PI * 2); c.fill();

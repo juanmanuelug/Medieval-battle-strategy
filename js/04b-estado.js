@@ -90,4 +90,5 @@ function restaurarEstado(sim, texto) {
     Object.assign(u, nueva);
   });
   sim.sangre.length = 0;
+  if (sim.aplicarQuemadas) sim.aplicarQuemadas();           // el terreno, con lo quemado del estado (flechas de fuego, 2026-10-21)
 }
